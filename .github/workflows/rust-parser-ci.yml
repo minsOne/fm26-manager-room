@@ -101,16 +101,6 @@ jobs:
           assert rs["playerScan"]["rawMatchSharpnessSum"] == py_players["rawMatchSharpnessSum"]
           assert rs["playerScan"]["rawConditionSum"] == py_players["rawConditionSum"]
           assert rs["playerScan"]["heightSum"] == py_players["heightSum"]
-          assert rs["person"]["decoded"] == py_players["personDecoded"]
-          assert rs["person"]["nameByteSum"] == py_players["nameByteSum"]
-          assert rs["person"]["firstNameByteSum"] == py_players["firstNameByteSum"]
-          assert rs["person"]["lastNameByteSum"] == py_players["lastNameByteSum"]
-          assert rs["person"]["commonNameByteSum"] == py_players["commonNameByteSum"]
-          assert rs["person"]["legalNameByteSum"] == py_players["legalNameByteSum"]
-          assert rs["person"]["ageSum"] == py_players["ageSum"]
-          assert rs["person"]["nationIdSum"] == py_players["nationIdSum"]
-          assert rs["person"]["traitBitsXor"] == py_players["traitBitsXor"]
-          assert rs["person"]["personalitySum"] == py_players["personalitySum"]
           assert rs["personDecode"]["decoded"] == py_players["personDecoded"]
           assert rs["personDecode"]["missing"] == py_players["personMissing"]
           assert rs["personDecode"]["namePresent"] == py_players["namePresent"]
@@ -150,7 +140,6 @@ jobs:
                   "indexMs": round(rs["indexMs"], 3),
                   "decompressGameDbMs": round(rs["decompressGameDbMs"], 3),
                   "playerScanMs": round(rs["playerScanMs"], 3),
-                  "personMs": round(rs["personMs"], 3),
                   "namePoolMs": round(rs["namePoolMs"], 3),
                   "personDecodeMs": round(rs["personDecodeMs"], 3),
                   "clubScanMs": round(rs["clubScanMs"], 3),
