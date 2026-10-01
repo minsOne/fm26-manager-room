@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections import defaultdict
 from dataclasses import astuple
+from datetime import timedelta
 from pathlib import Path
 
 import fmsave
@@ -28,6 +30,9 @@ def main() -> int:
         managed_clubs = list(career.managed_clubs())
         managed_club = managed_clubs[0] if managed_clubs else None
         game_date = career.info.game_date
+        started_match_stats = time.perf_counter()
+        match_stats = list(career.player_match_stats())
+        match_stats_ms = elapsed_ms(started_match_stats)
 
     ca_sum = sum(int(player.ability.current) for player in players)
     pa_raw_sum = 0
@@ -80,6 +85,23 @@ def main() -> int:
         )
         player_club_hash = fnv_update(player_club_hash, player.club_name.encode("utf-8"))
         player_club_hash = fnv_update(player_club_hash, b"\xff")
+
+    by_player = defaultdict(list)
+    for row in match_stats:
+        if game_date is None or row.date <= game_date:
+            by_player[row.player_uid].append(row)
+
+    recent_by_uid = {}
+    cutoff = game_date - timedelta(days=14) if game_date else None
+    for player_uid, rows in by_player.items():
+        rows.sort(key=lambda row: row.date, reverse=True)
+        last14 = sum(
+            int(row.minutes or 0)
+            for row in rows
+            if row.has_stats and (cutoff is None or row.date >= cutoff)
+        )
+        last5 = sum(int(row.minutes or 0) for row in [row for row in rows if row.has_stats][:5])
+        recent_by_uid[player_uid] = (last14, last5)
 
     managed_players = (
         [player for player in players if managed_club and player.club_uid == managed_club.club_uid]
@@ -167,6 +189,12 @@ def main() -> int:
         "managedClubName": managed_club.club_name if managed_club else None,
         "managedSquadCount": len(managed_players),
         "managedPlayerSnapshotHash": managed_snapshot_hash,
+        "matchStatsMs": round(match_stats_ms, 3),
+        "matchStatRows": len(match_stats),
+        "matchRowsWithStats": sum(row.has_stats for row in match_stats),
+        "recentMinutesKnownPlayers": len(recent_by_uid),
+        "recent14Sum": sum(value[0] for value in recent_by_uid.values()),
+        "recent5Sum": sum(value[1] for value in recent_by_uid.values()),
         "contractCount": sum(player.contract is not None for player in players),
         "contractWagePresent": sum(
             player.contract is not None and player.contract.wage is not None for player in players
