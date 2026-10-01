@@ -1,30 +1,48 @@
 # FM26 native parser core
 
-Rust performance track for Manager Room.
+Production save-reader track for Manager Room.
 
-## Current scope
+## Current native coverage
 
-The first native milestone intentionally targets the expensive binary hot path:
+- FM26 container directory + targeted Zstd sections
+- player records: UID, CA/PA, positions, attributes, feet, transfer value, condition, sharpness, height
+- names / birth date / nation / personality / traits
+- clubs / teams / affiliate-team joins
+- current contracts / wages / dates / squad status
+- retained match history and recent minutes
+- club finance chains
+- managed-club auto detection
+- managed upcoming fixtures
+- Manager Room snapshot JSON
 
-1. memory-map the `.fm` file;
-2. parse the FM26 trailer directory;
-3. decompress only `game_db`;
-4. scan player-record candidates using the known 26.3.2 layout;
-5. emit timing and scan statistics as JSON.
+The parser is **read-only**.
 
-This is **not yet the semantic replacement** for `fmsave`. The Python MIT parser remains the correctness oracle while the Rust implementation grows reader by reader.
+## Manager Room snapshot
 
-## Run
+The normal product command requires only the save path:
+
+```bash
+native/fm26-parser/target/release/fm26-manager-room-parser snapshot "/path/to/Career.fm" --pretty
+```
+
+The parser detects the in-game date and managed club from the save. `--clock YYYY-MM-DD` and
+`--club-uid N` remain optional diagnostic overrides.
+
+## Benchmark
 
 ```bash
 cargo run --release --manifest-path native/fm26-parser/Cargo.toml -- \
-  bench /path/to/career.fm
+  bench "/path/to/Career.fm"
 ```
 
-## Why this shape
+## Correctness policy
 
-A language rewrite only matters if it accelerates the expensive work. Manager Room therefore benchmarks native container/decompression/scanning first before duplicating every high-level record type.
+The public-save CI compares native output with the MIT-licensed `fmsave` reference.
+Speed improvements are accepted only when parity gates pass.
 
-## Safety
+Python remains the correctness oracle/fallback during the remaining native-reader work, but it
+is not required by the intended macOS production path.
 
-Read-only. The crate never modifies the save file.
+## Third-party notice
+
+See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
