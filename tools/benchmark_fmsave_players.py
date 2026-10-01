@@ -91,6 +91,20 @@ def main() -> int:
         contract for contract in current_chain_contracts if contract.squad_status is not None
     ]
 
+    managed_players = [
+        player for player in players
+        if managed and player.club_uid == managed[0].club_uid
+    ]
+    managed_name_hash = 0xCBF29CE484222325
+    for player in managed_players:
+        if player.name is None:
+            continue
+        managed_name_hash = fnv_update(
+            managed_name_hash, int(player.uid).to_bytes(4, "little", signed=False)
+        )
+        managed_name_hash = fnv_update(managed_name_hash, player.name.encode("utf-8"))
+        managed_name_hash = fnv_update(managed_name_hash, b"\xff")
+
     report = {
         "openMs": round(open_ms, 3),
         "playersMs": round(players_ms, 3),
@@ -136,6 +150,15 @@ def main() -> int:
         "managedClubUid": int(managed[0].club_uid) if managed else 0,
         "managedClubName": managed[0].club_name if managed else "",
         "managerName": managed[0].manager_name or "" if managed else "",
+        "managedPlayerCount": len(managed_players),
+        "managedPlayerUidSum": sum(int(player.uid) for player in managed_players),
+        "managedPlayerCaSum": sum(int(player.ability.current) for player in managed_players),
+        "managedPlayerWageSum": sum(
+            int(player.contract.wage or 0)
+            for player in managed_players
+            if player.contract is not None
+        ),
+        "managedPlayerNameHashFnv1a64": managed_name_hash,
         "playersWithChain": len(chain_contracts),
         "chainRecords": len(chain_entries),
         "chainTeamsResolved": sum(1 for entry in chain_entries if entry.club_uid is not None),
