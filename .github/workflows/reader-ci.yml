@@ -1,0 +1,30 @@
+name: Runtime Reader CI
+
+on:
+  pull_request:
+    paths:
+      - "companion/reader/**"
+      - ".github/workflows/reader-ci.yml"
+  push:
+    branches:
+      - "research/runtime-reader-poc"
+    paths:
+      - "companion/reader/**"
+      - ".github/workflows/reader-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build runtime reader
+        run: dotnet build companion/reader/src/Fm26.ManagerRoom.Reader/Fm26.ManagerRoom.Reader.csproj --configuration Release
