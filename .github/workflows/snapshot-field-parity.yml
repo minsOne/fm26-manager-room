@@ -1,0 +1,75 @@
+name: Snapshot Field Parity
+on:
+  pull_request:
+    paths:
+      - "native/fm26-parser/**"
+      - "companion/macos/**"
+      - "tools/verify_snapshot_fields.py"
+      - "tools/test_native_companion_pipeline.py"
+      - "tools/tests/test_snapshot_field_audit.py"
+      - ".github/workflows/snapshot-field-parity.yml"
+  push:
+    branches: ["fix/native-snapshot-field-parity"]
+    paths:
+      - "native/fm26-parser/**"
+      - "tools/**"
+      - ".github/workflows/snapshot-field-parity.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: snapshot-field-parity-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Regression tests for comparator and native value conversion
+        run: |
+          python -m unittest discover -s tools/tests -p 'test_snapshot_field_audit.py' -v
+          cargo test --manifest-path native/fm26-parser/Cargo.toml
+      - name: Build native parser
+        run: cargo build --release --manifest-path native/fm26-parser/Cargo.toml
+      - name: Install pinned reference reader
+        run: |
+          python -m pip install 'gdown==5.2.0'
+          python -m pip install 'git+https://github.com/rhiever/fmsave.git@97ac7fe5991fa93f05e42e32f02f37e4c1874d61'
+      - name: Download public fixture (not redistributed)
+        run: |
+          mkdir -p "$RUNNER_TEMP/field-parity"
+          python -m gdown 1UZlBHKpEae416lx8apbkug-pmZH7RMKd -O "$RUNNER_TEMP/field-parity/public.fm"
+          test -s "$RUNNER_TEMP/field-parity/public.fm"
+      - name: Generate native managed-squad snapshot
+        run: |
+          native/fm26-parser/target/release/fm26-manager-room-parser snapshot "$RUNNER_TEMP/field-parity/public.fm" > "$RUNNER_TEMP/field-parity/snapshot.json"
+      - name: Compare every managed UID and named field
+        run: |
+          python tools/verify_snapshot_fields.py --save "$RUNNER_TEMP/field-parity/public.fm" --snapshot "$RUNNER_TEMP/field-parity/snapshot.json" --report "$RUNNER_TEMP/field-parity/named-field-report.json"
+      - name: Build macOS companion
+        if: runner.os == 'macOS'
+        run: swift build --package-path companion/macos -c release
+      - name: Verify real save through Swift, Rust and loopback API
+        if: runner.os == 'macOS'
+        run: |
+          python tools/test_native_companion_pipeline.py --save "$RUNNER_TEMP/field-parity/public.fm" --native-snapshot "$RUNNER_TEMP/field-parity/snapshot.json" --parser native/fm26-parser/target/release/fm26-manager-room-parser --companion companion/macos/.build/release/manager-room-companion --report "$RUNNER_TEMP/field-parity/mac-pipeline-report.json"
+      - name: Remove fixture and player data
+        if: always()
+        run: rm -f "$RUNNER_TEMP/field-parity/public.fm" "$RUNNER_TEMP/field-parity/snapshot.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: field-parity-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/field-parity/named-field-report.json
+            ${{ runner.temp }}/field-parity/mac-pipeline-report.json
+          if-no-files-found: warn
+          retention-days: 7
