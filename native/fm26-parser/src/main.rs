@@ -1,3 +1,4 @@
+mod club;
 mod container;
 mod names;
 mod person;
@@ -26,9 +27,12 @@ struct BenchReport {
     player_scan_ms: f64,
     name_pool_ms: f64,
     person_decode_ms: f64,
+    club_scan_ms: f64,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
     person_decode: person::PersonDecodeStats,
+    club_scan: club::ClubScanStats,
+    player_club_join: club::PlayerClubJoinStats,
 }
 
 fn main() -> Result<()> {
@@ -104,6 +108,11 @@ fn bench(path: PathBuf) -> Result<()> {
     let person_decode = person::decode_all(&game_db, &candidates, &name_pools)?;
     let person_decode_ms = elapsed_ms(started);
 
+    let started = Instant::now();
+    let (club_index, club_scan) = club::ClubIndex::scan(&game_db)?;
+    let club_scan_ms = elapsed_ms(started);
+    let player_club_join = club_index.player_join_stats(&candidates);
+
     let report = BenchReport {
         file: path.display().to_string(),
         file_bytes: metadata.len(),
@@ -117,9 +126,12 @@ fn bench(path: PathBuf) -> Result<()> {
         player_scan_ms,
         name_pool_ms,
         person_decode_ms,
+        club_scan_ms,
         total_ms: elapsed_ms(total_started),
         player_scan,
         person_decode,
+        club_scan,
+        player_club_join,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
