@@ -1,5 +1,6 @@
 mod club;
 mod contract;
+mod finance;
 mod container;
 mod names;
 mod managed;
@@ -34,6 +35,7 @@ struct BenchReport {
     club_scan_ms: f64,
     contract_ms: f64,
     match_history_ms: f64,
+    finance_ms: f64,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
     person_decode: person::PersonDecodeStats,
@@ -41,6 +43,7 @@ struct BenchReport {
     player_club_join: club::PlayerClubJoinStats,
     contracts: contract::ContractStats,
     match_history: match_history::MatchHistoryStats,
+    finance: finance::FinanceStats,
 }
 
 fn main() -> Result<()> {
@@ -220,6 +223,10 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
         match_history::recent_minutes_all(&game_db, &candidates, clock);
     let match_history_ms = elapsed_ms(started);
 
+    let started = Instant::now();
+    let (_finances, finance) = finance::read_latest(&game_db, &club_index);
+    let finance_ms = elapsed_ms(started);
+
     let report = BenchReport {
         file: path.display().to_string(),
         file_bytes: metadata.len(),
@@ -236,6 +243,7 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
         club_scan_ms,
         contract_ms,
         match_history_ms,
+        finance_ms,
         total_ms: elapsed_ms(total_started),
         player_scan,
         person_decode,
@@ -243,6 +251,7 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
         player_club_join,
         contracts,
         match_history,
+        finance,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
