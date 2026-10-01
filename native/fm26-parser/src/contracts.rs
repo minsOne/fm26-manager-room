@@ -23,6 +23,12 @@ const TAIL_EVENT_COUNT_OFFSET: usize = 42;
 const TAIL_STRUCT_END: usize = 46;
 
 const MISSING_REFERENCE: u32 = u32::MAX;
+const TAIL_PRINTED_START_OFFSET: usize = 32;
+const NONTERMS_BLOCK_PREFIX: &[u8] = &[
+    0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+    0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+];
 
 #[derive(Debug, Clone)]
 pub struct ChainRecord {
@@ -111,7 +117,19 @@ pub fn decode_all(
             clubs.resolve_team(player.team_id).map(|resolution| resolution.club_uid)
         };
 
-        if let Some(current) = in_effect_record(&records, player_club_uid, clock) {
+        let registration_missing = player.team_id == MISSING_REFERENCE;
+        let only_retained_nonterms = registration_missing
+            && records.iter().all(|record| {
+                is_retained_nonterms_block(
+                    game_db,
+                    record,
+                    player.record_offset,
+                    window_end,
+                )
+            });
+
+        if !only_retained_nonterms {
+            if let Some(current) = in_effect_record(&records, player_club_uid, clock) {
             stats.current_from_chain += 1;
             if current.has_terms {
                 stats.current_with_terms += 1;
@@ -127,10 +145,50 @@ pub fn decode_all(
             if let Some(status) = current.squad_status_raw {
                 stats.current_squad_status_sum += status as u64;
             }
+            }
         }
     }
 
     stats
+}
+
+
+fn is_retained_nonterms_block(
+    game_db: &[u8],
+    record: &ChainRecord,
+    record_start: usize,
+    record_end: usize,
+) -> bool {
+    if record.has_terms {
+        return false;
+    }
+
+    let Some(base) = record.tag_offset.checked_sub(TAIL_BASE_OFFSET) else {
+        return false;
+    };
+    if base < record_start {
+        return false;
+    }
+
+    let block_end = base
+        + *[
+            NONTERMS_BLOCK_PREFIX.len(),
+            TAIL_END_OFFSET + 4,
+            TAIL_PRINTED_START_OFFSET + TAG.len(),
+            TAIL_EVENT_COUNT_OFFSET + 4,
+        ]
+        .iter()
+        .max()
+        .unwrap();
+
+    if block_end > record_end.min(game_db.len()) {
+        return false;
+    }
+
+    game_db[base..].starts_with(NONTERMS_BLOCK_PREFIX)
+        && game_db[base + TAIL_PRINTED_START_OFFSET..].starts_with(TAG)
+        && read_u32(game_db, base + TAIL_EVENT_COUNT_OFFSET) == Some(0)
+        && decode_date_at(game_db, base + TAIL_END_OFFSET).is_some()
 }
 
 fn find_chain_records(
