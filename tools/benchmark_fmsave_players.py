@@ -28,6 +28,7 @@ def main() -> int:
         contracts = list(career.contracts())
         game_date = career.info.game_date
         db_version = career.info.db_version
+        managed = list(career.managed_clubs())
 
     ca_sum = sum(int(player.ability.current) for player in players)
     pa_raw_sum = 0
@@ -132,6 +133,9 @@ def main() -> int:
         "gameDateYear": int(game_date.year) if game_date else 0,
         "gameDateDay": int(game_date.strftime("%j")) if game_date else 0,
         "dbVersion": db_version,
+        "managedClubUid": int(managed[0].club_uid) if managed else 0,
+        "managedClubName": managed[0].club_name if managed else "",
+        "managerName": managed[0].manager_name or "" if managed else "",
         "playersWithChain": len(chain_contracts),
         "chainRecords": len(chain_entries),
         "chainTeamsResolved": sum(1 for entry in chain_entries if entry.club_uid is not None),
