@@ -34,6 +34,10 @@ def main() -> int:
         match_stats = list(career.player_match_stats())
         match_stats_ms = elapsed_ms(started_match_stats)
 
+        started_finances = time.perf_counter()
+        finances = list(career.finances())
+        finances_ms = elapsed_ms(started_finances)
+
     ca_sum = sum(int(player.ability.current) for player in players)
     pa_raw_sum = 0
     for player in players:
@@ -102,6 +106,14 @@ def main() -> int:
         )
         last5 = sum(int(row.minutes or 0) for row in [row for row in rows if row.has_stats][:5])
         recent_by_uid[player_uid] = (last14, last5)
+
+    latest_finance = {}
+    finance_row_counts = defaultdict(int)
+    for row in finances:
+        finance_row_counts[row.club_uid] += 1
+        previous = latest_finance.get(row.club_uid)
+        if previous is None or row.month > previous.month:
+            latest_finance[row.club_uid] = row
 
     managed_players = (
         [player for player in players if managed_club and player.club_uid == managed_club.club_uid]
@@ -195,6 +207,24 @@ def main() -> int:
         "recentMinutesKnownPlayers": len(recent_by_uid),
         "recent14Sum": sum(value[0] for value in recent_by_uid.values()),
         "recent5Sum": sum(value[1] for value in recent_by_uid.values()),
+        "financesMs": round(finances_ms, 3),
+        "financeRows": len(finances),
+        "financeLatestClubs": len(latest_finance),
+        "financeBalanceSum": sum(int(row.balance) for row in latest_finance.values()),
+        "financeTransferAllocatedSum": sum(
+            int(row.transfer_budget_allocated) for row in latest_finance.values()
+        ),
+        "financeTransferRemainingSum": sum(
+            int(row.transfer_budget_remaining) for row in latest_finance.values()
+        ),
+        "financeWageBudgetSum": sum(
+            int(row.wage_budget_weekly) for row in latest_finance.values()
+        ),
+        "financeWagePayrollSum": sum(
+            int(row.wage_payroll_weekly) for row in latest_finance.values()
+        ),
+        "financeNetSum": sum(int(row.net) for row in latest_finance.values()),
+        "financeRowCountSum": sum(finance_row_counts.values()),
         "contractCount": sum(player.contract is not None for player in players),
         "contractWagePresent": sum(
             player.contract is not None and player.contract.wage is not None for player in players
