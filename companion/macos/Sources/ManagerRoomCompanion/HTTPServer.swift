@@ -5,13 +5,15 @@ final class LocalHTTPServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "fm26.manager-room.http")
     private let store: SnapshotStore
+    private let companionState: CompanionState
 
-    init(port: UInt16, store: SnapshotStore) throws {
+    init(port: UInt16, store: SnapshotStore, companionState: CompanionState) throws {
         guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
             throw ServerError.invalidPort
         }
         self.listener = try NWListener(using: .tcp, on: endpointPort)
         self.store = store
+        self.companionState = companionState
     }
 
     func start() {
@@ -61,14 +63,27 @@ final class LocalHTTPServer: @unchecked Sendable {
         switch path {
         case "/api/health":
             let probe = FMProcessProbe.probe()
+            let parser = companionState.snapshot()
             let value: [String: Any] = [
                 "status": "ok",
                 "platform": "macOS",
                 "snapshotAvailable": store.exists,
                 "fmRunning": probe.running,
-                "accessMode": probe.accessMode
+                "accessMode": probe.accessMode,
+                "parsing": parser.parsing,
+                "lastParseDurationMs": parser.lastDurationMilliseconds as Any,
+                "lastSavePath": parser.lastSavePath as Any,
+                "lastParseError": parser.lastError as Any,
+                "watchedDirectory": parser.watchedDirectory as Any
             ]
             sendJSON(status: "200 OK", value: value, on: connection)
+
+        case "/api/parser":
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let data = (try? encoder.encode(companionState.snapshot())) ?? Data("{}".utf8)
+            send(status: "200 OK", type: "application/json; charset=utf-8", body: data, on: connection)
 
         case "/api/runtime":
             let encoder = JSONEncoder()
