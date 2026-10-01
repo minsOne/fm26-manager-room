@@ -5,6 +5,8 @@ on:
     paths:
       - "native/fm26-parser/**"
       - "tools/benchmark_fmsave_section.py"
+      - "tools/benchmark_fmsave_players.py"
+      - "tools/benchmark_fmsave_players.py"
       - ".github/workflows/rust-parser-ci.yml"
   push:
     branches:
@@ -80,9 +82,13 @@ jobs:
           root = Path("/tmp/fm26-rust-bench")
           py = json.loads((root / "python.json").read_text())
           rs = json.loads((root / "rust.json").read_text())
+          py_players = json.loads((root / "python-players.json").read_text())
 
           assert py["gameDbDecompressedBytes"] == rs["gameDbDecompressedBytes"]
           assert rs["playerScan"]["totalCandidates"] > 1000
+          assert rs["playerScan"]["totalCandidates"] == py_players["playerCount"]
+          assert rs["playerScan"]["currentAbilitySum"] == py_players["currentAbilitySum"]
+          assert rs["playerScan"]["potentialAbilityRawSum"] == py_players["potentialAbilityRawSum"]
 
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
@@ -92,6 +98,11 @@ jobs:
                   "decompressGameDbMs": py["decompressGameDbMs"],
                   "totalMs": py["totalMs"],
               },
+              "pythonPlayers": {
+                  "openMs": py_players["openMs"],
+                  "playersMs": py_players["playersMs"],
+                  "playerCount": py_players["playerCount"],
+              },
               "rust": {
                   "indexMs": round(rs["indexMs"], 3),
                   "decompressGameDbMs": round(rs["decompressGameDbMs"], 3),
@@ -99,6 +110,9 @@ jobs:
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
               },
+              "playerDiscoverySpeedup": round(
+                  py_players["playersMs"] / max(rs["playerScanMs"], 0.001), 2
+              ),
               "decompressionSpeedup": round(
                   py["decompressGameDbMs"] / max(rs["decompressGameDbMs"], 0.001), 2
               ),
@@ -118,5 +132,6 @@ jobs:
           path: |
             /tmp/fm26-rust-bench/python.json
             /tmp/fm26-rust-bench/rust.json
+            /tmp/fm26-rust-bench/python-players.json
             /tmp/fm26-rust-bench/comparison.json
           retention-days: 7
