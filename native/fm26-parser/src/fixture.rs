@@ -1,5 +1,7 @@
 use crate::club::ClubIndex;
+use crate::competition::CompetitionIndex;
 use crate::metadata::GameDate;
+use crate::stage::StageIndex;
 use memchr::memchr_iter;
 use serde::Serialize;
 
@@ -42,6 +44,10 @@ pub struct FixtureRow {
     pub opponent_club_uid: Option<u32>,
     pub competition: String,
     pub competition_known: bool,
+    pub competition_id: Option<u32>,
+    pub competition_database_id: Option<u32>,
+    pub round_raw: Option<u32>,
+    pub round_name: Option<&'static str>,
     pub home: bool,
     pub opponent_strength: u8,
     pub opponent_strength_known: bool,
@@ -73,6 +79,8 @@ pub fn managed_upcoming(
     clubs: &ClubIndex,
     managed_club_uid: u32,
     clock: GameDate,
+    stages: Option<&StageIndex>,
+    competitions: Option<&CompetitionIndex>,
     limit: usize,
 ) -> (Vec<FixtureRow>, FixtureStats) {
     let (strict, mut stats) = scan_strict(span, clock);
@@ -115,14 +123,28 @@ pub fn managed_upcoming(
         let rest_days_after=selected.get(index+1)
             .map(|(_,next,_,_,_,_)| day_number(*next).saturating_sub(day_number(*date)).min(u16::MAX as i64) as u16)
             .unwrap_or(7);
+        let stage = fixture.stage_id.and_then(|id| stages.and_then(|index| index.stage(id)));
+        let competition_id = stage.and_then(|value| value.competition_id);
+        let competition = competition_id
+            .and_then(|id| competitions.and_then(|index| index.competition(id)));
+        let competition_name = competition.and_then(|value| value.name.clone());
+
         result.push(FixtureRow{
             id:fixture.match_record_id.map(|id|format!("match-{id}"))
                 .unwrap_or_else(||format!("fixture-{}-{}-{}",date_string(*date),fixture.home_team_id,fixture.away_team_id)),
             date:date_string(*date),
             opponent:opponent.clone(),
             opponent_club_uid:*opponent_uid,
-            competition:fixture.stage_id.map(|id|format!("Stage {id}")).unwrap_or_else(||"Unknown Competition".into()),
-            competition_known:false,
+            competition: competition_name
+                .clone()
+                .or_else(|| competition_id.map(|id| format!("Competition {id}")))
+                .or_else(|| fixture.stage_id.map(|id| format!("Stage {id}")))
+                .unwrap_or_else(|| "Unknown Competition".into()),
+            competition_known: competition_name.is_some(),
+            competition_id,
+            competition_database_id: competition.and_then(|value| value.database_id),
+            round_raw: stage.and_then(|value| value.round_raw),
+            round_name: stage.and_then(|value| value.round_name),
             home:*home,
             opponent_strength:50,opponent_strength_known:false,
             table_impact:50,table_impact_known:false,

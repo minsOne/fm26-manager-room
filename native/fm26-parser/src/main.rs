@@ -9,10 +9,13 @@ mod names;
 mod person;
 mod player_scan;
 mod snapshot;
+mod stage;
+mod competition;
 
 use anyhow::{bail, Context, Result};
 use memmap2::MmapOptions;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::path::PathBuf;
@@ -40,6 +43,8 @@ struct BenchReport {
     finance_ms: f64,
     span_decompress_ms: f64,
     fixture_ms: f64,
+    stage_ms: f64,
+    competition_ms: f64,
     span_bytes: usize,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
@@ -52,6 +57,8 @@ struct BenchReport {
     match_history: match_history::MatchHistoryStats,
     finance: finance::FinanceStats,
     fixtures: fixture::FixtureStats,
+    stages: stage::StageStats,
+    competitions: competition::CompetitionStats,
 }
 
 fn main() -> Result<()> {
@@ -134,9 +141,20 @@ fn quick_snapshot(path: PathBuf) -> Result<()> {
     let (recent_minutes, _match_history_stats) =
         match_history::recent_minutes_all(&game_db, &candidates, clock);
     let (finances, _finance_stats) = finance::read_latest(&game_db, &club_index);
+    let (stage_index, _stage_stats) = stage::StageIndex::scan(&game_db)
+        .context("could not locate FM26 stage table")?;
+    let (competition_index, _competition_stats) =
+        competition::CompetitionIndex::build(&game_db, &stage_index, &HashMap::new());
     let span = container::read_unlisted_after(&mapped, &index, "non_pl_hist_ls")?;
-    let (fixtures, _fixture_stats) =
-        fixture::managed_upcoming(&span, &club_index, summary.club_uid, clock, 12);
+    let (fixtures, _fixture_stats) = fixture::managed_upcoming(
+        &span,
+        &club_index,
+        summary.club_uid,
+        clock,
+        Some(&stage_index),
+        Some(&competition_index),
+        12,
+    );
 
     let snapshot = snapshot::build(
         &game_db,
@@ -242,13 +260,30 @@ fn bench(path: PathBuf) -> Result<()> {
     let finance_ms = elapsed_ms(started);
 
     let started = Instant::now();
+    let (stage_index, stage_stats) = stage::StageIndex::scan(&game_db)
+        .context("could not locate FM26 stage table")?;
+    let stage_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    let (competition_index, competition_stats) =
+        competition::CompetitionIndex::build(&game_db, &stage_index, &HashMap::new());
+    let competition_ms = elapsed_ms(started);
+
+    let started = Instant::now();
     let span = container::read_unlisted_after(&mapped, &index, "non_pl_hist_ls")?;
     let span_decompress_ms = elapsed_ms(started);
     let span_bytes = span.len();
 
     let started = Instant::now();
-    let (_fixtures, fixture_stats) =
-        fixture::managed_upcoming(&span, &club_index, summary.club_uid, clock, 12);
+    let (_fixtures, fixture_stats) = fixture::managed_upcoming(
+        &span,
+        &club_index,
+        summary.club_uid,
+        clock,
+        Some(&stage_index),
+        Some(&competition_index),
+        12,
+    );
     let fixture_ms = elapsed_ms(started);
 
     let report = BenchReport {
@@ -271,6 +306,8 @@ fn bench(path: PathBuf) -> Result<()> {
         finance_ms,
         span_decompress_ms,
         fixture_ms,
+        stage_ms,
+        competition_ms,
         span_bytes,
         total_ms: elapsed_ms(total_started),
         player_scan,
@@ -283,6 +320,8 @@ fn bench(path: PathBuf) -> Result<()> {
         match_history: match_history_stats,
         finance: finance_stats,
         fixtures: fixture_stats,
+        stages: stage_stats,
+        competitions: competition_stats,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
