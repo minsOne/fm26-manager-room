@@ -5,6 +5,7 @@ mod metadata;
 mod names;
 mod person;
 mod player_scan;
+mod snapshot;
 
 use anyhow::{bail, Context, Result};
 use memmap2::MmapOptions;
@@ -61,13 +62,79 @@ fn main() -> Result<()> {
                 .context("usage: fm26-manager-room-parser inspect <save.fm>")?;
             inspect(path)
         }
+        "snapshot" => {
+            let path = args
+                .next()
+                .map(PathBuf::from)
+                .context("usage: fm26-manager-room-parser snapshot <save.fm>")?;
+            quick_snapshot(path)
+        }
         _ => {
             eprintln!("Usage:");
             eprintln!("  fm26-manager-room-parser inspect <save.fm>");
             eprintln!("  fm26-manager-room-parser bench <save.fm>");
+            eprintln!("  fm26-manager-room-parser snapshot <save.fm>");
             Ok(())
         }
     }
+}
+
+
+fn quick_snapshot(path: PathBuf) -> Result<()> {
+    let file = File::open(&path)
+        .with_context(|| format!("could not open {}", path.display()))?;
+    let mapped = unsafe { MmapOptions::new().map(&file)? };
+    let index = container::read_index(&mapped)?;
+
+    let game_db_entry = index
+        .section("game_db")
+        .context("save contains no game_db section")?
+        .clone();
+    let game_db = container::read_section(&mapped, &game_db_entry)?;
+
+    let (_player_stats, candidates) = player_scan::scan_with_candidates(&game_db);
+    let name_pools = names::NamePools::locate(&game_db)?;
+    let (_person_stats, people) =
+        person::decode_all_with_people(&game_db, &candidates, &name_pools)?;
+    let (club_index, _club_stats) = club::ClubIndex::scan(&game_db)?;
+
+    let game_info_entry = index
+        .section("game_info")
+        .context("save contains no game_info section")?
+        .clone();
+    let game_info_bytes = container::read_section(&mapped, &game_info_entry)?;
+    let mut game_info = metadata::decode_game_info(&game_info_bytes)?;
+
+    let summary_entry = index
+        .section("save_game_summary")
+        .context("save contains no save_game_summary section")?
+        .clone();
+    let summary_bytes = container::read_section(&mapped, &summary_entry)?;
+    let summary = metadata::decode_summary(&summary_bytes)?;
+    if game_info.game_date.is_none() {
+        game_info.game_date = summary.game_date;
+    }
+    let clock = game_info
+        .game_date
+        .context("FM26 save contains no readable game date")?;
+
+    let (_contract_stats, current_contracts) =
+        contracts::decode_all_with_current(&game_db, &candidates, &club_index, clock);
+
+    let snapshot = snapshot::build(
+        &game_db,
+        index.save_name,
+        game_info.db_version,
+        clock,
+        &summary,
+        &candidates,
+        &people,
+        &current_contracts,
+        &club_index,
+    );
+
+    println!("{}", serde_json::to_string_pretty(&snapshot)?);
+    Ok(())
 }
 
 fn inspect(path: PathBuf) -> Result<()> {
