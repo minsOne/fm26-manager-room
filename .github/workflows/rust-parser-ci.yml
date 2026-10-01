@@ -1,0 +1,31 @@
+name: Rust Parser CI
+
+on:
+  pull_request:
+    paths:
+      - "parser/rust/**"
+      - ".github/workflows/rust-parser-ci.yml"
+      - ".github/workflows/rust-parser-benchmark.yml"
+  push:
+    branches:
+      - "perf/rust-save-parser"
+    paths:
+      - "parser/rust/**"
+      - ".github/workflows/rust-parser-ci.yml"
+      - ".github/workflows/rust-parser-benchmark.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path parser/rust/Cargo.toml --release
+      - run: cargo build --manifest-path parser/rust/Cargo.toml --release
