@@ -1,6 +1,7 @@
 use crate::club::ClubIndex;
 use crate::contract::{ContractCore, GameDate};
 use crate::match_history::RecentMinutes;
+use crate::finance::FinanceLatest;
 use crate::person::PersonCore;
 use crate::player_scan::PlayerCandidate;
 use serde::Serialize;
@@ -39,6 +40,7 @@ pub struct Snapshot {
     pub meta: SnapshotMeta,
     pub manager: Manager,
     pub formation: Formation,
+    pub club_finance: Option<ClubFinance>,
     pub fixtures: Vec<serde_json::Value>,
     pub players: Vec<PlayerRow>,
     pub external_candidates: Vec<serde_json::Value>,
@@ -115,6 +117,17 @@ pub struct FormationSlot {
     pub y: u8,
     pub ip_role: &'static str,
     pub oop_role: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClubFinance {
+    pub balance: i32,
+    pub transfer_budget_allocated: i32,
+    pub transfer_budget_remaining: i32,
+    pub wage_budget_weekly: u32,
+    pub wage_payroll_weekly: u32,
+    pub finance_rows: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,6 +229,7 @@ pub fn build(
     clubs: &ClubIndex,
     contracts: &[Option<ContractCore>],
     recent_minutes: &[RecentMinutes],
+    finances: &[FinanceLatest],
     clock: GameDate,
     managed_club_uid: u32,
 ) -> Snapshot {
@@ -258,7 +272,7 @@ pub fn build(
                 recent_minutes: "native-match-history",
                 fatigue: "runtime-bridge-required",
                 fixtures: "pending-native-fixture-reader",
-                economy: "pending-native-finance-reader",
+                economy: "managed-club-native-finance",
             },
         },
         manager: Manager {
@@ -273,6 +287,17 @@ pub fn build(
             },
         },
         formation: default_formation(),
+        club_finance: finances
+            .iter()
+            .find(|row| row.club_uid == managed_club_uid)
+            .map(|row| ClubFinance {
+                balance: row.balance,
+                transfer_budget_allocated: row.transfer_budget_allocated,
+                transfer_budget_remaining: row.transfer_budget_remaining,
+                wage_budget_weekly: row.wage_budget_weekly,
+                wage_payroll_weekly: row.wage_payroll_weekly,
+                finance_rows: row.rows,
+            }),
         fixtures: Vec::new(),
         players,
         external_candidates: Vec::new(),
