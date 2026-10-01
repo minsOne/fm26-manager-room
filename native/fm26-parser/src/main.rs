@@ -6,6 +6,7 @@ mod container;
 mod names;
 mod managed;
 mod match_history;
+mod metadata;
 mod person;
 mod player_scan;
 mod snapshot;
@@ -60,7 +61,7 @@ fn main() -> Result<()> {
             let path = args
                 .next()
                 .map(PathBuf::from)
-                .context("usage: fm26-manager-room-parser bench <save.fm> --clock YYYY-MM-DD")?;
+                .context("usage: fm26-manager-room-parser bench <save.fm> [--clock YYYY-MM-DD]")?;
             let mut clock = None;
             while let Some(flag) = args.next() {
                 if flag == "--clock" {
@@ -68,14 +69,13 @@ fn main() -> Result<()> {
                     clock = Some(parse_clock(&value)?);
                 }
             }
-            let clock = clock.context("bench requires --clock YYYY-MM-DD")?;
             bench(path, clock)
         }
         "snapshot" => {
             let path = args
                 .next()
                 .map(PathBuf::from)
-                .context("usage: fm26-manager-room-parser snapshot <save.fm> --clock YYYY-MM-DD [--club-uid N] [--pretty]")?;
+                .context("usage: fm26-manager-room-parser snapshot <save.fm> [--clock YYYY-MM-DD] [--club-uid N] [--pretty]")?;
             let mut clock = None;
             let mut club_uid = None;
             let mut pretty = false;
@@ -95,7 +95,7 @@ fn main() -> Result<()> {
             }
             snapshot_command(
                 path,
-                clock.context("snapshot requires --clock YYYY-MM-DD")?,
+                clock,
                 club_uid,
                 pretty,
             )
@@ -110,8 +110,8 @@ fn main() -> Result<()> {
         _ => {
             eprintln!("Usage:");
             eprintln!("  fm26-manager-room-parser inspect <save.fm>");
-            eprintln!("  fm26-manager-room-parser bench <save.fm> --clock YYYY-MM-DD");
-            eprintln!("  fm26-manager-room-parser snapshot <save.fm> --clock YYYY-MM-DD [--club-uid N] [--pretty]");
+            eprintln!("  fm26-manager-room-parser bench <save.fm> [--clock YYYY-MM-DD]");
+            eprintln!("  fm26-manager-room-parser snapshot <save.fm> [--clock YYYY-MM-DD] [--club-uid N] [--pretty]");
             Ok(())
         }
     }
@@ -120,7 +120,7 @@ fn main() -> Result<()> {
 
 fn snapshot_command(
     path: PathBuf,
-    clock: contract::GameDate,
+    clock: Option<contract::GameDate>,
     club_uid: Option<u32>,
     pretty: bool,
 ) -> Result<()> {
@@ -128,6 +128,10 @@ fn snapshot_command(
         .with_context(|| format!("could not open {}", path.display()))?;
     let mapped = unsafe { MmapOptions::new().map(&file)? };
     let index = container::read_index(&mapped)?;
+    let clock = match clock {
+        Some(value) => value,
+        None => metadata::read_clock(&mapped, &index)?.date,
+    };
     let game_db_entry = index
         .section("game_db")
         .context("save contains no game_db section")?
@@ -184,7 +188,7 @@ fn inspect(path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
+fn bench(path: PathBuf, clock: Option<contract::GameDate>) -> Result<()> {
     let total_started = Instant::now();
     let file = File::open(&path)
         .with_context(|| format!("could not open {}", path.display()))?;
@@ -194,6 +198,10 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
     let started = Instant::now();
     let index = container::read_index(&mapped)?;
     let index_ms = elapsed_ms(started);
+    let clock = match clock {
+        Some(value) => value,
+        None => metadata::read_clock(&mapped, &index)?.date,
+    };
 
     let game_db_entry = index
         .section("game_db")
