@@ -156,6 +156,11 @@ jobs:
           assert rs["contracts"]["eventCountSum"] == py_players["contractEventCountSum"]
           assert rs["contracts"]["teamIdSum"] == py_players["contractTeamIdSum"]
           assert rs["contracts"]["clubUidSum"] == py_players["contractClubUidSum"]
+          assert rs["matchHistory"]["retainedRecords"] == py_players["matchStatRows"]
+          assert rs["matchHistory"]["recordsWithStats"] == py_players["matchRowsWithStats"]
+          assert rs["matchHistory"]["playersWithHistory"] == py_players["recentMinutesKnownPlayers"]
+          assert rs["matchHistory"]["last14Sum"] == py_players["recent14Sum"]
+          assert rs["matchHistory"]["last5Sum"] == py_players["recent5Sum"]
           assert snapshot["manager"]["clubUid"] == py_players["managedClubUid"]
           assert snapshot["manager"]["club"] == py_players["managedClubName"]
           assert len(snapshot["players"]) == py_players["managedSquadCount"]
@@ -199,8 +204,9 @@ jobs:
                   "personDecodeMs": round(rs["personDecodeMs"], 3),
                   "clubScanMs": round(rs["clubScanMs"], 3),
                   "contractMs": round(rs["contractMs"], 3),
+                  "matchHistoryMs": round(rs["matchHistoryMs"], 3),
                   "semanticPlayerMs": round(
-                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["contractMs"], 3
+                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["contractMs"] + rs["matchHistoryMs"], 3
                   ),
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
@@ -237,6 +243,8 @@ jobs:
                   "contractDatesEqual": True,
                   "contractSquadStatusEqual": True,
                   "contractClubEqual": True,
+                  "recentMatchRowsEqual": True,
+                  "recentMinutesEqual": True,
                   "managedSnapshotCountEqual": True,
                   "managedSnapshotCoreHashEqual": True,
               },
