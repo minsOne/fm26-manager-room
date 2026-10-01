@@ -29,6 +29,14 @@ pub struct PlayerScanStats {
     pub total_candidates: usize,
     pub current_ability_sum: u64,
     pub potential_ability_raw_sum: i64,
+    pub position_rating_sum: u64,
+    pub raw_attribute_sum: u64,
+    pub raw_left_foot_sum: u64,
+    pub raw_right_foot_sum: u64,
+    pub transfer_value_sum: u64,
+    pub raw_match_sharpness_sum: u64,
+    pub raw_condition_sum: u64,
+    pub height_sum: u64,
     pub sample: Vec<PlayerCandidate>,
 }
 
@@ -85,6 +93,42 @@ pub fn scan(game_db: &[u8]) -> PlayerScanStats {
     let current_ability_sum = all.iter().map(|candidate| candidate.current_ability as u64).sum();
     let potential_ability_raw_sum = all.iter().map(|candidate| candidate.potential_ability as i64).sum();
 
+    let mut position_rating_sum = 0u64;
+    let mut raw_attribute_sum = 0u64;
+    let mut raw_left_foot_sum = 0u64;
+    let mut raw_right_foot_sum = 0u64;
+    let mut transfer_value_sum = 0u64;
+    let mut raw_match_sharpness_sum = 0u64;
+    let mut raw_condition_sum = 0u64;
+    let mut height_sum = 0u64;
+
+    for candidate in &all {
+        let offset = candidate.record_offset;
+        position_rating_sum += game_db[offset + RATINGS_OFFSET..offset + RATINGS_OFFSET + RATINGS_COUNT]
+            .iter()
+            .map(|value| *value as u64)
+            .sum::<u64>();
+
+        let attrs = &game_db[offset + ATTRIBUTES_OFFSET..offset + ATTRIBUTES_OFFSET + ATTRIBUTE_COUNT];
+        raw_left_foot_sum += attrs[24] as u64;
+        raw_right_foot_sum += attrs[25] as u64;
+        raw_attribute_sum += attrs
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != 24 && *index != 25)
+            .map(|(_, value)| *value as u64)
+            .sum::<u64>();
+
+        if let Some(raw) = read_u32(game_db, offset + 93) {
+            if raw != 0 && raw != u32::MAX && raw != 300_000_000 {
+                transfer_value_sum += raw as u64;
+            }
+        }
+        raw_match_sharpness_sum += read_u16(game_db, offset + 106).unwrap_or(0) as u64;
+        raw_condition_sum += read_u16(game_db, offset + 110).unwrap_or(0) as u64;
+        height_sum += game_db.get(offset + 121).copied().unwrap_or(0) as u64;
+    }
+
     PlayerScanStats {
         marker_hits,
         marker_candidates: marker_candidates.len(),
@@ -92,6 +136,14 @@ pub fn scan(game_db: &[u8]) -> PlayerScanStats {
         total_candidates: all.len(),
         current_ability_sum,
         potential_ability_raw_sum,
+        position_rating_sum,
+        raw_attribute_sum,
+        raw_left_foot_sum,
+        raw_right_foot_sum,
+        transfer_value_sum,
+        raw_match_sharpness_sum,
+        raw_condition_sum,
+        height_sum,
         sample: all.into_iter().take(8).collect(),
     }
 }
