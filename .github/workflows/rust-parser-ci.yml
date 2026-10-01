@@ -156,6 +156,13 @@ jobs:
           assert rs["finance"]["wageBudgetSum"] == py_players["financeWageBudgetSum"]
           assert rs["finance"]["wagePayrollSum"] == py_players["financeWagePayrollSum"]
           assert rs["finance"]["netSum"] == py_players["financeNetSum"]
+          assert rs["stages"]["rows"] == py_players["stageCount"]
+          assert rs["stages"]["idSum"] == py_players["stageIdSum"]
+          assert rs["stages"]["competitionIdSum"] == py_players["stageCompetitionIdSum"]
+          assert rs["stages"]["roundRawSum"] == py_players["stageRoundRawSum"]
+          assert rs["competitions"]["competitions"] == py_players["competitionCount"]
+          assert rs["competitions"]["withDatabaseId"] == py_players["competitionWithDatabaseId"]
+          assert rs["competitions"]["databaseIdSum"] == py_players["competitionDatabaseIdSum"]
           assert len(snapshot["fixtures"]) == py_players["managedUpcomingFixtureCount"]
           assert snapshot["meta"]["gameDate"] == py_players["gameDate"]
           assert snapshot["manager"]["clubUid"] == py_players["managedClubUid"]
@@ -195,6 +202,22 @@ jobs:
               )
           assert fixture_hash == py_players["managedUpcomingFixtureHash"]
 
+          fixture_competition_hash = 0xCBF29CE484222325
+          for fixture in snapshot["fixtures"]:
+              fixture_competition_hash = fnv(
+                  fixture_competition_hash,
+                  int(fixture.get("competitionId") or 0).to_bytes(4, "little")
+              )
+              fixture_competition_hash = fnv(
+                  fixture_competition_hash,
+                  int(fixture.get("competitionDatabaseId") or 0).to_bytes(4, "little")
+              )
+              fixture_competition_hash = fnv(
+                  fixture_competition_hash,
+                  int(fixture.get("roundRaw") or 0).to_bytes(4, "little")
+              )
+          assert fixture_competition_hash == py_players["managedUpcomingCompetitionHash"]
+
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
               "gameDbMiB": round(py["gameDbDecompressedBytes"] / 1024 / 1024, 1),
@@ -220,6 +243,8 @@ jobs:
                   "financeMs": round(rs["financeMs"], 3),
                   "spanDecompressMs": round(rs["spanDecompressMs"], 3),
                   "fixtureMs": round(rs["fixtureMs"], 3),
+                  "stageMs": round(rs["stageMs"], 3),
+                  "competitionMs": round(rs["competitionMs"], 3),
                   "semanticPlayerMs": round(
                       rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["contractMs"] + rs["matchHistoryMs"] + rs["financeMs"] + rs["fixtureMs"], 3
                   ),
@@ -263,6 +288,9 @@ jobs:
                   "financeLatestEqual": True,
                   "financeBudgetsEqual": True,
                   "managedFixturesEqual": True,
+                  "stageTableEqual": True,
+                  "competitionIdsEqual": True,
+                  "fixtureCompetitionJoinEqual": True,
                   "managedSnapshotCountEqual": True,
                   "managedSnapshotCoreHashEqual": True,
               },
