@@ -25,6 +25,9 @@ def main() -> int:
         players = list(career.players())
         players_ms = elapsed_ms(started_players)
         clubs = list(career.clubs())
+        contracts = list(career.contracts())
+        game_date = career.info.game_date
+        db_version = career.info.db_version
 
     ca_sum = sum(int(player.ability.current) for player in players)
     pa_raw_sum = 0
@@ -78,6 +81,15 @@ def main() -> int:
         player_club_hash = fnv_update(player_club_hash, player.club_name.encode("utf-8"))
         player_club_hash = fnv_update(player_club_hash, b"\xff")
 
+    chain_contracts = [contract for contract in contracts if contract.chain]
+    chain_entries = [entry for contract in chain_contracts for entry in contract.chain]
+    current_chain_contracts = [
+        contract for contract in chain_contracts if contract.team_id is not None
+    ]
+    current_terms_contracts = [
+        contract for contract in current_chain_contracts if contract.squad_status is not None
+    ]
+
     report = {
         "openMs": round(open_ms, 3),
         "playersMs": round(players_ms, 3),
@@ -117,6 +129,33 @@ def main() -> int:
         "affiliateRegistrationCount": sum(
             1 for player in players if player.team_club_uid is not None
         ),
+        "gameDateYear": int(game_date.year) if game_date else 0,
+        "gameDateDay": int(game_date.strftime("%j")) if game_date else 0,
+        "dbVersion": db_version,
+        "playersWithChain": len(chain_contracts),
+        "chainRecords": len(chain_entries),
+        "chainTeamsResolved": sum(1 for entry in chain_entries if entry.club_uid is not None),
+        "tailsParsed": sum(1 for entry in chain_entries if entry.has_terms),
+        "chainWageSum": sum(int(entry.wage) for entry in chain_entries),
+        "chainStartDateSum": sum(date_key(entry.start) for entry in chain_entries if entry.start),
+        "chainEndDateSum": sum(date_key(entry.end) for entry in chain_entries if entry.end),
+        "currentFromChain": len(current_chain_contracts),
+        "currentWithTerms": len(current_terms_contracts),
+        "currentWageSum": sum(int(contract.wage or 0) for contract in current_chain_contracts),
+        "currentEndDateSum": sum(
+            date_key(contract.end) for contract in current_chain_contracts if contract.end
+        ),
+        "currentSquadStatusSum": sum(
+            int(contract.squad_status.raw)
+            for contract in current_chain_contracts
+            if contract.squad_status is not None
+        ),
+        "currentClubUidSum": sum(
+            int(contract.club_uid or 0) for contract in current_chain_contracts
+        ),
+        "currentTeamIdSum": sum(
+            int(contract.team_id or 0) for contract in current_chain_contracts
+        ),
     }
     print(json.dumps(report, indent=2))
     return 0
@@ -138,6 +177,10 @@ def xor_values(values) -> int:
     for value in values:
         result ^= value
     return result
+
+
+def date_key(value) -> int:
+    return int(value.year) * 400 + int(value.strftime("%j"))
 
 
 def elapsed_ms(started: float) -> float:
