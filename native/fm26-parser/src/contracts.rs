@@ -72,12 +72,32 @@ pub struct ContractStats {
     pub current_team_id_sum: u64,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentContractCore {
+    pub club_uid: Option<u32>,
+    pub team_id: u32,
+    pub wage: u32,
+    pub end: Option<GameDate>,
+    pub squad_status_raw: Option<u8>,
+    pub has_terms: bool,
+}
+
 pub fn decode_all(
     game_db: &[u8],
     players: &[PlayerCandidate],
     clubs: &ClubIndex,
     clock: GameDate,
 ) -> ContractStats {
+    decode_all_with_current(game_db, players, clubs, clock).0
+}
+
+pub fn decode_all_with_current(
+    game_db: &[u8],
+    players: &[PlayerCandidate],
+    clubs: &ClubIndex,
+    clock: GameDate,
+) -> (ContractStats, Vec<Option<CurrentContractCore>>) {
     let mut stats = ContractStats {
         players_with_chain: 0,
         chain_records: 0,
@@ -96,6 +116,7 @@ pub fn decode_all(
         current_club_uid_sum: 0,
         current_team_id_sum: 0,
     };
+    let mut current_contracts = Vec::with_capacity(players.len());
 
     for (index, player) in players.iter().enumerate() {
         let window_end = players
@@ -114,6 +135,7 @@ pub fn decode_all(
         );
 
         if records.is_empty() {
+            current_contracts.push(None);
             continue;
         }
         stats.players_with_chain += 1;
@@ -145,8 +167,13 @@ pub fn decode_all(
                 )
             });
 
-        if !only_retained_nonterms {
-            if let Some(current) = in_effect_record(&records, player_club_uid, clock) {
+        let selected = if only_retained_nonterms {
+            None
+        } else {
+            in_effect_record(&records, player_club_uid, clock)
+        };
+
+        if let Some(current) = selected {
             stats.current_from_chain += 1;
             if current.has_terms {
                 stats.current_with_terms += 1;
@@ -156,6 +183,7 @@ pub fn decode_all(
             if let Some(uid) = current.club_uid {
                 stats.current_club_uid_sum += uid as u64;
             }
+
             let effective_end = current.end.or_else(|| {
                 if current.has_terms {
                     None
@@ -163,20 +191,29 @@ pub fn decode_all(
                     fallback.and_then(|(_, end)| end).filter(|end| *end >= clock)
                 }
             });
+
             if let Some(end) = effective_end {
                 stats.current_end_date_sum += end.ordinal_key();
             }
             if let Some(status) = current.squad_status_raw {
                 stats.current_squad_status_sum += status as u64;
             }
-            }
+
+            current_contracts.push(Some(CurrentContractCore {
+                club_uid: current.club_uid,
+                team_id: current.team_id,
+                wage: current.wage,
+                end: effective_end,
+                squad_status_raw: current.squad_status_raw,
+                has_terms: current.has_terms,
+            }));
+        } else {
+            current_contracts.push(None);
         }
     }
 
-    stats
+    (stats, current_contracts)
 }
-
-
 
 fn find_fallback_dates(
     game_db: &[u8],
