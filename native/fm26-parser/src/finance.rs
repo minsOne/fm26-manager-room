@@ -142,7 +142,12 @@ fn locate_chain(
     let mut first_short = None;
 
     while position < record_end {
-        let relative = memchr(TAG, game_db.get(position..record_end)?)?;
+        let Some(search) = game_db.get(position..record_end) else {
+            break;
+        };
+        let Some(relative) = memchr(TAG, search) else {
+            break;
+        };
         let head = position + relative;
         stats.tag_hits += 1;
 
