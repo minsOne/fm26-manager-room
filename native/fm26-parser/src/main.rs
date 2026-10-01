@@ -125,11 +125,19 @@ fn bench(path: PathBuf) -> Result<()> {
         .context("save contains no game_info section")?
         .clone();
     let game_info_bytes = container::read_section(&mapped, &game_info_entry)?;
-    let game_info = metadata::decode_game_info(&game_info_bytes)?;
+    let mut game_info = metadata::decode_game_info(&game_info_bytes)?;
+    if game_info.game_date.is_none() {
+        let summary_entry = index
+            .section("save_game_summary")
+            .context("save contains no save_game_summary section")?
+            .clone();
+        let summary_bytes = container::read_section(&mapped, &summary_entry)?;
+        game_info.game_date = metadata::decode_summary_date(&summary_bytes)?;
+    }
     let game_info_ms = elapsed_ms(started);
     let clock = game_info
         .game_date
-        .context("game_info contains no readable game date")?;
+        .context("FM26 save contains no readable game date")?;
 
     let started = Instant::now();
     let contract_stats = contracts::decode_all(&game_db, &candidates, &club_index, clock);
