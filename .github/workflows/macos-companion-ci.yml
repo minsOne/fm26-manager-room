@@ -1,0 +1,27 @@
+name: macOS Companion CI
+
+on:
+  pull_request:
+    paths:
+      - "companion/macos/**"
+      - ".github/workflows/macos-companion-ci.yml"
+  push:
+    branches:
+      - "feature/manager-room-mvp"
+    paths:
+      - "companion/macos/**"
+      - ".github/workflows/macos-companion-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build --package-path companion/macos -c release
