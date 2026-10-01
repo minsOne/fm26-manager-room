@@ -25,6 +25,8 @@ def main() -> int:
         players = list(career.players())
         players_ms = elapsed_ms(started_players)
         clubs = list(career.clubs())
+        managed_clubs = list(career.managed_clubs())
+        managed_club = managed_clubs[0] if managed_clubs else None
         game_date = career.info.game_date
 
     ca_sum = sum(int(player.ability.current) for player in players)
@@ -79,6 +81,38 @@ def main() -> int:
         player_club_hash = fnv_update(player_club_hash, player.club_name.encode("utf-8"))
         player_club_hash = fnv_update(player_club_hash, b"\xff")
 
+    managed_players = (
+        [player for player in players if managed_club and player.club_uid == managed_club.club_uid]
+        if managed_club else []
+    )
+    managed_snapshot_hash = 0xCBF29CE484222325
+    for player in sorted(managed_players, key=lambda value: value.uid):
+        pa_value = (
+            int(player.ability.potential)
+            if player.ability.potential is not None
+            else int(player.ability.current)
+        )
+        managed_snapshot_hash = fnv_update(
+            managed_snapshot_hash, int(player.uid).to_bytes(4, "little", signed=False)
+        )
+        managed_snapshot_hash = fnv_update(
+            managed_snapshot_hash, (player.name or "").encode("utf-8") + b"\xff"
+        )
+        managed_snapshot_hash = fnv_update(
+            managed_snapshot_hash, int(player.ability.current).to_bytes(2, "little", signed=False)
+        )
+        managed_snapshot_hash = fnv_update(
+            managed_snapshot_hash, pa_value.to_bytes(2, "little", signed=False)
+        )
+        managed_snapshot_hash = fnv_update(
+            managed_snapshot_hash, int(player.transfer_value or 0).to_bytes(4, "little", signed=False)
+        )
+        managed_snapshot_hash = fnv_update(
+            managed_snapshot_hash,
+            int(player.contract.wage if player.contract and player.contract.wage is not None else 0)
+            .to_bytes(4, "little", signed=False),
+        )
+
     report = {
         "openMs": round(open_ms, 3),
         "playersMs": round(players_ms, 3),
@@ -129,6 +163,10 @@ def main() -> int:
             1 for player in players if player.team_club_uid is not None
         ),
         "gameDate": game_date.isoformat() if game_date else None,
+        "managedClubUid": int(managed_club.club_uid) if managed_club else None,
+        "managedClubName": managed_club.club_name if managed_club else None,
+        "managedSquadCount": len(managed_players),
+        "managedPlayerSnapshotHash": managed_snapshot_hash,
         "contractCount": sum(player.contract is not None for player in players),
         "contractWagePresent": sum(
             player.contract is not None and player.contract.wage is not None for player in players
