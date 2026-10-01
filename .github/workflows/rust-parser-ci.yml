@@ -73,9 +73,17 @@ jobs:
           python tools/benchmark_fmsave_players.py /tmp/fm26-rust-bench/public.fm             > /tmp/fm26-rust-bench/python-players.json
           cat /tmp/fm26-rust-bench/python-players.json
 
-      - name: Benchmark Rust container/decompression/player scan
+      - name: Benchmark Rust semantic player + contract reader
         run: |
-          native/fm26-parser/target/release/fm26-manager-room-parser             bench /tmp/fm26-rust-bench/public.fm             > /tmp/fm26-rust-bench/rust.json
+          CLOCK=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("/tmp/fm26-rust-bench/python-players.json").read_text())["gameDate"])
+          PY
+          )
+          native/fm26-parser/target/release/fm26-manager-room-parser \
+            bench /tmp/fm26-rust-bench/public.fm --clock "$CLOCK" \
+            > /tmp/fm26-rust-bench/rust.json
           cat /tmp/fm26-rust-bench/rust.json
 
       - name: Compare timings and correctness
@@ -122,6 +130,18 @@ jobs:
           assert rs["playerClubJoin"]["clubNationSum"] == py_players["resolvedClubNationSum"]
           assert rs["playerClubJoin"]["clubNameHashFnv1a64"] == py_players["resolvedClubNameHashFnv1a64"]
           assert rs["playerClubJoin"]["affiliateRegistrationCount"] == py_players["affiliateRegistrationCount"]
+          assert rs["contracts"]["contracts"] == py_players["contractCount"]
+          assert rs["contracts"]["wagePresent"] == py_players["contractWagePresent"]
+          assert rs["contracts"]["wageSum"] == py_players["contractWageSum"]
+          assert rs["contracts"]["startPresent"] == py_players["contractStartPresent"]
+          assert rs["contracts"]["startCodeSum"] == py_players["contractStartCodeSum"]
+          assert rs["contracts"]["endPresent"] == py_players["contractEndPresent"]
+          assert rs["contracts"]["endCodeSum"] == py_players["contractEndCodeSum"]
+          assert rs["contracts"]["squadStatusPresent"] == py_players["contractSquadStatusPresent"]
+          assert rs["contracts"]["squadStatusSum"] == py_players["contractSquadStatusSum"]
+          assert rs["contracts"]["eventCountSum"] == py_players["contractEventCountSum"]
+          assert rs["contracts"]["teamIdSum"] == py_players["contractTeamIdSum"]
+          assert rs["contracts"]["clubUidSum"] == py_players["contractClubUidSum"]
 
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
@@ -143,8 +163,9 @@ jobs:
                   "namePoolMs": round(rs["namePoolMs"], 3),
                   "personDecodeMs": round(rs["personDecodeMs"], 3),
                   "clubScanMs": round(rs["clubScanMs"], 3),
+                  "contractMs": round(rs["contractMs"], 3),
                   "semanticPlayerMs": round(
-                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"], 3
+                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["contractMs"], 3
                   ),
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
@@ -176,6 +197,11 @@ jobs:
                   "clubNamesEqual": True,
                   "teamResolutionEqual": True,
                   "affiliateResolutionEqual": True,
+                  "contractCountEqual": True,
+                  "contractWageEqual": True,
+                  "contractDatesEqual": True,
+                  "contractSquadStatusEqual": True,
+                  "contractClubEqual": True,
               },
           }
           (root / "comparison.json").write_text(json.dumps(comparison, indent=2))
