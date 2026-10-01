@@ -121,6 +121,23 @@ jobs:
           assert rs["playerClubJoin"]["clubNationSum"] == py_players["resolvedClubNationSum"]
           assert rs["playerClubJoin"]["clubNameHashFnv1a64"] == py_players["resolvedClubNameHashFnv1a64"]
           assert rs["playerClubJoin"]["affiliateRegistrationCount"] == py_players["affiliateRegistrationCount"]
+          assert rs["gameInfo"]["gameDate"]["year"] == py_players["gameDateYear"]
+          assert rs["gameInfo"]["gameDate"]["dayOfYear"] == py_players["gameDateDay"]
+          assert rs["gameInfo"]["dbVersion"] == py_players["dbVersion"]
+          assert rs["contracts"]["playersWithChain"] == py_players["playersWithChain"]
+          assert rs["contracts"]["chainRecords"] == py_players["chainRecords"]
+          assert rs["contracts"]["chainTeamsResolved"] == py_players["chainTeamsResolved"]
+          assert rs["contracts"]["tailsParsed"] == py_players["tailsParsed"]
+          assert rs["contracts"]["chainWageSum"] == py_players["chainWageSum"]
+          assert rs["contracts"]["chainStartDateSum"] == py_players["chainStartDateSum"]
+          assert rs["contracts"]["chainEndDateSum"] == py_players["chainEndDateSum"]
+          assert rs["contracts"]["currentFromChain"] == py_players["currentFromChain"]
+          assert rs["contracts"]["currentWithTerms"] == py_players["currentWithTerms"]
+          assert rs["contracts"]["currentWageSum"] == py_players["currentWageSum"]
+          assert rs["contracts"]["currentEndDateSum"] == py_players["currentEndDateSum"]
+          assert rs["contracts"]["currentSquadStatusSum"] == py_players["currentSquadStatusSum"]
+          assert rs["contracts"]["currentClubUidSum"] == py_players["currentClubUidSum"]
+          assert rs["contracts"]["currentTeamIdSum"] == py_players["currentTeamIdSum"]
 
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
@@ -142,8 +159,10 @@ jobs:
                   "namePoolMs": round(rs["namePoolMs"], 3),
                   "personDecodeMs": round(rs["personDecodeMs"], 3),
                   "clubScanMs": round(rs["clubScanMs"], 3),
+                  "gameInfoMs": round(rs["gameInfoMs"], 3),
+                  "contractDecodeMs": round(rs["contractDecodeMs"], 3),
                   "semanticPlayerMs": round(
-                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"], 3
+                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["gameInfoMs"] + rs["contractDecodeMs"], 3
                   ),
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
@@ -175,6 +194,9 @@ jobs:
                   "clubNamesEqual": True,
                   "teamResolutionEqual": True,
                   "affiliateResolutionEqual": True,
+                  "gameDateEqual": True,
+                  "contractChainEqual": True,
+                  "currentContractEqual": True,
               },
           }
           (root / "comparison.json").write_text(json.dumps(comparison, indent=2))
