@@ -1,8 +1,8 @@
 # Manager Room HTML prototype
 
-Open `index.html` locally or publish the `prototype/` folder through GitHub Pages.
+Interactive static prototype for the FM26 Manager Room concept.
 
-## Included screens
+## Screens
 - Manager Room
 - Matchday Room
 - Squad Room
@@ -12,4 +12,17 @@ Open `index.html` locally or publish the `prototype/` folder through GitHub Page
 - Economy Room
 - AI Coach
 
-All data is illustrative. The purpose is to validate information hierarchy and decision flow before implementation.
+## Live preview
+
+Expected GitHub Pages URL:
+
+https://minsone.github.io/fm26-manager-room/
+
+GitHub Pages must be enabled once under **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+After that, rerun the `Deploy Manager Room Prototype` workflow.
+
+## Source
+
+Open `index.html` locally if Pages is not enabled yet.
+
+All displayed football data is illustrative. This prototype validates information hierarchy, navigation, Coach Confidence, and decision flow before implementation.
