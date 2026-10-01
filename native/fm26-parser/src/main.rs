@@ -116,7 +116,7 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
     let name_pool_ms = elapsed_ms(started);
 
     let started = Instant::now();
-    let person_decode = person::decode_all(&game_db, &candidates, &name_pools)?;
+    let (_people, person_decode) = person::decode_all(&game_db, &candidates, &name_pools)?;
     let person_decode_ms = elapsed_ms(started);
 
     let started = Instant::now();
