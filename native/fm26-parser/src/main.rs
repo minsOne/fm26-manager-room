@@ -3,6 +3,7 @@ mod contract;
 mod container;
 mod names;
 mod managed;
+mod match_history;
 mod person;
 mod player_scan;
 mod snapshot;
@@ -32,12 +33,14 @@ struct BenchReport {
     person_decode_ms: f64,
     club_scan_ms: f64,
     contract_ms: f64,
+    match_history_ms: f64,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
     person_decode: person::PersonDecodeStats,
     club_scan: club::ClubScanStats,
     player_club_join: club::PlayerClubJoinStats,
     contracts: contract::ContractStats,
+    match_history: match_history::MatchHistoryStats,
 }
 
 fn main() -> Result<()> {
@@ -135,6 +138,8 @@ fn snapshot_command(
     };
     let (contracts, _contract_stats) =
         contract::decode_all(&game_db, &candidates, &club_index, clock);
+    let (recent_minutes, _match_stats) =
+        match_history::recent_minutes_all(&game_db, &candidates, clock);
 
     let value = snapshot::build(
         index.save_name,
@@ -143,6 +148,7 @@ fn snapshot_command(
         &people,
         &club_index,
         &contracts,
+        &recent_minutes,
         clock,
         resolved_club_uid,
     );
@@ -209,6 +215,11 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
     let (_contracts, contracts) = contract::decode_all(&game_db, &candidates, &club_index, clock);
     let contract_ms = elapsed_ms(started);
 
+    let started = Instant::now();
+    let (_recent_minutes, match_history) =
+        match_history::recent_minutes_all(&game_db, &candidates, clock);
+    let match_history_ms = elapsed_ms(started);
+
     let report = BenchReport {
         file: path.display().to_string(),
         file_bytes: metadata.len(),
@@ -224,12 +235,14 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
         person_decode_ms,
         club_scan_ms,
         contract_ms,
+        match_history_ms,
         total_ms: elapsed_ms(total_started),
         player_scan,
         person_decode,
         club_scan,
         player_club_join,
         contracts,
+        match_history,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
