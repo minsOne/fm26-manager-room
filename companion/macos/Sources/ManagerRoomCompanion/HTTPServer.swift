@@ -5,13 +5,19 @@ final class LocalHTTPServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "fm26.manager-room.http")
     private let store: SnapshotStore
+    private let companionState: CompanionState
 
-    init(port: UInt16, store: SnapshotStore) throws {
+    init(
+        port: UInt16,
+        store: SnapshotStore,
+        companionState: CompanionState
+    ) throws {
         guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
             throw ServerError.invalidPort
         }
-        self.listener = try NWListener(using: .tcp, on: endpointPort)
+        listener = try NWListener(using: .tcp, on: endpointPort)
         self.store = store
+        self.companionState = companionState
     }
 
     func start() {
@@ -33,8 +39,15 @@ final class LocalHTTPServer: @unchecked Sendable {
         }
 
         connection.start(queue: queue)
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
-            guard let self, let data, let request = String(data: data, encoding: .utf8) else {
+        connection.receive(
+            minimumIncompleteLength: 1,
+            maximumLength: 16_384
+        ) { [weak self] data, _, _, _ in
+            guard
+                let self,
+                let data,
+                let request = String(data: data, encoding: .utf8)
+            else {
                 connection.cancel()
                 return
             }
@@ -43,7 +56,10 @@ final class LocalHTTPServer: @unchecked Sendable {
     }
 
     private func respond(to request: String, on connection: NWConnection) {
-        let firstLine = request.split(separator: "\r\n", maxSplits: 1).first.map(String.init) ?? ""
+        let firstLine = request
+            .split(separator: "\r\n", maxSplits: 1)
+            .first
+            .map(String.init) ?? ""
         let parts = firstLine.split(separator: " ")
         let method = parts.first.map(String.init) ?? ""
         let path = parts.dropFirst().first.map(String.init) ?? "/"
@@ -54,46 +70,105 @@ final class LocalHTTPServer: @unchecked Sendable {
         }
 
         guard method == "GET" else {
-            sendJSON(status: "405 Method Not Allowed", value: ["error": "read-only companion"], on: connection)
+            sendJSON(
+                status: "405 Method Not Allowed",
+                value: ["error": "read-only companion"],
+                on: connection
+            )
             return
         }
 
         switch path {
         case "/api/health":
             let probe = FMProcessProbe.probe()
-            let value: [String: Any] = [
+            let parser = companionState.snapshot()
+            var value: [String: Any] = [
                 "status": "ok",
                 "platform": "macOS",
                 "snapshotAvailable": store.exists,
                 "fmRunning": probe.running,
-                "accessMode": probe.accessMode
+                "accessMode": probe.accessMode,
+                "parsing": parser.parsing,
             ]
+            value["lastParseDurationMs"] = parser.lastDurationMilliseconds ?? NSNull()
+            value["lastSavePath"] = parser.lastSavePath ?? NSNull()
+            value["lastParseError"] = parser.lastError ?? NSNull()
+            value["watchedDirectory"] = parser.watchedDirectory ?? NSNull()
             sendJSON(status: "200 OK", value: value, on: connection)
+
+        case "/api/parser":
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let data = (try? encoder.encode(companionState.snapshot())) ?? Data("{}".utf8)
+            send(
+                status: "200 OK",
+                type: "application/json; charset=utf-8",
+                body: data,
+                on: connection
+            )
 
         case "/api/runtime":
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = (try? encoder.encode(FMProcessProbe.probe())) ?? Data("{}".utf8)
-            send(status: "200 OK", type: "application/json; charset=utf-8", body: data, on: connection)
+            send(
+                status: "200 OK",
+                type: "application/json; charset=utf-8",
+                body: data,
+                on: connection
+            )
 
         case "/api/snapshot":
             guard store.exists, let data = try? store.read() else {
-                sendJSON(status: "404 Not Found", value: ["error": "snapshot unavailable"], on: connection)
+                sendJSON(
+                    status: "404 Not Found",
+                    value: ["error": "snapshot unavailable"],
+                    on: connection
+                )
                 return
             }
-            send(status: "200 OK", type: "application/json; charset=utf-8", body: data, on: connection)
+            send(
+                status: "200 OK",
+                type: "application/json; charset=utf-8",
+                body: data,
+                on: connection
+            )
 
         default:
-            sendJSON(status: "404 Not Found", value: ["error": "not found"], on: connection)
+            sendJSON(
+                status: "404 Not Found",
+                value: ["error": "not found"],
+                on: connection
+            )
         }
     }
 
-    private func sendJSON(status: String, value: [String: Any], on connection: NWConnection) {
-        let data = (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])) ?? Data("{}".utf8)
-        send(status: status, type: "application/json; charset=utf-8", body: data, on: connection)
+    private func sendJSON(
+        status: String,
+        value: [String: Any],
+        on connection: NWConnection
+    ) {
+        let data = (
+            try? JSONSerialization.data(
+                withJSONObject: value,
+                options: [.sortedKeys]
+            )
+        ) ?? Data("{}".utf8)
+        send(
+            status: status,
+            type: "application/json; charset=utf-8",
+            body: data,
+            on: connection
+        )
     }
 
-    private func send(status: String, type: String, body: Data, on connection: NWConnection) {
+    private func send(
+        status: String,
+        type: String,
+        body: Data,
+        on connection: NWConnection
+    ) {
         let headers = [
             "HTTP/1.1 \(status)",
             "Content-Type: \(type)",
@@ -104,14 +179,17 @@ final class LocalHTTPServer: @unchecked Sendable {
             "Cache-Control: no-store",
             "Connection: close",
             "",
-            ""
+            "",
         ].joined(separator: "\r\n")
 
         var response = Data(headers.utf8)
         response.append(body)
-        connection.send(content: response, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
+        connection.send(
+            content: response,
+            completion: .contentProcessed { _ in
+                connection.cancel()
+            }
+        )
     }
 
     private func isLoopback(_ endpoint: NWEndpoint) -> Bool {
