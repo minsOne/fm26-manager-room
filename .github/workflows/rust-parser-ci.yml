@@ -79,6 +79,52 @@ jobs:
           native/fm26-parser/target/release/fm26-manager-room-parser             bench /tmp/fm26-rust-bench/public.fm             > /tmp/fm26-rust-bench/rust.json
           cat /tmp/fm26-rust-bench/rust.json
 
+      - name: Generate Rust managed-club quick snapshot
+        run: |
+          native/fm26-parser/target/release/fm26-manager-room-parser \
+            snapshot /tmp/fm26-rust-bench/public.fm \
+            > /tmp/fm26-rust-bench/quick-snapshot.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/fm26-rust-bench")
+          snapshot = json.loads((root / "quick-snapshot.json").read_text())
+          reference = json.loads((root / "python-players.json").read_text())
+
+          players = snapshot["players"]
+          assert snapshot["manager"]["clubUid"] == reference["managedClubUid"]
+          assert snapshot["manager"]["club"] == reference["managedClubName"]
+          assert snapshot["manager"]["name"] == reference["managerName"]
+          assert len(players) == reference["managedPlayerCount"]
+          assert sum(int(player["id"]) for player in players) == reference["managedPlayerUidSum"]
+          assert sum(player["ca"] for player in players) == reference["managedPlayerCaSum"]
+          assert sum(player["wage"] for player in players) == reference["managedPlayerWageSum"]
+
+          value = 0xCBF29CE484222325
+          prime = 0x100000001B3
+          mask = (1 << 64) - 1
+          def update(value, data):
+              for byte in data:
+                  value ^= byte
+                  value = (value * prime) & mask
+              return value
+
+          for player in sorted(players, key=lambda item: int(item["id"])):
+              value = update(value, int(player["id"]).to_bytes(4, "little"))
+              value = update(value, player["name"].encode("utf-8"))
+              value = update(value, b"\xff")
+
+          assert value == reference["managedPlayerNameHashFnv1a64"]
+          print(json.dumps({
+              "club": snapshot["manager"]["club"],
+              "players": len(players),
+              "caSum": sum(player["ca"] for player in players),
+              "wageSum": sum(player["wage"] for player in players),
+              "source": snapshot["source"],
+          }, indent=2))
+          PY
+
       - name: Compare timings and correctness
         run: |
           python - <<'PY'
@@ -221,5 +267,6 @@ jobs:
             /tmp/fm26-rust-bench/python-players.json
             /tmp/fm26-rust-bench/rust.json
             /tmp/fm26-rust-bench/comparison.json
+            /tmp/fm26-rust-bench/quick-snapshot.json
           if-no-files-found: warn
           retention-days: 7
