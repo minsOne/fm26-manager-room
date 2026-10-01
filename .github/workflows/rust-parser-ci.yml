@@ -110,6 +110,17 @@ jobs:
           assert rs["personDecode"]["personalitySums"] == py_players["personalitySums"]
           assert rs["personDecode"]["traitBitsXor"] == py_players["traitBitsXor"]
           assert rs["personDecode"]["traitPopcountSum"] == py_players["traitPopcountSum"]
+          assert rs["clubScan"]["clubs"] == py_players["clubCount"]
+          assert rs["clubScan"]["uidSum"] == py_players["clubUidSum"]
+          assert rs["clubScan"]["nationSum"] == py_players["clubNationSum"]
+          assert rs["clubScan"]["nameHashFnv1a64"] == py_players["clubNameHashFnv1a64"]
+          assert rs["playerClubJoin"]["withTeam"] == py_players["teamPresent"]
+          assert rs["playerClubJoin"]["teamResolved"] == py_players["teamResolved"]
+          assert rs["playerClubJoin"]["teamIdSum"] == py_players["teamIdSum"]
+          assert rs["playerClubJoin"]["clubUidSum"] == py_players["resolvedClubUidSum"]
+          assert rs["playerClubJoin"]["clubNationSum"] == py_players["resolvedClubNationSum"]
+          assert rs["playerClubJoin"]["clubNameHashFnv1a64"] == py_players["resolvedClubNameHashFnv1a64"]
+          assert rs["playerClubJoin"]["affiliateRegistrationCount"] == py_players["affiliateRegistrationCount"]
 
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
@@ -130,7 +141,10 @@ jobs:
                   "playerScanMs": round(rs["playerScanMs"], 3),
                   "namePoolMs": round(rs["namePoolMs"], 3),
                   "personDecodeMs": round(rs["personDecodeMs"], 3),
-                  "semanticPlayerMs": round(rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"], 3),
+                  "clubScanMs": round(rs["clubScanMs"], 3),
+                  "semanticPlayerMs": round(
+                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"], 3
+                  ),
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
               },
@@ -157,6 +171,10 @@ jobs:
                   "nationEqual": True,
                   "personalityEqual": True,
                   "traitBitsEqual": True,
+                  "clubsEqual": True,
+                  "clubNamesEqual": True,
+                  "teamResolutionEqual": True,
+                  "affiliateResolutionEqual": True,
               },
           }
           (root / "comparison.json").write_text(json.dumps(comparison, indent=2))
