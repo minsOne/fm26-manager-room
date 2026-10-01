@@ -1,6 +1,7 @@
 mod club;
 mod contract;
 mod finance;
+mod fixture;
 mod container;
 mod names;
 mod managed;
@@ -36,6 +37,9 @@ struct BenchReport {
     contract_ms: f64,
     match_history_ms: f64,
     finance_ms: f64,
+    span_decompress_ms: f64,
+    fixture_ms: f64,
+    span_bytes: usize,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
     person_decode: person::PersonDecodeStats,
@@ -44,6 +48,7 @@ struct BenchReport {
     contracts: contract::ContractStats,
     match_history: match_history::MatchHistoryStats,
     finance: finance::FinanceStats,
+    fixtures: fixture::FixtureStats,
 }
 
 fn main() -> Result<()> {
@@ -144,6 +149,9 @@ fn snapshot_command(
     let (recent_minutes, _match_stats) =
         match_history::recent_minutes_all(&game_db, &candidates, clock);
     let (finances, _finance_stats) = finance::read_latest(&game_db, &club_index);
+    let span = container::read_unlisted_after(&mapped, &index, "non_pl_hist_ls")?;
+    let (fixtures, _fixture_stats) =
+        fixture::managed_upcoming(&span, &club_index, resolved_club_uid, clock, 12);
 
     let value = snapshot::build(
         index.save_name,
@@ -154,6 +162,7 @@ fn snapshot_command(
         &contracts,
         &recent_minutes,
         &finances,
+        fixtures,
         clock,
         resolved_club_uid,
     );
@@ -229,6 +238,19 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
     let (_finances, finance) = finance::read_latest(&game_db, &club_index);
     let finance_ms = elapsed_ms(started);
 
+    let started = Instant::now();
+    let span = container::read_unlisted_after(&mapped, &index, "non_pl_hist_ls")?;
+    let span_decompress_ms = elapsed_ms(started);
+    let span_bytes = span.len();
+
+    let started = Instant::now();
+    let managed_for_fixture = managed::detect(&mapped, &index, &game_db, &club_index, clock)?
+        .map(|row| row.club_uid)
+        .unwrap_or(0);
+    let (_fixture_rows, fixtures) =
+        fixture::managed_upcoming(&span, &club_index, managed_for_fixture, clock, 12);
+    let fixture_ms = elapsed_ms(started);
+
     let report = BenchReport {
         file: path.display().to_string(),
         file_bytes: metadata.len(),
@@ -246,6 +268,9 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
         contract_ms,
         match_history_ms,
         finance_ms,
+        span_decompress_ms,
+        fixture_ms,
+        span_bytes,
         total_ms: elapsed_ms(total_started),
         player_scan,
         person_decode,
@@ -254,6 +279,7 @@ fn bench(path: PathBuf, clock: contract::GameDate) -> Result<()> {
         contracts,
         match_history,
         finance,
+        fixtures,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
