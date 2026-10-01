@@ -355,6 +355,26 @@ function renderContracts(){
 
 function renderEconomy(){
   const rows=marketHealth(state.snapshot);
+  if(!rows.length){
+    const finance=state.snapshot.clubFinance;
+    return `
+      <div class="grid">
+        <article class="card s6"><div class="head"><h2>Managed club finance</h2><span class="tag info">REAL SAVE DATA</span></div><div class="body">
+          ${finance? `
+            <div class="metrics">
+              ${metric("BALANCE",money(finance.balance),"")}
+              ${metric("TRANSFER",money(finance.transferBudgetRemaining),"")}
+              ${metric("WAGE / W",money(finance.wageBudgetWeekly),"")}
+              ${metric("PAYROLL / W",money(finance.wagePayrollWeekly),"")}
+            </div>`
+            : '<span class="tag warn">Finance unavailable</span>'}
+        </div></article>
+        <article class="card s6"><div class="head"><h2>World economy mapping</h2><span class="tag warn">IN PROGRESS</span></div><div class="body">
+          <p style="font-size:10px;color:var(--muted)">클럽 재정은 실제 세이브에서 읽었습니다. 리그 단위 Saudi / World Market Health는 club → competition 매핑이 검증된 뒤 활성화합니다. 데모 시장 수치는 실제 세이브에 섞지 않습니다.</p>
+        </div></article>
+      </div>
+    `;
+  }
   const preview=rebalancePreview(state.snapshot,"saudi",state.economyPreset);
   return `
     <div class="grid">
