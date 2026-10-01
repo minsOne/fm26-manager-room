@@ -161,6 +161,14 @@ jobs:
           assert rs["matchHistory"]["playersWithHistory"] == py_players["recentMinutesKnownPlayers"]
           assert rs["matchHistory"]["last14Sum"] == py_players["recent14Sum"]
           assert rs["matchHistory"]["last5Sum"] == py_players["recent5Sum"]
+          assert rs["finance"]["clubsWithSeries"] == py_players["financeLatestClubs"]
+          assert rs["finance"]["totalRows"] == py_players["financeRows"]
+          assert rs["finance"]["balanceSum"] == py_players["financeBalanceSum"]
+          assert rs["finance"]["transferAllocatedSum"] == py_players["financeTransferAllocatedSum"]
+          assert rs["finance"]["transferRemainingSum"] == py_players["financeTransferRemainingSum"]
+          assert rs["finance"]["wageBudgetSum"] == py_players["financeWageBudgetSum"]
+          assert rs["finance"]["wagePayrollSum"] == py_players["financeWagePayrollSum"]
+          assert rs["finance"]["netSum"] == py_players["financeNetSum"]
           assert snapshot["manager"]["clubUid"] == py_players["managedClubUid"]
           assert snapshot["manager"]["club"] == py_players["managedClubName"]
           assert len(snapshot["players"]) == py_players["managedSquadCount"]
@@ -205,8 +213,9 @@ jobs:
                   "clubScanMs": round(rs["clubScanMs"], 3),
                   "contractMs": round(rs["contractMs"], 3),
                   "matchHistoryMs": round(rs["matchHistoryMs"], 3),
+                  "financeMs": round(rs["financeMs"], 3),
                   "semanticPlayerMs": round(
-                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["contractMs"] + rs["matchHistoryMs"], 3
+                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["contractMs"] + rs["matchHistoryMs"] + rs["financeMs"], 3
                   ),
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
@@ -245,6 +254,8 @@ jobs:
                   "contractClubEqual": True,
                   "recentMatchRowsEqual": True,
                   "recentMinutesEqual": True,
+                  "financeLatestEqual": True,
+                  "financeBudgetsEqual": True,
                   "managedSnapshotCountEqual": True,
                   "managedSnapshotCoreHashEqual": True,
               },
