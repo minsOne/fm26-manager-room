@@ -59,6 +59,11 @@ pub struct FinanceStats {
     pub wage_budget_sum: u64,
     pub wage_payroll_sum: u64,
     pub net_sum: i64,
+    pub tag_hits: u64,
+    pub normal_count_candidates: u64,
+    pub short_count_candidates: u64,
+    pub chains_in_bounds: u64,
+    pub row_validation_passes: u64,
 }
 
 pub fn read_latest(
@@ -77,7 +82,7 @@ pub fn read_latest(
         stats.clubs_searched += 1;
 
         let Some((head, row_count)) =
-            locate_chain(game_db, club.record_start, club.record_end)
+            locate_chain(game_db, club.record_start, club.record_end, &mut stats)
         else {
             continue;
         };
@@ -123,6 +128,7 @@ fn locate_chain(
     game_db: &[u8],
     record_start: usize,
     record_end: usize,
+    stats: &mut FinanceStats,
 ) -> Option<(usize, u32)> {
     if record_end > game_db.len()
         || record_start >= record_end
@@ -138,6 +144,7 @@ fn locate_chain(
     while position < record_end {
         let relative = memchr(TAG, game_db.get(position..record_end)?)?;
         let head = position + relative;
+        stats.tag_hits += 1;
 
         let Some(count_at) = head.checked_sub(COUNT_OFFSET_BEFORE_HEAD) else {
             position = head + 1;
@@ -152,6 +159,12 @@ fn locate_chain(
             position = head + 1;
             continue;
         };
+        if (COUNT_MIN..=COUNT_MAX).contains(&row_count) {
+            stats.normal_count_candidates += 1;
+        } else if (SHORT_COUNT_MIN..=SHORT_COUNT_MAX).contains(&row_count) {
+            stats.short_count_candidates += 1;
+        }
+
         let Some(chain_bytes) = ROW_BYTES.checked_mul(row_count as usize) else {
             position = head + 1;
             continue;
@@ -164,9 +177,11 @@ fn locate_chain(
             position = head + 1;
             continue;
         }
+        stats.chains_in_bounds += 1;
 
         if (COUNT_MIN..=COUNT_MAX).contains(&row_count) {
             if rows_check_out(game_db, head, chain_end, false) {
+                stats.row_validation_passes += 1;
                 if first_normal.is_none() {
                     first_normal = Some((head, row_count));
                 }
@@ -177,6 +192,7 @@ fn locate_chain(
             && (SHORT_COUNT_MIN..=SHORT_COUNT_MAX).contains(&row_count)
             && rows_check_out(game_db, head, chain_end, true)
         {
+            stats.row_validation_passes += 1;
             first_short = Some((head, row_count));
         }
 
