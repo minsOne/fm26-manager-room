@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from dataclasses import astuple
 from pathlib import Path
 
 import fmsave
@@ -38,6 +39,14 @@ def main() -> int:
         "playerCount": len(players),
         "currentAbilitySum": ca_sum,
         "potentialAbilityRawSum": pa_raw_sum,
+        "positionRatingSum": sum(sum(astuple(player.positions)) for player in players),
+        "rawAttributeSum": sum(sum(astuple(player.raw_attributes)) for player in players),
+        "rawLeftFootSum": sum(int(player.raw_left_foot) for player in players),
+        "rawRightFootSum": sum(int(player.raw_right_foot) for player in players),
+        "transferValueSum": sum(int(player.transfer_value or 0) for player in players),
+        "rawMatchSharpnessSum": sum(int(player.raw_match_sharpness) for player in players),
+        "rawConditionSum": sum(int(player.raw_condition) for player in players),
+        "heightSum": sum(int(player.height_cm) for player in players),
     }
     print(json.dumps(report, indent=2))
     return 0
