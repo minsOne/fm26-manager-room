@@ -2,6 +2,7 @@ use crate::club::ClubIndex;
 use crate::contract::{ContractCore, GameDate};
 use crate::match_history::RecentMinutes;
 use crate::finance::FinanceLatest;
+use crate::fixture::FixtureRow;
 use crate::person::PersonCore;
 use crate::player_scan::PlayerCandidate;
 use serde::Serialize;
@@ -41,7 +42,7 @@ pub struct Snapshot {
     pub manager: Manager,
     pub formation: Formation,
     pub club_finance: Option<ClubFinance>,
-    pub fixtures: Vec<serde_json::Value>,
+    pub fixtures: Vec<FixtureRow>,
     pub players: Vec<PlayerRow>,
     pub external_candidates: Vec<serde_json::Value>,
     pub loan_offers: Vec<serde_json::Value>,
@@ -230,6 +231,7 @@ pub fn build(
     contracts: &[Option<ContractCore>],
     recent_minutes: &[RecentMinutes],
     finances: &[FinanceLatest],
+    fixtures: Vec<FixtureRow>,
     clock: GameDate,
     managed_club_uid: u32,
 ) -> Snapshot {
@@ -271,7 +273,7 @@ pub fn build(
                 contracts: "native",
                 recent_minutes: "native-match-history",
                 fatigue: "runtime-bridge-required",
-                fixtures: "pending-native-fixture-reader",
+                fixtures: "native-managed-upcoming",
                 economy: "managed-club-native-finance",
             },
         },
@@ -298,7 +300,7 @@ pub fn build(
                 wage_payroll_weekly: row.wage_payroll_weekly,
                 finance_rows: row.rows,
             }),
-        fixtures: Vec::new(),
+        fixtures,
         players,
         external_candidates: Vec::new(),
         loan_offers: Vec::new(),
