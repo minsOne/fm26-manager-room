@@ -1,5 +1,7 @@
 mod club;
 mod container;
+mod contracts;
+mod metadata;
 mod names;
 mod person;
 mod player_scan;
@@ -28,11 +30,15 @@ struct BenchReport {
     name_pool_ms: f64,
     person_decode_ms: f64,
     club_scan_ms: f64,
+    game_info_ms: f64,
+    contract_decode_ms: f64,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
     person_decode: person::PersonDecodeStats,
     club_scan: club::ClubScanStats,
     player_club_join: club::PlayerClubJoinStats,
+    game_info: metadata::GameInfo,
+    contracts: contracts::ContractStats,
 }
 
 fn main() -> Result<()> {
@@ -113,6 +119,22 @@ fn bench(path: PathBuf) -> Result<()> {
     let club_scan_ms = elapsed_ms(started);
     let player_club_join = club_index.player_join_stats(&candidates);
 
+    let started = Instant::now();
+    let game_info_entry = index
+        .section("game_info")
+        .context("save contains no game_info section")?
+        .clone();
+    let game_info_bytes = container::read_section(&mapped, &game_info_entry)?;
+    let game_info = metadata::decode_game_info(&game_info_bytes)?;
+    let game_info_ms = elapsed_ms(started);
+    let clock = game_info
+        .game_date
+        .context("game_info contains no readable game date")?;
+
+    let started = Instant::now();
+    let contract_stats = contracts::decode_all(&game_db, &candidates, &club_index, clock);
+    let contract_decode_ms = elapsed_ms(started);
+
     let report = BenchReport {
         file: path.display().to_string(),
         file_bytes: metadata.len(),
@@ -127,11 +149,15 @@ fn bench(path: PathBuf) -> Result<()> {
         name_pool_ms,
         person_decode_ms,
         club_scan_ms,
+        game_info_ms,
+        contract_decode_ms,
         total_ms: elapsed_ms(total_started),
         player_scan,
         person_decode,
         club_scan,
         player_club_join,
+        game_info,
+        contracts: contract_stats,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
