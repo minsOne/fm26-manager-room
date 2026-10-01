@@ -11,6 +11,7 @@ on:
     branches:
       - "perf/rust-parser-core"
       - "perf/rust-player-semantics"
+      - "perf/rust-semantic-player-reader"
     paths:
       - "native/fm26-parser/**"
       - "tools/benchmark_fmsave_section.py"
