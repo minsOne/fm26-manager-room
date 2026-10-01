@@ -95,15 +95,8 @@ jobs:
           print(data["gameDate"])
           PY
           )
-          CLUB_UID=$(python - <<'PY'
-          import json
-          from pathlib import Path
-          data=json.loads(Path("/tmp/fm26-rust-bench/python-players.json").read_text())
-          print(data["managedClubUid"])
-          PY
-          )
           native/fm26-parser/target/release/fm26-manager-room-parser \
-            snapshot /tmp/fm26-rust-bench/public.fm --clock "$CLOCK" --club-uid "$CLUB_UID" \
+            snapshot /tmp/fm26-rust-bench/public.fm --clock "$CLOCK" \
             > /tmp/fm26-rust-bench/rust-snapshot.json
 
       - name: Compare timings and correctness
