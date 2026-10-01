@@ -6,7 +6,7 @@ internal sealed class RuntimeProbe
 {
     public RuntimeProbeResult Probe(Process process)
     {
-        var executable = ModuleFingerprint.Main(process);
+        var executable = ModuleFingerprint.FromMainModule(process);
         var gameAssembly = ModuleFingerprint.Find(process, "GameAssembly.dll");
         var gamePlugin = ModuleFingerprint.Find(process, "game_plugin.dll");
 
