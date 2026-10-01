@@ -25,6 +25,7 @@ def main() -> int:
         players = list(career.players())
         players_ms = elapsed_ms(started_players)
         clubs = list(career.clubs())
+        game_date = career.info.game_date
 
     ca_sum = sum(int(player.ability.current) for player in players)
     pa_raw_sum = 0
@@ -127,6 +128,54 @@ def main() -> int:
         "affiliateRegistrationCount": sum(
             1 for player in players if player.team_club_uid is not None
         ),
+        "gameDate": game_date.isoformat() if game_date else None,
+        "contractCount": sum(player.contract is not None for player in players),
+        "contractWagePresent": sum(
+            player.contract is not None and player.contract.wage is not None for player in players
+        ),
+        "contractWageSum": sum(
+            int(player.contract.wage or 0) for player in players if player.contract is not None
+        ),
+        "contractStartPresent": sum(
+            player.contract is not None and player.contract.start is not None for player in players
+        ),
+        "contractStartCodeSum": sum(
+            date_code(player.contract.start)
+            for player in players
+            if player.contract is not None and player.contract.start is not None
+        ),
+        "contractEndPresent": sum(
+            player.contract is not None and player.contract.end is not None for player in players
+        ),
+        "contractEndCodeSum": sum(
+            date_code(player.contract.end)
+            for player in players
+            if player.contract is not None and player.contract.end is not None
+        ),
+        "contractSquadStatusPresent": sum(
+            player.contract is not None and player.contract.squad_status is not None
+            for player in players
+        ),
+        "contractSquadStatusSum": sum(
+            int(player.contract.squad_status.raw)
+            for player in players
+            if player.contract is not None and player.contract.squad_status is not None
+        ),
+        "contractEventCountSum": sum(
+            int(player.contract.event_count or 0)
+            for player in players
+            if player.contract is not None
+        ),
+        "contractTeamIdSum": sum(
+            int(player.contract.team_id or 0)
+            for player in players
+            if player.contract is not None
+        ),
+        "contractClubUidSum": sum(
+            int(player.contract.club_uid or 0)
+            for player in players
+            if player.contract is not None
+        ),
     }
     print(json.dumps(report, indent=2))
     return 0
@@ -148,6 +197,10 @@ def xor_values(values) -> int:
     for value in values:
         result ^= value
     return result
+
+
+def date_code(value) -> int:
+    return int(value.year) * 1000 + int(value.strftime("%j"))
 
 
 def elapsed_ms(started: float) -> float:
