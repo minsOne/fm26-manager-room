@@ -99,6 +99,16 @@ jobs:
           assert rs["playerScan"]["rawMatchSharpnessSum"] == py_players["rawMatchSharpnessSum"]
           assert rs["playerScan"]["rawConditionSum"] == py_players["rawConditionSum"]
           assert rs["playerScan"]["heightSum"] == py_players["heightSum"]
+          assert rs["personDecode"]["decoded"] == py_players["personDecoded"]
+          assert rs["personDecode"]["missing"] == py_players["personMissing"]
+          assert rs["personDecode"]["namePresent"] == py_players["namePresent"]
+          assert rs["personDecode"]["nameHashFnv1a64"] == py_players["nameHashFnv1a64"]
+          assert rs["personDecode"]["birthYearSum"] == py_players["birthYearSum"]
+          assert rs["personDecode"]["birthDaySum"] == py_players["birthDaySum"]
+          assert rs["personDecode"]["nationIdSum"] == py_players["nationIdSum"]
+          assert rs["personDecode"]["personalitySums"] == py_players["personalitySums"]
+          assert rs["personDecode"]["traitBitsXor"] == py_players["traitBitsXor"]
+          assert rs["personDecode"]["traitPopcountSum"] == py_players["traitPopcountSum"]
 
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
@@ -117,6 +127,9 @@ jobs:
                   "indexMs": round(rs["indexMs"], 3),
                   "decompressGameDbMs": round(rs["decompressGameDbMs"], 3),
                   "playerScanMs": round(rs["playerScanMs"], 3),
+                  "namePoolMs": round(rs["namePoolMs"], 3),
+                  "personDecodeMs": round(rs["personDecodeMs"], 3),
+                  "semanticPlayerMs": round(rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"], 3),
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
               },
@@ -137,6 +150,12 @@ jobs:
                   "sharpnessSumEqual": True,
                   "conditionSumEqual": True,
                   "heightSumEqual": True,
+                  "personDecodedEqual": True,
+                  "nameHashEqual": True,
+                  "birthDateEqual": True,
+                  "nationEqual": True,
+                  "personalityEqual": True,
+                  "traitBitsEqual": True,
               },
           }
           (root / "comparison.json").write_text(json.dumps(comparison, indent=2))
