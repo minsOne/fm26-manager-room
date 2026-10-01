@@ -61,7 +61,7 @@ pub fn decode_all(
     game_db: &[u8],
     candidates: &[PlayerCandidate],
     pools: &NamePools,
-) -> Result<PersonDecodeStats> {
+) -> Result<(Vec<Option<PersonCore>>, PersonDecodeStats)> {
     let mut decoded = 0usize;
     let mut missing = 0usize;
     let mut name_present = 0usize;
@@ -74,6 +74,7 @@ pub fn decode_all(
     let mut trait_popcount_sum = 0u64;
     let mut relation_count_sum = 0u64;
     let mut sample = Vec::new();
+    let mut people = Vec::with_capacity(candidates.len());
 
     for (index, candidate) in candidates.iter().enumerate() {
         let window_end = candidates
@@ -81,7 +82,8 @@ pub fn decode_all(
             .map(|next| next.record_offset)
             .unwrap_or(game_db.len());
 
-        match decode_one(game_db, candidate.record_offset, window_end, pools)? {
+        let decoded_person = decode_one(game_db, candidate.record_offset, window_end, pools)?;
+        match decoded_person.as_ref() {
             Some(person) => {
                 decoded += 1;
                 if let Some(name) = person.name.as_deref() {
@@ -102,14 +104,15 @@ pub fn decode_all(
                 relation_count_sum += person.relation_count as u64;
 
                 if sample.len() < 8 {
-                    sample.push(person);
+                    sample.push(person.clone());
                 }
             }
             None => missing += 1,
         }
+        people.push(decoded_person);
     }
 
-    Ok(PersonDecodeStats {
+    Ok((people, PersonDecodeStats {
         decoded,
         missing,
         name_present,
@@ -122,7 +125,7 @@ pub fn decode_all(
         trait_popcount_sum,
         relation_count_sum,
         sample,
-    })
+    }))
 }
 
 fn decode_one(
