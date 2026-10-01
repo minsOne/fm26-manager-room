@@ -1,0 +1,41 @@
+name: Python FM26 Reader Profile
+
+on:
+  push:
+    branches:
+      - "perf/rust-save-parser"
+    paths:
+      - "tools/profile_fmsave_readers.py"
+      - ".github/workflows/python-reader-profile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: |
+          python -m pip install "gdown==5.2.0"
+          python -m pip install "git+https://github.com/rhiever/fmsave.git@97ac7fe5991fa93f05e42e32f02f37e4c1874d61"
+      - run: |
+          mkdir -p /tmp/fm26-profile
+          python -m gdown --id 1UZlBHKpEae416lx8apbkug-pmZH7RMKd -O /tmp/fm26-profile/public.fm
+      - name: Profile readers
+        run: |
+          python tools/profile_fmsave_readers.py /tmp/fm26-profile/public.fm | tee /tmp/fm26-profile/profile.json
+      - if: always()
+        run: rm -f /tmp/fm26-profile/public.fm
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-reader-profile
+          path: /tmp/fm26-profile/profile.json
+          retention-days: 7
+          if-no-files-found: warn
