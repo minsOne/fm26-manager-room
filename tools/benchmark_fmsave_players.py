@@ -275,6 +275,19 @@ def main() -> int:
         "fixtureRows": len(fixtures),
         "managedUpcomingFixtureCount": len(managed_upcoming),
         "managedUpcomingFixtureHash": fixture_hash,
+        "managedUpcomingFixtureCore": [
+            {
+                "date": fixture.date.isoformat(),
+                "homeTeamId": int(fixture.home_team_id),
+                "awayTeamId": int(fixture.away_team_id),
+                "home": fixture.home_club_uid == managed_club.club_uid,
+                "opponentClubUid": int(
+                    (fixture.away_club_uid if fixture.home_club_uid == managed_club.club_uid
+                     else fixture.home_club_uid) or 0
+                ),
+            }
+            for fixture in managed_upcoming
+        ],
         "contractCount": sum(player.contract is not None for player in players),
         "contractWagePresent": sum(
             player.contract is not None and player.contract.wage is not None for player in players
