@@ -10,10 +10,13 @@ mod metadata;
 mod person;
 mod player_scan;
 mod snapshot;
+mod stage;
+mod competition;
 
 use anyhow::{bail, Context, Result};
 use memmap2::MmapOptions;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::path::PathBuf;
@@ -40,6 +43,8 @@ struct BenchReport {
     finance_ms: f64,
     span_decompress_ms: f64,
     fixture_ms: f64,
+    stage_ms: f64,
+    competition_ms: f64,
     span_bytes: usize,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
@@ -50,6 +55,8 @@ struct BenchReport {
     match_history: match_history::MatchHistoryStats,
     finance: finance::FinanceStats,
     fixtures: fixture::FixtureStats,
+    stages: stage::StageStats,
+    competitions: competition::CompetitionStats,
 }
 
 fn main() -> Result<()> {
@@ -79,6 +86,7 @@ fn main() -> Result<()> {
             let mut clock = None;
             let mut club_uid = None;
             let mut pretty = false;
+            let mut competition_names_path: Option<PathBuf> = None;
             while let Some(flag) = args.next() {
                 match flag.as_str() {
                     "--clock" => {
@@ -89,6 +97,11 @@ fn main() -> Result<()> {
                         let value = args.next().context("--club-uid needs an integer")?;
                         club_uid = Some(value.parse::<u32>()?);
                     }
+                    "--competition-names" => {
+                        competition_names_path = Some(PathBuf::from(
+                            args.next().context("--competition-names needs a JSON path")?
+                        ));
+                    }
                     "--pretty" => pretty = true,
                     _ => bail!("unknown snapshot option: {flag}"),
                 }
@@ -97,6 +110,7 @@ fn main() -> Result<()> {
                 path,
                 clock,
                 club_uid,
+                competition_names_path,
                 pretty,
             )
         }
@@ -111,7 +125,7 @@ fn main() -> Result<()> {
             eprintln!("Usage:");
             eprintln!("  fm26-manager-room-parser inspect <save.fm>");
             eprintln!("  fm26-manager-room-parser bench <save.fm> [--clock YYYY-MM-DD]");
-            eprintln!("  fm26-manager-room-parser snapshot <save.fm> [--clock YYYY-MM-DD] [--club-uid N] [--pretty]");
+            eprintln!("  fm26-manager-room-parser snapshot <save.fm> [--clock YYYY-MM-DD] [--club-uid N] [--competition-names names.json] [--pretty]");
             Ok(())
         }
     }
@@ -122,6 +136,7 @@ fn snapshot_command(
     path: PathBuf,
     clock: Option<contract::GameDate>,
     club_uid: Option<u32>,
+    competition_names_path: Option<PathBuf>,
     pretty: bool,
 ) -> Result<()> {
     let file = File::open(&path)
@@ -153,9 +168,25 @@ fn snapshot_command(
     let (recent_minutes, _match_stats) =
         match_history::recent_minutes_all(&game_db, &candidates, clock);
     let (finances, _finance_stats) = finance::read_latest(&game_db, &club_index);
+    let (stage_index, _stage_stats) = stage::StageIndex::scan(&game_db)
+        .context("could not locate the FM26 stage table")?;
+    let competition_names = match competition_names_path {
+        Some(path) => load_competition_names(&path)?,
+        None => HashMap::new(),
+    };
+    let (competition_index, _competition_stats) =
+        competition::CompetitionIndex::build(&game_db, &stage_index, &competition_names);
     let span = container::read_unlisted_after(&mapped, &index, "non_pl_hist_ls")?;
     let (fixtures, _fixture_stats) =
-        fixture::managed_upcoming(&span, &club_index, resolved_club_uid, clock, 12);
+        fixture::managed_upcoming(
+            &span,
+            &club_index,
+            resolved_club_uid,
+            clock,
+            Some(&stage_index),
+            Some(&competition_index),
+            12,
+        );
 
     let value = snapshot::build(
         index.save_name,
@@ -247,6 +278,16 @@ fn bench(path: PathBuf, clock: Option<contract::GameDate>) -> Result<()> {
     let finance_ms = elapsed_ms(started);
 
     let started = Instant::now();
+    let (stage_index, stages) = stage::StageIndex::scan(&game_db)
+        .context("could not locate the FM26 stage table")?;
+    let stage_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    let (competition_index, competitions) =
+        competition::CompetitionIndex::build(&game_db, &stage_index, &HashMap::new());
+    let competition_ms = elapsed_ms(started);
+
+    let started = Instant::now();
     let span = container::read_unlisted_after(&mapped, &index, "non_pl_hist_ls")?;
     let span_decompress_ms = elapsed_ms(started);
     let span_bytes = span.len();
@@ -256,7 +297,15 @@ fn bench(path: PathBuf, clock: Option<contract::GameDate>) -> Result<()> {
         .map(|row| row.club_uid)
         .unwrap_or(0);
     let (_fixture_rows, fixtures) =
-        fixture::managed_upcoming(&span, &club_index, managed_for_fixture, clock, 12);
+        fixture::managed_upcoming(
+            &span,
+            &club_index,
+            managed_for_fixture,
+            clock,
+            Some(&stage_index),
+            Some(&competition_index),
+            12,
+        );
     let fixture_ms = elapsed_ms(started);
 
     let report = BenchReport {
@@ -278,6 +327,8 @@ fn bench(path: PathBuf, clock: Option<contract::GameDate>) -> Result<()> {
         finance_ms,
         span_decompress_ms,
         fixture_ms,
+        stage_ms,
+        competition_ms,
         span_bytes,
         total_ms: elapsed_ms(total_started),
         player_scan,
@@ -288,6 +339,8 @@ fn bench(path: PathBuf, clock: Option<contract::GameDate>) -> Result<()> {
         match_history,
         finance,
         fixtures,
+        stages,
+        competitions,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
@@ -315,4 +368,21 @@ fn parse_clock(value: &str) -> Result<contract::GameDate> {
     }
     let day_of_year = month_days[..(month - 1) as usize].iter().sum::<u16>() + day as u16;
     Ok(contract::GameDate { year, day_of_year })
+}
+
+
+fn load_competition_names(path: &std::path::Path) -> Result<HashMap<u32, String>> {
+    let data = std::fs::read(path)
+        .with_context(|| format!("could not read competition name map {}", path.display()))?;
+    let raw: HashMap<String, String> = serde_json::from_slice(&data)
+        .with_context(|| format!("competition name map {} is not valid JSON", path.display()))?;
+    let mut result = HashMap::with_capacity(raw.len());
+    for (key, value) in raw {
+        result.insert(
+            key.parse::<u32>()
+                .with_context(|| format!("competition DB id {key:?} is not an integer"))?,
+            value,
+        );
+    }
+    Ok(result)
 }
