@@ -75,28 +75,15 @@ jobs:
 
       - name: Benchmark Rust semantic player + contract reader
         run: |
-          CLOCK=$(python - <<'PY'
-          import json
-          from pathlib import Path
-          print(json.loads(Path("/tmp/fm26-rust-bench/python-players.json").read_text())["gameDate"])
-          PY
-          )
           native/fm26-parser/target/release/fm26-manager-room-parser \
-            bench /tmp/fm26-rust-bench/public.fm --clock "$CLOCK" \
+            bench /tmp/fm26-rust-bench/public.fm \
             > /tmp/fm26-rust-bench/rust.json
           cat /tmp/fm26-rust-bench/rust.json
 
       - name: Generate native Manager Room snapshot
         run: |
-          CLOCK=$(python - <<'PY'
-          import json
-          from pathlib import Path
-          data=json.loads(Path("/tmp/fm26-rust-bench/python-players.json").read_text())
-          print(data["gameDate"])
-          PY
-          )
           native/fm26-parser/target/release/fm26-manager-room-parser \
-            snapshot /tmp/fm26-rust-bench/public.fm --clock "$CLOCK" \
+            snapshot /tmp/fm26-rust-bench/public.fm \
             > /tmp/fm26-rust-bench/rust-snapshot.json
 
       - name: Compare timings and correctness
@@ -170,6 +157,7 @@ jobs:
           assert rs["finance"]["wagePayrollSum"] == py_players["financeWagePayrollSum"]
           assert rs["finance"]["netSum"] == py_players["financeNetSum"]
           assert len(snapshot["fixtures"]) == py_players["managedUpcomingFixtureCount"]
+          assert snapshot["meta"]["gameDate"] == py_players["gameDate"]
           assert snapshot["manager"]["clubUid"] == py_players["managedClubUid"]
           assert snapshot["manager"]["club"] == py_players["managedClubName"]
           assert len(snapshot["players"]) == py_players["managedSquadCount"]
