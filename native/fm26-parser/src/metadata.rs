@@ -70,7 +70,7 @@ pub fn decode_summary(section: &[u8]) -> Result<SummaryInfo> {
 
     let division_count = read_u32(section, offset)? as usize;
     if division_count > 4_096 {
-        return Ok(None);
+        return Err(anyhow!("save summary division count exceeds limit"));
     }
     offset += 4;
 
