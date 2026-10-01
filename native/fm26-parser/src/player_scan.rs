@@ -41,6 +41,10 @@ pub struct PlayerScanStats {
 }
 
 pub fn scan(game_db: &[u8]) -> PlayerScanStats {
+    scan_with_candidates(game_db).0
+}
+
+pub fn scan_with_candidates(game_db: &[u8]) -> (PlayerScanStats, Vec<PlayerCandidate>) {
     let mut marker_hits = 0usize;
     let mut marker_candidates = Vec::new();
     let mut offsets = HashSet::new();
@@ -129,7 +133,8 @@ pub fn scan(game_db: &[u8]) -> PlayerScanStats {
         height_sum += game_db.get(offset + 121).copied().unwrap_or(0) as u64;
     }
 
-    PlayerScanStats {
+    let sample = all.iter().copied().take(8).collect();
+    let stats = PlayerScanStats {
         marker_hits,
         marker_candidates: marker_candidates.len(),
         completeness_candidates: completeness_candidates.len(),
@@ -144,8 +149,9 @@ pub fn scan(game_db: &[u8]) -> PlayerScanStats {
         raw_match_sharpness_sum,
         raw_condition_sum,
         height_sum,
-        sample: all.into_iter().take(8).collect(),
-    }
+        sample,
+    };
+    (stats, all)
 }
 
 fn scan_flagged_run(
