@@ -116,6 +116,37 @@ jobs:
               value = update(value, b"\xff")
 
           assert value == reference["managedPlayerNameHashFnv1a64"]
+          assert snapshot["schemaVersion"] == 2
+          assert sum(player["playingTime"]["recentMinutes"] for player in players) == reference["managedRecent14Sum"]
+          assert sum(player["playingTime"]["minutesLast5"] for player in players) == reference["managedRecent5Sum"]
+
+          finance = snapshot["clubFinance"]
+          if reference["managedFinanceBalance"] is None:
+              assert finance is None
+          else:
+              assert finance["balance"] == reference["managedFinanceBalance"]
+              assert finance["transferBudgetAllocated"] == reference["managedFinanceTransferAllocated"]
+              assert finance["transferBudgetRemaining"] == reference["managedFinanceTransferRemaining"]
+              assert finance["wageBudgetWeekly"] == reference["managedFinanceWageBudget"]
+              assert finance["wagePayrollWeekly"] == reference["managedFinanceWagePayroll"]
+              assert finance["financeRows"] == reference["managedFinanceRows"]
+
+          assert len(snapshot["fixtures"]) == reference["managedUpcomingFixtureCount"]
+          fixture_hash = 0xCBF29CE484222325
+          import datetime
+          for fixture in snapshot["fixtures"]:
+              y, m, d = map(int, fixture["date"].split("-"))
+              day = datetime.date(y, m, d).timetuple().tm_yday
+              date_code = y * 1000 + day
+              fixture_hash = update(fixture_hash, date_code.to_bytes(8, "little"))
+              fixture_hash = update(fixture_hash, int(fixture["homeTeamId"]).to_bytes(4, "little"))
+              fixture_hash = update(fixture_hash, int(fixture["awayTeamId"]).to_bytes(4, "little"))
+              fixture_hash = update(fixture_hash, bytes([1 if fixture["home"] else 0]))
+              fixture_hash = update(
+                  fixture_hash, int(fixture.get("opponentClubUid") or 0).to_bytes(4, "little")
+              )
+          assert fixture_hash == reference["managedUpcomingFixtureHash"]
+
           print(json.dumps({
               "club": snapshot["manager"]["club"],
               "players": len(players),
@@ -189,6 +220,20 @@ jobs:
           assert rs["contracts"]["currentSquadStatusSum"] == py_players["currentSquadStatusSum"]
           assert rs["contracts"]["currentClubUidSum"] == py_players["currentClubUidSum"]
           assert rs["contracts"]["currentTeamIdSum"] == py_players["currentTeamIdSum"]
+          assert rs["matchHistory"]["retainedRecords"] == py_players["matchStatRows"]
+          assert rs["matchHistory"]["recordsWithStats"] == py_players["matchRowsWithStats"]
+          assert rs["matchHistory"]["playersWithHistory"] == py_players["recentMinutesKnownPlayers"]
+          assert rs["matchHistory"]["last14Sum"] == py_players["recent14Sum"]
+          assert rs["matchHistory"]["last5Sum"] == py_players["recent5Sum"]
+          assert rs["finance"]["clubsWithSeries"] == py_players["financeLatestClubs"]
+          assert rs["finance"]["totalRows"] == py_players["financeRows"]
+          assert rs["finance"]["balanceSum"] == py_players["financeBalanceSum"]
+          assert rs["finance"]["transferAllocatedSum"] == py_players["financeTransferAllocatedSum"]
+          assert rs["finance"]["transferRemainingSum"] == py_players["financeTransferRemainingSum"]
+          assert rs["finance"]["wageBudgetSum"] == py_players["financeWageBudgetSum"]
+          assert rs["finance"]["wagePayrollSum"] == py_players["financeWagePayrollSum"]
+          assert rs["finance"]["netSum"] == py_players["financeNetSum"]
+          assert rs["fixtures"]["managedUpcoming"] == py_players["managedUpcomingFixtureCount"]
 
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
@@ -212,8 +257,12 @@ jobs:
                   "clubScanMs": round(rs["clubScanMs"], 3),
                   "gameInfoMs": round(rs["gameInfoMs"], 3),
                   "contractDecodeMs": round(rs["contractDecodeMs"], 3),
+                  "matchHistoryMs": round(rs["matchHistoryMs"], 3),
+                  "financeMs": round(rs["financeMs"], 3),
+                  "spanDecompressMs": round(rs["spanDecompressMs"], 3),
+                  "fixtureMs": round(rs["fixtureMs"], 3),
                   "semanticPlayerMs": round(
-                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["gameInfoMs"] + rs["contractDecodeMs"], 3
+                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["gameInfoMs"] + rs["contractDecodeMs"] + rs["matchHistoryMs"] + rs["financeMs"] + rs["fixtureMs"], 3
                   ),
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
@@ -248,6 +297,9 @@ jobs:
                   "gameDateEqual": True,
                   "contractChainEqual": True,
                   "currentContractEqual": True,
+                  "recentMinutesEqual": True,
+                  "financeEqual": True,
+                  "managedFixturesEqual": True,
               },
           }
           (root / "comparison.json").write_text(json.dumps(comparison, indent=2))

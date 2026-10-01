@@ -45,6 +45,7 @@ const AFFILIATE_COUNT_MAX: u8 = 8;
 #[serde(rename_all = "camelCase")]
 pub struct ClubCore {
     pub record_start: usize,
+    pub record_end: usize,
     pub club_index: u32,
     pub uid: u32,
     pub nation_id: u32,
@@ -151,11 +152,20 @@ impl ClubIndex {
             }
         }
 
+        let record_ends: Vec<usize> = records
+            .iter()
+            .skip(1)
+            .map(|record| record.record_start)
+            .chain(std::iter::once(scan_end))
+            .collect();
+
         let clubs: Vec<ClubCore> = records
             .into_iter()
             .zip(team_lists)
-            .map(|(record, teams)| ClubCore {
+            .zip(record_ends)
+            .map(|((record, teams), record_end)| ClubCore {
                 record_start: record.record_start,
+                record_end,
                 club_index: record.club_index,
                 uid: record.uid,
                 nation_id: record.nation_id,

@@ -1,5 +1,8 @@
 use crate::club::ClubIndex;
 use crate::contracts::CurrentContractCore;
+use crate::finance::FinanceLatest;
+use crate::fixture::FixtureRow;
+use crate::match_history::RecentMinutes;
 use crate::metadata::{GameDate, SummaryInfo};
 use crate::person::PersonCore;
 use crate::player_scan::PlayerCandidate;
@@ -37,6 +40,8 @@ pub struct QuickSnapshot {
     pub db_version: String,
     pub game_date: String,
     pub manager: QuickManager,
+    pub club_finance: Option<QuickClubFinance>,
+    pub fixtures: Vec<FixtureRow>,
     pub players: Vec<QuickPlayer>,
     pub coverage: QuickCoverage,
 }
@@ -47,6 +52,17 @@ pub struct QuickManager {
     pub name: String,
     pub club: String,
     pub club_uid: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickClubFinance {
+    pub balance: i32,
+    pub transfer_budget_allocated: i32,
+    pub transfer_budget_remaining: i32,
+    pub wage_budget_weekly: u32,
+    pub wage_payroll_weekly: u32,
+    pub finance_rows: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,8 +93,20 @@ pub struct QuickPlayer {
     pub wage: u32,
     pub attributes: BTreeMap<String, u8>,
     pub hidden: BTreeMap<String, u8>,
+    pub playing_time: QuickPlayingTime,
     pub fitness: QuickFitness,
     pub contract: QuickContract,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickPlayingTime {
+    pub agreed: String,
+    pub actual: Option<String>,
+    pub recent_minutes: u16,
+    pub starts_last5: u8,
+    pub minutes_last5: u16,
+    pub recent_minutes_known: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -86,7 +114,9 @@ pub struct QuickPlayer {
 pub struct QuickFitness {
     pub condition: u16,
     pub match_sharpness: u16,
+    pub fatigue: u8,
     pub fatigue_known: bool,
+    pub injury_risk: u8,
     pub injury_risk_known: bool,
 }
 
@@ -109,7 +139,10 @@ pub fn build(
     candidates: &[PlayerCandidate],
     people: &[Option<PersonCore>],
     contracts: &[Option<CurrentContractCore>],
+    recent_minutes: &[RecentMinutes],
     clubs: &ClubIndex,
+    finances: &[FinanceLatest],
+    fixtures: Vec<FixtureRow>,
 ) -> QuickSnapshot {
     let mut players = Vec::new();
 
@@ -126,15 +159,28 @@ pub fn build(
 
         let person = people.get(index).and_then(Option::as_ref);
         let contract = contracts.get(index).and_then(Option::as_ref);
-        players.push(build_player(game_db, candidate, person, contract, clock));
+        let recent = recent_minutes.get(index).copied().unwrap_or_default();
+        players.push(build_player(game_db, candidate, person, contract, recent, clock));
     }
 
     players.sort_by(|left, right| {
         right.ca.cmp(&left.ca).then_with(|| left.name.cmp(&right.name))
     });
 
+    let club_finance = finances
+        .iter()
+        .find(|row| row.club_uid == summary.club_uid)
+        .map(|row| QuickClubFinance {
+            balance: row.balance,
+            transfer_budget_allocated: row.transfer_budget_allocated,
+            transfer_budget_remaining: row.transfer_budget_remaining,
+            wage_budget_weekly: row.wage_budget_weekly,
+            wage_payroll_weekly: row.wage_payroll_weekly,
+            finance_rows: row.rows,
+        });
+
     QuickSnapshot {
-        schema_version: 1,
+        schema_version: 2,
         source: "rust-native",
         save_name,
         db_version,
@@ -144,15 +190,17 @@ pub fn build(
             club: summary.club_name.clone(),
             club_uid: summary.club_uid,
         },
+        club_finance,
+        fixtures,
         players,
         coverage: QuickCoverage {
             players: "native",
             attributes: "native",
             personality: "native",
             contracts: "native-chain-current",
-            fixtures: "not-yet-loaded",
-            recent_minutes: "not-yet-loaded",
-            finances: "not-yet-loaded",
+            fixtures: "native-managed-upcoming",
+            recent_minutes: "native-match-history",
+            finances: "managed-club-native-finance",
         },
     }
 }
@@ -162,6 +210,7 @@ fn build_player(
     candidate: &PlayerCandidate,
     person: Option<&PersonCore>,
     contract: Option<&CurrentContractCore>,
+    recent: RecentMinutes,
     clock: GameDate,
 ) -> QuickPlayer {
     let ratings = &game_db[
@@ -207,6 +256,10 @@ fn build_player(
 
     let contract_end = contract.and_then(|value| value.end);
     let weekly_wage = contract.map(|value| value.wage).unwrap_or(0);
+    let agreed = contract
+        .and_then(|value| value.squad_status_raw)
+        .map(squad_status_label)
+        .unwrap_or_else(|| "Unknown".to_owned());
 
     QuickPlayer {
         id: candidate.uid.to_string(),
@@ -226,20 +279,27 @@ fn build_player(
         wage: weekly_wage,
         attributes,
         hidden,
+        playing_time: QuickPlayingTime {
+            agreed: agreed.clone(),
+            actual: None,
+            recent_minutes: recent.last14,
+            starts_last5: 0,
+            minutes_last5: recent.last5,
+            recent_minutes_known: recent.known,
+        },
         fitness: QuickFitness {
             condition,
             match_sharpness,
+            fatigue: 0,
             fatigue_known: false,
+            injury_risk: 0,
             injury_risk_known: false,
         },
         contract: QuickContract {
             weekly_wage,
             end: contract_end.map(format_date),
             months_remaining: contract_end.map(|end| months_between(clock, end)),
-            squad_status: contract
-                .and_then(|value| value.squad_status_raw)
-                .map(squad_status_label)
-                .unwrap_or_else(|| "Unknown".to_owned()),
+            squad_status: agreed,
             squad_status_raw: contract.and_then(|value| value.squad_status_raw),
         },
     }

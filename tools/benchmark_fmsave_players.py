@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import time
+from collections import defaultdict
 from dataclasses import astuple
+from datetime import timedelta
 from pathlib import Path
 
 import fmsave
@@ -29,6 +32,18 @@ def main() -> int:
         game_date = career.info.game_date
         db_version = career.info.db_version
         managed = list(career.managed_clubs())
+
+        started_match_stats = time.perf_counter()
+        match_stats = list(career.player_match_stats())
+        match_stats_ms = elapsed_ms(started_match_stats)
+
+        started_finances = time.perf_counter()
+        finances = list(career.finances())
+        finances_ms = elapsed_ms(started_finances)
+
+        started_fixtures = time.perf_counter()
+        fixtures = list(career.fixtures())
+        fixtures_ms = elapsed_ms(started_fixtures)
 
     ca_sum = sum(int(player.ability.current) for player in players)
     pa_raw_sum = 0
@@ -91,10 +106,83 @@ def main() -> int:
         contract for contract in current_chain_contracts if contract.squad_status is not None
     ]
 
+    by_player = defaultdict(list)
+    for row in match_stats:
+        if game_date is None or row.date <= game_date:
+            by_player[row.player_uid].append(row)
+
+    recent_by_uid = {}
+    cutoff = game_date - timedelta(days=14) if game_date else None
+    for player_uid, rows in by_player.items():
+        rows.sort(key=lambda row: row.date, reverse=True)
+        last14 = sum(
+            int(row.minutes or 0)
+            for row in rows
+            if row.has_stats and (cutoff is None or row.date >= cutoff)
+        )
+        last5 = sum(
+            int(row.minutes or 0)
+            for row in [item for item in rows if item.has_stats][:5]
+        )
+        recent_by_uid[player_uid] = (last14, last5)
+
+    latest_finance = {}
+    finance_row_counts = defaultdict(int)
+    for row in finances:
+        finance_row_counts[row.club_uid] += 1
+        previous = latest_finance.get(row.club_uid)
+        if previous is None or row.month > previous.month:
+            latest_finance[row.club_uid] = row
+
+    managed_upcoming = []
+    if managed and game_date:
+        managed_uid = managed[0].club_uid
+        managed_upcoming = [
+            fixture
+            for fixture in fixtures
+            if not fixture.played
+            and fixture.date is not None
+            and fixture.date >= game_date
+            and (
+                fixture.home_club_uid == managed_uid
+                or fixture.away_club_uid == managed_uid
+            )
+        ]
+        managed_upcoming.sort(
+            key=lambda fixture: (
+                fixture.date,
+                fixture.kick_off_time or datetime.time.min,
+                fixture.home_team_id,
+                fixture.away_team_id,
+            )
+        )
+        managed_upcoming = managed_upcoming[:12]
+
+    fixture_hash = 0xCBF29CE484222325
+    for fixture in managed_upcoming:
+        home = fixture.home_club_uid == managed[0].club_uid
+        opponent_uid = fixture.away_club_uid if home else fixture.home_club_uid
+        fixture_hash = fnv_update(
+            fixture_hash, date_code(fixture.date).to_bytes(8, "little", signed=False)
+        )
+        fixture_hash = fnv_update(
+            fixture_hash, int(fixture.home_team_id).to_bytes(4, "little", signed=False)
+        )
+        fixture_hash = fnv_update(
+            fixture_hash, int(fixture.away_team_id).to_bytes(4, "little", signed=False)
+        )
+        fixture_hash = fnv_update(fixture_hash, bytes([1 if home else 0]))
+        fixture_hash = fnv_update(
+            fixture_hash, int(opponent_uid or 0).to_bytes(4, "little", signed=False)
+        )
+
     managed_players = [
         player for player in players
         if managed and player.club_uid == managed[0].club_uid
     ]
+    managed_uid = managed[0].club_uid if managed else None
+    managed_finance = latest_finance.get(managed_uid) if managed_uid is not None else None
+
     managed_name_hash = 0xCBF29CE484222325
     for player in sorted(managed_players, key=lambda player: int(player.uid)):
         if player.name is None:
@@ -159,6 +247,41 @@ def main() -> int:
             if player.contract is not None
         ),
         "managedPlayerNameHashFnv1a64": managed_name_hash,
+        "matchStatsMs": round(match_stats_ms, 3),
+        "matchStatRows": len(match_stats),
+        "matchRowsWithStats": sum(row.has_stats for row in match_stats),
+        "recentMinutesKnownPlayers": len(recent_by_uid),
+        "recent14Sum": sum(value[0] for value in recent_by_uid.values()),
+        "recent5Sum": sum(value[1] for value in recent_by_uid.values()),
+        "financesMs": round(finances_ms, 3),
+        "financeRows": len(finances),
+        "financeLatestClubs": len(latest_finance),
+        "financeBalanceSum": sum(int(row.balance) for row in latest_finance.values()),
+        "financeTransferAllocatedSum": sum(
+            int(row.transfer_budget_allocated) for row in latest_finance.values()
+        ),
+        "financeTransferRemainingSum": sum(
+            int(row.transfer_budget_remaining) for row in latest_finance.values()
+        ),
+        "financeWageBudgetSum": sum(
+            int(row.wage_budget_weekly) for row in latest_finance.values()
+        ),
+        "financeWagePayrollSum": sum(
+            int(row.wage_payroll_weekly) for row in latest_finance.values()
+        ),
+        "financeNetSum": sum(int(row.net) for row in latest_finance.values()),
+        "fixturesMs": round(fixtures_ms, 3),
+        "fixtureRows": len(fixtures),
+        "managedUpcomingFixtureCount": len(managed_upcoming),
+        "managedUpcomingFixtureHash": fixture_hash,
+        "managedRecent14Sum": sum(recent_by_uid.get(player.uid, (0, 0))[0] for player in managed_players),
+        "managedRecent5Sum": sum(recent_by_uid.get(player.uid, (0, 0))[1] for player in managed_players),
+        "managedFinanceBalance": int(managed_finance.balance) if managed_finance else None,
+        "managedFinanceTransferAllocated": int(managed_finance.transfer_budget_allocated) if managed_finance else None,
+        "managedFinanceTransferRemaining": int(managed_finance.transfer_budget_remaining) if managed_finance else None,
+        "managedFinanceWageBudget": int(managed_finance.wage_budget_weekly) if managed_finance else None,
+        "managedFinanceWagePayroll": int(managed_finance.wage_payroll_weekly) if managed_finance else None,
+        "managedFinanceRows": finance_row_counts.get(managed_uid, 0) if managed_uid is not None else 0,
         "playersWithChain": len(chain_contracts),
         "chainRecords": len(chain_entries),
         "chainTeamsResolved": sum(1 for entry in chain_entries if entry.club_uid is not None),
@@ -208,6 +331,10 @@ def xor_values(values) -> int:
 
 def date_key(value) -> int:
     return int(value.year) * 400 + int(value.strftime("%j"))
+
+
+def date_code(value) -> int:
+    return int(value.year) * 1000 + int(value.strftime("%j"))
 
 
 def elapsed_ms(started: float) -> float:

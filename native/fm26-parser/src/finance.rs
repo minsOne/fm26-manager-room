@@ -1,0 +1,118 @@
+use crate::club::ClubIndex;
+use memchr::memchr;
+use serde::Serialize;
+
+const ROW_BYTES: usize = 49;
+const TAG: u8 = 0x01;
+const COUNT_OFFSET_BEFORE_HEAD: usize = 4;
+const COUNT_MIN: u32 = 3;
+const COUNT_MAX: u32 = 1_000;
+const SHORT_COUNT_MIN: u32 = 1;
+const SHORT_COUNT_MAX: u32 = 2;
+const BALANCE_MIN: i32 = -400_000_000;
+const BALANCE_MAX: i32 = 2_000_000_000;
+const WEEKLY_MAX: u32 = 20_000_000;
+const MINIMUM_RECORD_BYTES: usize = 1_500;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinanceLatest {
+    pub club_uid: u32,
+    pub club_name: String,
+    pub rows: u32,
+    pub balance: i32,
+    pub transfer_budget_allocated: i32,
+    pub transfer_budget_remaining: i32,
+    pub wage_budget_weekly: u32,
+    pub wage_payroll_weekly: u32,
+    pub net: i32,
+}
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinanceStats {
+    pub clubs_with_series: usize,
+    pub total_rows: u64,
+    pub balance_sum: i64,
+    pub transfer_allocated_sum: i64,
+    pub transfer_remaining_sum: i64,
+    pub wage_budget_sum: u64,
+    pub wage_payroll_sum: u64,
+    pub net_sum: i64,
+}
+#[derive(Clone,Copy)]
+struct Row {
+    balance:i32, transfer_allocated:i32, transfer_remaining:i32,
+    wage_budget:u32, wage_payroll:u32, income_ex:i32, net_transfers:i32,
+    wage_bill:i32, net:i32, expenditure_ex:i32, total_income:i32, total_expenditure:i32,
+}
+
+pub fn read_latest(game_db:&[u8],clubs:&ClubIndex)->(Vec<FinanceLatest>,FinanceStats){
+    let mut out=Vec::new(); let mut stats=FinanceStats::default();
+    for club in &clubs.clubs {
+        if club.record_end<=club.record_start || club.record_end-club.record_start<MINIMUM_RECORD_BYTES {continue;}
+        let Some((head,count))=locate_chain(game_db,club.record_start,club.record_end) else{continue};
+        let Some(row)=read_row(game_db,head+ROW_BYTES*(count as usize-1)) else{continue};
+        stats.clubs_with_series+=1; stats.total_rows+=count as u64;
+        stats.balance_sum+=row.balance as i64;
+        stats.transfer_allocated_sum+=row.transfer_allocated as i64;
+        stats.transfer_remaining_sum+=row.transfer_remaining as i64;
+        stats.wage_budget_sum+=row.wage_budget as u64;
+        stats.wage_payroll_sum+=row.wage_payroll as u64;
+        stats.net_sum+=row.net as i64;
+        out.push(FinanceLatest{
+            club_uid:club.uid,club_name:club.name.clone(),rows:count,balance:row.balance,
+            transfer_budget_allocated:row.transfer_allocated,
+            transfer_budget_remaining:row.transfer_remaining,
+            wage_budget_weekly:row.wage_budget,wage_payroll_weekly:row.wage_payroll,net:row.net
+        });
+    }
+    out.sort_by_key(|r|r.club_uid); (out,stats)
+}
+fn locate_chain(buf:&[u8],start:usize,end:usize)->Option<(usize,u32)>{
+    let mut pos=start+COUNT_OFFSET_BEFORE_HEAD; let mut normal=None; let mut short=None;
+    while pos<end {
+        let Some(search)=buf.get(pos..end) else{break};
+        let Some(rel)=memchr(TAG,search) else{break};
+        let head=pos+rel;
+        let Some(count_at)=head.checked_sub(COUNT_OFFSET_BEFORE_HEAD) else{pos=head+1;continue};
+        if count_at<start {pos=head+1;continue;}
+        let count=read_u32(buf,count_at)?;
+        let chain_end=head.checked_add(ROW_BYTES.checked_mul(count as usize)?)?;
+        if chain_end>end {pos=head+1;continue;}
+        if (COUNT_MIN..=COUNT_MAX).contains(&count) && rows_valid(buf,head,chain_end,false){
+            if normal.is_none(){normal=Some((head,count));}
+            pos=chain_end; continue;
+        }
+        if short.is_none() && (SHORT_COUNT_MIN..=SHORT_COUNT_MAX).contains(&count)
+            && rows_valid(buf,head,chain_end,true){short=Some((head,count));}
+        pos=head+1;
+    }
+    normal.or(short)
+}
+fn rows_valid(buf:&[u8],head:usize,end:usize,balanced:bool)->bool{
+    let mut moved=!balanced; let mut at=head;
+    while at<end {
+        let Some(r)=read_row(buf,at) else{return false};
+        if buf[at]!=TAG || !(BALANCE_MIN..=BALANCE_MAX).contains(&r.balance)
+            || r.wage_budget>WEEKLY_MAX || r.wage_payroll>WEEKLY_MAX{return false;}
+        if balanced {
+            if r.net!=r.total_income.saturating_sub(r.total_expenditure)
+                || r.expenditure_ex<0 || r.expenditure_ex>r.total_expenditure
+                || r.income_ex<0 || r.income_ex>r.total_income{return false;}
+            moved|=r.total_income!=0||r.total_expenditure!=0;
+        }
+        at+=ROW_BYTES;
+    } moved
+}
+fn read_row(b:&[u8],a:usize)->Option<Row>{
+    if a+ROW_BYTES>b.len(){return None;}
+    Some(Row{
+        balance:ri(b,a+1)?,transfer_allocated:ri(b,a+5)?,transfer_remaining:ri(b,a+9)?,
+        wage_budget:ru(b,a+13)?,wage_payroll:ru(b,a+17)?,income_ex:ri(b,a+21)?,
+        net_transfers:ri(b,a+25)?,wage_bill:ri(b,a+29)?,net:ri(b,a+33)?,
+        expenditure_ex:ri(b,a+37)?,total_income:ri(b,a+41)?,total_expenditure:ri(b,a+45)?
+    })
+}
+fn ru(b:&[u8],o:usize)->Option<u32>{Some(u32::from_le_bytes(b.get(o..o+4)?.try_into().ok()?))}
+fn ri(b:&[u8],o:usize)->Option<i32>{Some(i32::from_le_bytes(b.get(o..o+4)?.try_into().ok()?))}
+fn read_u32(b:&[u8],o:usize)->Option<u32>{ru(b,o)}
