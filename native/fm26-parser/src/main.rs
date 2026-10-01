@@ -143,6 +143,7 @@ fn snapshot_command(
         contract::decode_all(&game_db, &candidates, &club_index, clock);
     let (recent_minutes, _match_stats) =
         match_history::recent_minutes_all(&game_db, &candidates, clock);
+    let (finances, _finance_stats) = finance::read_latest(&game_db, &club_index);
 
     let value = snapshot::build(
         index.save_name,
@@ -152,6 +153,7 @@ fn snapshot_command(
         &club_index,
         &contracts,
         &recent_minutes,
+        &finances,
         clock,
         resolved_club_uid,
     );
