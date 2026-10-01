@@ -147,6 +147,22 @@ jobs:
               )
           assert fixture_hash == reference["managedUpcomingFixtureHash"]
 
+          fixture_competition_hash = 0xCBF29CE484222325
+          for fixture in snapshot["fixtures"]:
+              fixture_competition_hash = update(
+                  fixture_competition_hash,
+                  int(fixture.get("competitionId") or 0).to_bytes(4, "little")
+              )
+              fixture_competition_hash = update(
+                  fixture_competition_hash,
+                  int(fixture.get("competitionDatabaseId") or 0).to_bytes(4, "little")
+              )
+              fixture_competition_hash = update(
+                  fixture_competition_hash,
+                  int(fixture.get("roundRaw") or 0).to_bytes(4, "little")
+              )
+          assert fixture_competition_hash == reference["managedUpcomingCompetitionHash"]
+
           print(json.dumps({
               "club": snapshot["manager"]["club"],
               "players": len(players),
@@ -233,6 +249,13 @@ jobs:
           assert rs["finance"]["wageBudgetSum"] == py_players["financeWageBudgetSum"]
           assert rs["finance"]["wagePayrollSum"] == py_players["financeWagePayrollSum"]
           assert rs["finance"]["netSum"] == py_players["financeNetSum"]
+          assert rs["stages"]["rows"] == py_players["stageCount"]
+          assert rs["stages"]["idSum"] == py_players["stageIdSum"]
+          assert rs["stages"]["competitionIdSum"] == py_players["stageCompetitionIdSum"]
+          assert rs["stages"]["roundRawSum"] == py_players["stageRoundRawSum"]
+          assert rs["competitions"]["competitions"] == py_players["competitionCount"]
+          assert rs["competitions"]["withDatabaseId"] == py_players["competitionWithDatabaseId"]
+          assert rs["competitions"]["databaseIdSum"] == py_players["competitionDatabaseIdSum"]
           assert rs["fixtures"]["managedUpcoming"] == py_players["managedUpcomingFixtureCount"]
 
           comparison = {
@@ -261,6 +284,8 @@ jobs:
                   "financeMs": round(rs["financeMs"], 3),
                   "spanDecompressMs": round(rs["spanDecompressMs"], 3),
                   "fixtureMs": round(rs["fixtureMs"], 3),
+                  "stageMs": round(rs["stageMs"], 3),
+                  "competitionMs": round(rs["competitionMs"], 3),
                   "semanticPlayerMs": round(
                       rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["gameInfoMs"] + rs["contractDecodeMs"] + rs["matchHistoryMs"] + rs["financeMs"] + rs["fixtureMs"], 3
                   ),
@@ -300,6 +325,9 @@ jobs:
                   "recentMinutesEqual": True,
                   "financeEqual": True,
                   "managedFixturesEqual": True,
+                  "stageTableEqual": True,
+                  "competitionIdsEqual": True,
+                  "fixtureCompetitionJoinEqual": True,
               },
           }
           (root / "comparison.json").write_text(json.dumps(comparison, indent=2))
