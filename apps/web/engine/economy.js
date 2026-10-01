@@ -4,7 +4,7 @@ export function marketHealth(snapshot){
   return snapshot.leagues.map(league=>{
     const gap=league.financialPower-league.sportingPower;
     const heat=Math.round(gap*.48+league.wageGrowth*.28+league.spendingShare*.12+league.topClubConcentration*.12);
-    const status=heat>=45?"OVERHEATED":heat>=28?"HIGH":heat<=5?"WEAK":"NORMAL";
+    const status=heat>=38?"OVERHEATED":heat>=25?"HIGH":heat<=5?"WEAK":"NORMAL";
     const confidence=coachConfidence({dataCompleteness:.86,sampleSize:.82,modelAgreement:Math.min(1,Math.abs(gap)/30+.45),volatility:.2,futureUncertainty:.12});
     return {...league,gap,heat,status,confidence};
   }).sort((a,b)=>b.heat-a.heat);
