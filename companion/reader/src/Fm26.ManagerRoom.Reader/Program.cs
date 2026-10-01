@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Fm26.ManagerRoom.Reader.Runtime;
 
 var options = ReaderOptions.Parse(args);
@@ -30,7 +31,11 @@ using (process)
 
     var json = JsonSerializer.Serialize(
         result,
-        new JsonSerializerOptions { WriteIndented = options.Pretty });
+        new JsonSerializerOptions
+        {
+            WriteIndented = options.Pretty,
+            Converters = { new JsonStringEnumConverter() }
+        });
 
     Console.WriteLine(json);
     return result.Policy.Mode == RuntimeAccessMode.Unsupported ? 5 : 0;
