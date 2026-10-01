@@ -169,6 +169,7 @@ jobs:
           assert rs["finance"]["wageBudgetSum"] == py_players["financeWageBudgetSum"]
           assert rs["finance"]["wagePayrollSum"] == py_players["financeWagePayrollSum"]
           assert rs["finance"]["netSum"] == py_players["financeNetSum"]
+          assert len(snapshot["fixtures"]) == py_players["managedUpcomingFixtureCount"]
           assert snapshot["manager"]["clubUid"] == py_players["managedClubUid"]
           assert snapshot["manager"]["club"] == py_players["managedClubName"]
           assert len(snapshot["players"]) == py_players["managedSquadCount"]
@@ -190,6 +191,21 @@ jobs:
               snapshot_hash = fnv(snapshot_hash, int(player["value"]).to_bytes(4, "little"))
               snapshot_hash = fnv(snapshot_hash, int(player["wage"]).to_bytes(4, "little"))
           assert snapshot_hash == py_players["managedPlayerSnapshotHash"]
+
+          fixture_hash = 0xCBF29CE484222325
+          for fixture in snapshot["fixtures"]:
+              y, m, d = map(int, fixture["date"].split("-"))
+              import datetime
+              day = datetime.date(y, m, d).timetuple().tm_yday
+              date_code_value = y * 1000 + day
+              fixture_hash = fnv(fixture_hash, date_code_value.to_bytes(8, "little"))
+              fixture_hash = fnv(fixture_hash, int(fixture["homeTeamId"]).to_bytes(4, "little"))
+              fixture_hash = fnv(fixture_hash, int(fixture["awayTeamId"]).to_bytes(4, "little"))
+              fixture_hash = fnv(fixture_hash, bytes([1 if fixture["home"] else 0]))
+              fixture_hash = fnv(
+                  fixture_hash, int(fixture.get("opponentClubUid") or 0).to_bytes(4, "little")
+              )
+          assert fixture_hash == py_players["managedUpcomingFixtureHash"]
 
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
@@ -214,8 +230,10 @@ jobs:
                   "contractMs": round(rs["contractMs"], 3),
                   "matchHistoryMs": round(rs["matchHistoryMs"], 3),
                   "financeMs": round(rs["financeMs"], 3),
+                  "spanDecompressMs": round(rs["spanDecompressMs"], 3),
+                  "fixtureMs": round(rs["fixtureMs"], 3),
                   "semanticPlayerMs": round(
-                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["contractMs"] + rs["matchHistoryMs"] + rs["financeMs"], 3
+                      rs["playerScanMs"] + rs["namePoolMs"] + rs["personDecodeMs"] + rs["clubScanMs"] + rs["contractMs"] + rs["matchHistoryMs"] + rs["financeMs"] + rs["fixtureMs"], 3
                   ),
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
@@ -256,6 +274,7 @@ jobs:
                   "recentMinutesEqual": True,
                   "financeLatestEqual": True,
                   "financeBudgetsEqual": True,
+                  "managedFixturesEqual": True,
                   "managedSnapshotCountEqual": True,
                   "managedSnapshotCoreHashEqual": True,
               },
