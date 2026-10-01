@@ -27,7 +27,7 @@ internal static class ModuleFingerprint
         return null;
     }
 
-    public static RuntimeModule? Main(Process process)
+    public static RuntimeModule? FromMainModule(Process process)
     {
         try
         {
