@@ -11,6 +11,7 @@ const ATTRIBUTE_COUNT: usize = 54;
 const DECODE_EXTENT: usize = 122;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlayerCandidate {
     pub record_offset: usize,
     pub pindex: u32,
@@ -20,11 +21,14 @@ pub struct PlayerCandidate {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlayerScanStats {
     pub marker_hits: usize,
     pub marker_candidates: usize,
     pub completeness_candidates: usize,
     pub total_candidates: usize,
+    pub current_ability_sum: u64,
+    pub potential_ability_raw_sum: i64,
     pub sample: Vec<PlayerCandidate>,
 }
 
@@ -78,11 +82,16 @@ pub fn scan(game_db: &[u8]) -> PlayerScanStats {
     all.sort_by_key(|candidate| candidate.record_offset);
     all.dedup_by_key(|candidate| candidate.record_offset);
 
+    let current_ability_sum = all.iter().map(|candidate| candidate.current_ability as u64).sum();
+    let potential_ability_raw_sum = all.iter().map(|candidate| candidate.potential_ability as i64).sum();
+
     PlayerScanStats {
         marker_hits,
         marker_candidates: marker_candidates.len(),
         completeness_candidates: completeness_candidates.len(),
         total_candidates: all.len(),
+        current_ability_sum,
+        potential_ability_raw_sum,
         sample: all.into_iter().take(8).collect(),
     }
 }
