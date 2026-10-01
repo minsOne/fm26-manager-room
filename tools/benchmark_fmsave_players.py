@@ -180,6 +180,9 @@ def main() -> int:
         player for player in players
         if managed and player.club_uid == managed[0].club_uid
     ]
+    managed_uid = managed[0].club_uid if managed else None
+    managed_finance = latest_finance.get(managed_uid) if managed_uid is not None else None
+
     managed_name_hash = 0xCBF29CE484222325
     for player in sorted(managed_players, key=lambda player: int(player.uid)):
         if player.name is None:
@@ -271,6 +274,14 @@ def main() -> int:
         "fixtureRows": len(fixtures),
         "managedUpcomingFixtureCount": len(managed_upcoming),
         "managedUpcomingFixtureHash": fixture_hash,
+        "managedRecent14Sum": sum(recent_by_uid.get(player.uid, (0, 0))[0] for player in managed_players),
+        "managedRecent5Sum": sum(recent_by_uid.get(player.uid, (0, 0))[1] for player in managed_players),
+        "managedFinanceBalance": int(managed_finance.balance) if managed_finance else None,
+        "managedFinanceTransferAllocated": int(managed_finance.transfer_budget_allocated) if managed_finance else None,
+        "managedFinanceTransferRemaining": int(managed_finance.transfer_budget_remaining) if managed_finance else None,
+        "managedFinanceWageBudget": int(managed_finance.wage_budget_weekly) if managed_finance else None,
+        "managedFinanceWagePayroll": int(managed_finance.wage_payroll_weekly) if managed_finance else None,
+        "managedFinanceRows": finance_row_counts.get(managed_uid, 0) if managed_uid is not None else 0,
         "playersWithChain": len(chain_contracts),
         "chainRecords": len(chain_entries),
         "chainTeamsResolved": sum(1 for entry in chain_entries if entry.club_uid is not None),
