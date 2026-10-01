@@ -34,7 +34,9 @@ jobs:
         run: cargo build --release --manifest-path native/fm26-parser/Cargo.toml
 
   benchmark-public-save:
-    runs-on: macos-latest
+    # The public Google Drive fixture is reliably accessible from GitHub's Linux runners.
+    # macOS/arm64 compatibility is covered by the separate build job above.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +54,7 @@ jobs:
       - name: Download public FM26 save
         run: |
           mkdir -p /tmp/fm26-rust-bench
-          python -m gdown 1UZlBHKpEae416lx8apbkug-pmZH7RMKd -O /tmp/fm26-rust-bench/public.fm
+          python -m gdown --id 1UZlBHKpEae416lx8apbkug-pmZH7RMKd -O /tmp/fm26-rust-bench/public.fm
           test -s /tmp/fm26-rust-bench/public.fm
           ls -lh /tmp/fm26-rust-bench/public.fm
 
