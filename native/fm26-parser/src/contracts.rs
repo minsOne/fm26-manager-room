@@ -23,6 +23,13 @@ const TAIL_EVENT_COUNT_OFFSET: usize = 42;
 const TAIL_STRUCT_END: usize = 46;
 
 const MISSING_REFERENCE: u32 = u32::MAX;
+const FALLBACK_START_FROM_RECORD: usize = 110;
+const FALLBACK_END_MARGIN: usize = 90;
+const FALLBACK_GATE_LENGTH: usize = 16;
+const FALLBACK_NONZERO_OFFSET: usize = 8;
+const FALLBACK_NONZERO_LENGTH: usize = 8;
+const FALLBACK_END_DATE_OFFSET: usize = 0;
+const FALLBACK_START_DATE_OFFSET: usize = 4;
 const TAIL_PRINTED_START_OFFSET: usize = 32;
 const NONTERMS_BLOCK_PREFIX: &[u8] = &[
     0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
@@ -118,7 +125,17 @@ pub fn decode_all(
         };
 
         let registration_missing = player.team_id == MISSING_REFERENCE;
+        let fallback = if records.iter().any(|record| record.has_terms) {
+            None
+        } else {
+            find_fallback_dates(game_db, player.record_offset, window_end)
+        };
+        let fallback_end_is_current = fallback
+            .and_then(|(_, end)| end)
+            .is_some_and(|end| end >= clock);
+
         let only_retained_nonterms = registration_missing
+            && !fallback_end_is_current
             && records.iter().all(|record| {
                 is_retained_nonterms_block(
                     game_db,
@@ -139,7 +156,14 @@ pub fn decode_all(
             if let Some(uid) = current.club_uid {
                 stats.current_club_uid_sum += uid as u64;
             }
-            if let Some(end) = current.end {
+            let effective_end = current.end.or_else(|| {
+                if current.has_terms {
+                    None
+                } else {
+                    fallback.and_then(|(_, end)| end).filter(|end| *end >= clock)
+                }
+            });
+            if let Some(end) = effective_end {
                 stats.current_end_date_sum += end.ordinal_key();
             }
             if let Some(status) = current.squad_status_raw {
@@ -152,6 +176,64 @@ pub fn decode_all(
     stats
 }
 
+
+
+fn find_fallback_dates(
+    game_db: &[u8],
+    record_offset: usize,
+    record_window_end: usize,
+) -> Option<(Option<GameDate>, Option<GameDate>)> {
+    let search_start = record_offset.checked_add(FALLBACK_START_FROM_RECORD)?;
+    let limit = record_window_end
+        .saturating_sub(FALLBACK_END_MARGIN)
+        .max(search_start)
+        .min(game_db.len());
+    if search_start >= limit {
+        return None;
+    }
+
+    const FOUR_FF: &[u8] = &[0xff, 0xff, 0xff, 0xff];
+    const ZERO_NEEDLE: &[u8] = &[0; FALLBACK_NONZERO_LENGTH];
+
+    let mut best_start = None;
+    let mut best_end = None;
+
+    for relative in memmem::find_iter(&game_db[search_start..limit], FOUR_FF) {
+        let hit = search_start + relative;
+        let dates_offset = hit.saturating_add(8);
+        let nonzero_start = dates_offset.saturating_add(FALLBACK_NONZERO_OFFSET);
+
+        if dates_offset.saturating_add(FALLBACK_GATE_LENGTH) > limit
+            || nonzero_start.saturating_add(FALLBACK_NONZERO_LENGTH) > game_db.len()
+            || game_db[nonzero_start..].starts_with(ZERO_NEEDLE)
+        {
+            continue;
+        }
+
+        let Some(end) = decode_date_at(game_db, dates_offset + FALLBACK_END_DATE_OFFSET) else {
+            continue;
+        };
+        if best_end.is_some_and(|current| end <= current) {
+            continue;
+        }
+
+        let Some(start) = decode_date_at(game_db, dates_offset + FALLBACK_START_DATE_OFFSET) else {
+            continue;
+        };
+        if end <= start {
+            continue;
+        }
+
+        best_start = Some(start);
+        best_end = Some(end);
+    }
+
+    if best_start.is_none() && best_end.is_none() {
+        None
+    } else {
+        Some((best_start, best_end))
+    }
+}
 
 fn is_retained_nonterms_block(
     game_db: &[u8],
