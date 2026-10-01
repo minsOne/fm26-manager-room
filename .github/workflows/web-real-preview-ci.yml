@@ -1,0 +1,43 @@
+name: Real Data Preview CI
+on:
+  pull_request:
+    paths: ["apps/web/**", "tools/test_real_preview.py", ".github/workflows/web-real-preview-ci.yml"]
+  push:
+    branches: ["fix/web-real-data-session"]
+    paths: ["apps/web/**", "tools/test_real_preview.py", ".github/workflows/web-real-preview-ci.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: real-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  guarded-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax and all web unit tests
+        run: |
+          cd apps/web
+          npm run check
+          npm test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install browser test runner
+        run: |
+          python -m pip install "playwright==1.57.0"
+          python -m playwright install --with-deps chromium
+      - name: Synthetic browser interaction regression
+        run: python tools/test_real_preview.py --screenshot-dir /tmp/real-preview-screens
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-preview-screens
+          path: /tmp/real-preview-screens
+          if-no-files-found: ignore
+          retention-days: 7
