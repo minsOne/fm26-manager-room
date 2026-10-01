@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-final class LocalHTTPServer {
+final class LocalHTTPServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "fm26.manager-room.http")
     private let store: SnapshotStore
