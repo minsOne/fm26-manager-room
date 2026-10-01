@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - "perf/rust-parser-core"
+      - "perf/rust-player-semantics"
     paths:
       - "native/fm26-parser/**"
       - "tools/benchmark_fmsave_section.py"
