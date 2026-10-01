@@ -54,7 +54,16 @@ pub fn decode_game_info(section: &[u8]) -> Result<GameInfo> {
     })
 }
 
-pub fn decode_summary_date(section: &[u8]) -> Result<Option<GameDate>> {
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryInfo {
+    pub manager_name: String,
+    pub club_name: String,
+    pub club_uid: u32,
+    pub game_date: Option<GameDate>,
+}
+
+pub fn decode_summary(section: &[u8]) -> Result<SummaryInfo> {
     let (_, mut offset) = read_string(section, 8, 65_536)?;
     let (_, next) = read_string(section, offset, 32)?;
     offset = next;
@@ -70,12 +79,24 @@ pub fn decode_summary_date(section: &[u8]) -> Result<Option<GameDate>> {
         offset = next;
     }
 
-    let (_, next) = read_string(section, offset + 8, 1_024)?;
+    let (manager_name, next) = read_string(section, offset + 8, 1_024)?;
     offset = next;
-    let (_, next) = read_string(section, offset, 1_024)?;
+    let (club_name, next) = read_string(section, offset, 1_024)?;
     offset = next;
 
-    Ok(decode_date_at(section, offset + 4))
+    let club_uid = read_u32(section, offset)?;
+    let game_date = decode_date_at(section, offset + 4);
+
+    Ok(SummaryInfo {
+        manager_name,
+        club_name,
+        club_uid,
+        game_date,
+    })
+}
+
+pub fn decode_summary_date(section: &[u8]) -> Result<Option<GameDate>> {
+    Ok(decode_summary(section)?.game_date)
 }
 
 pub fn decode_date_at(buffer: &[u8], offset: usize) -> Option<GameDate> {
