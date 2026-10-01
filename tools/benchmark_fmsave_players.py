@@ -24,6 +24,7 @@ def main() -> int:
         started_players = time.perf_counter()
         players = list(career.players())
         players_ms = elapsed_ms(started_players)
+        clubs = list(career.clubs())
 
     ca_sum = sum(int(player.ability.current) for player in players)
     pa_raw_sum = 0
@@ -32,6 +33,50 @@ def main() -> int:
             pa_raw_sum += int(player.ability.potential)
         elif player.ability.potential_range_code is not None:
             pa_raw_sum += int(player.ability.potential_range_code)
+
+    decoded_people = [player for player in players if player.personality is not None]
+    name_hash = 0xCBF29CE484222325
+    for player in decoded_people:
+        if player.name is None:
+            continue
+        name_hash = fnv_update(name_hash, int(player.uid).to_bytes(4, "little", signed=False))
+        name_hash = fnv_update(name_hash, player.name.encode("utf-8"))
+        name_hash = fnv_update(name_hash, b"\xff")
+
+    personality_sums = [0] * 8
+    for player in decoded_people:
+        personality = player.personality
+        values = (
+            personality.adaptability,
+            personality.ambition,
+            personality.loyalty,
+            personality.pressure,
+            personality.professionalism,
+            personality.sportsmanship,
+            personality.temperament,
+            personality.controversy,
+        )
+        for index, value in enumerate(values):
+            personality_sums[index] += int(value)
+
+    club_name_hash = 0xCBF29CE484222325
+    for club in clubs:
+        club_name_hash = fnv_update(club_name_hash, int(club.uid).to_bytes(4, "little", signed=False))
+        club_name_hash = fnv_update(club_name_hash, club.name.encode("utf-8"))
+        club_name_hash = fnv_update(club_name_hash, b"\xff")
+
+    player_club_hash = 0xCBF29CE484222325
+    for player in players:
+        if player.club_uid is None or player.club_name is None:
+            continue
+        player_club_hash = fnv_update(
+            player_club_hash, int(player.uid).to_bytes(4, "little", signed=False)
+        )
+        player_club_hash = fnv_update(
+            player_club_hash, int(player.club_uid).to_bytes(4, "little", signed=False)
+        )
+        player_club_hash = fnv_update(player_club_hash, player.club_name.encode("utf-8"))
+        player_club_hash = fnv_update(player_club_hash, b"\xff")
 
     report = {
         "openMs": round(open_ms, 3),
@@ -47,9 +92,52 @@ def main() -> int:
         "rawMatchSharpnessSum": sum(int(player.raw_match_sharpness) for player in players),
         "rawConditionSum": sum(int(player.raw_condition) for player in players),
         "heightSum": sum(int(player.height_cm) for player in players),
+        "personDecoded": len(decoded_people),
+        "personMissing": len(players) - len(decoded_people),
+        "namePresent": sum(1 for player in decoded_people if player.name is not None),
+        "nameHashFnv1a64": name_hash,
+        "birthYearSum": sum(int(player.birth_date.year) for player in decoded_people if player.birth_date),
+        "birthDaySum": sum(int(player.birth_date.strftime("%j")) for player in decoded_people if player.birth_date),
+        "nationIdSum": sum(int(player.nation_id or 0) for player in decoded_people),
+        "personalitySums": personality_sums,
+        "traitBitsXor": xor_values(int(player.trait_bits or 0) for player in decoded_people),
+        "traitPopcountSum": sum(int(player.trait_bits or 0).bit_count() for player in decoded_people),
+        "clubCount": len(clubs),
+        "clubUidSum": sum(int(club.uid) for club in clubs),
+        "clubNationSum": sum(int(club.nation_id) for club in clubs),
+        "clubNameHashFnv1a64": club_name_hash,
+        "teamPresent": sum(1 for player in players if player.team_id is not None),
+        "teamResolved": sum(
+            1 for player in players if player.team_id is not None and player.club_uid is not None
+        ),
+        "teamIdSum": sum(int(player.team_id or 0) for player in players),
+        "resolvedClubUidSum": sum(int(player.club_uid or 0) for player in players),
+        "resolvedClubNationSum": sum(int(player.club_nation_id or 0) for player in players),
+        "resolvedClubNameHashFnv1a64": player_club_hash,
+        "affiliateRegistrationCount": sum(
+            1 for player in players if player.team_club_uid is not None
+        ),
     }
     print(json.dumps(report, indent=2))
     return 0
+
+
+FNV_PRIME = 0x100000001B3
+MASK64 = (1 << 64) - 1
+
+
+def fnv_update(value: int, data: bytes) -> int:
+    for byte in data:
+        value ^= byte
+        value = (value * FNV_PRIME) & MASK64
+    return value
+
+
+def xor_values(values) -> int:
+    result = 0
+    for value in values:
+        result ^= value
+    return result
 
 
 def elapsed_ms(started: float) -> float:

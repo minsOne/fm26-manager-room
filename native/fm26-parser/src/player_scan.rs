@@ -16,6 +16,7 @@ pub struct PlayerCandidate {
     pub record_offset: usize,
     pub pindex: u32,
     pub uid: u32,
+    pub team_id: u32,
     pub current_ability: u16,
     pub potential_ability: i16,
 }
@@ -41,6 +42,10 @@ pub struct PlayerScanStats {
 }
 
 pub fn scan(game_db: &[u8]) -> PlayerScanStats {
+    scan_with_candidates(game_db).0
+}
+
+pub fn scan_with_candidates(game_db: &[u8]) -> (PlayerScanStats, Vec<PlayerCandidate>) {
     let mut marker_hits = 0usize;
     let mut marker_candidates = Vec::new();
     let mut offsets = HashSet::new();
@@ -129,7 +134,8 @@ pub fn scan(game_db: &[u8]) -> PlayerScanStats {
         height_sum += game_db.get(offset + 121).copied().unwrap_or(0) as u64;
     }
 
-    PlayerScanStats {
+    let sample = all.iter().copied().take(8).collect();
+    let stats = PlayerScanStats {
         marker_hits,
         marker_candidates: marker_candidates.len(),
         completeness_candidates: completeness_candidates.len(),
@@ -144,8 +150,9 @@ pub fn scan(game_db: &[u8]) -> PlayerScanStats {
         raw_match_sharpness_sum,
         raw_condition_sum,
         height_sum,
-        sample: all.into_iter().take(8).collect(),
-    }
+        sample,
+    };
+    (stats, all)
 }
 
 fn scan_flagged_run(
@@ -213,6 +220,8 @@ fn accept_candidate(
         }
     }
 
+    let team_id = read_u32(game_db, record_offset + 16)?;
+
     let current_ability = read_u16(game_db, record_offset)?;
     if current_ability > 200 {
         return None;
@@ -236,6 +245,7 @@ fn accept_candidate(
         record_offset,
         pindex,
         uid,
+        team_id,
         current_ability,
         potential_ability,
     })
