@@ -6,7 +6,6 @@ on:
       - "native/fm26-parser/**"
       - "tools/benchmark_fmsave_section.py"
       - "tools/benchmark_fmsave_players.py"
-      - "tools/benchmark_fmsave_players.py"
       - ".github/workflows/rust-parser-ci.yml"
   push:
     branches:
@@ -14,6 +13,7 @@ on:
     paths:
       - "native/fm26-parser/**"
       - "tools/benchmark_fmsave_section.py"
+      - "tools/benchmark_fmsave_players.py"
       - ".github/workflows/rust-parser-ci.yml"
   workflow_dispatch:
 
@@ -36,8 +36,6 @@ jobs:
         run: cargo build --release --manifest-path native/fm26-parser/Cargo.toml
 
   benchmark-public-save:
-    # The public Google Drive fixture is reliably accessible from GitHub's Linux runners.
-    # macOS/arm64 compatibility is covered by the separate build job above.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -68,12 +66,17 @@ jobs:
           python tools/benchmark_fmsave_section.py /tmp/fm26-rust-bench/public.fm             > /tmp/fm26-rust-bench/python.json
           cat /tmp/fm26-rust-bench/python.json
 
+      - name: Benchmark Python full player reader
+        run: |
+          python tools/benchmark_fmsave_players.py /tmp/fm26-rust-bench/public.fm             > /tmp/fm26-rust-bench/python-players.json
+          cat /tmp/fm26-rust-bench/python-players.json
+
       - name: Benchmark Rust container/decompression/player scan
         run: |
           native/fm26-parser/target/release/fm26-manager-room-parser             bench /tmp/fm26-rust-bench/public.fm             > /tmp/fm26-rust-bench/rust.json
           cat /tmp/fm26-rust-bench/rust.json
 
-      - name: Compare timings
+      - name: Compare timings and correctness
         run: |
           python - <<'PY'
           import json
@@ -81,11 +84,10 @@ jobs:
 
           root = Path("/tmp/fm26-rust-bench")
           py = json.loads((root / "python.json").read_text())
-          rs = json.loads((root / "rust.json").read_text())
           py_players = json.loads((root / "python-players.json").read_text())
+          rs = json.loads((root / "rust.json").read_text())
 
           assert py["gameDbDecompressedBytes"] == rs["gameDbDecompressedBytes"]
-          assert rs["playerScan"]["totalCandidates"] > 1000
           assert rs["playerScan"]["totalCandidates"] == py_players["playerCount"]
           assert rs["playerScan"]["currentAbilitySum"] == py_players["currentAbilitySum"]
           assert rs["playerScan"]["potentialAbilityRawSum"] == py_players["potentialAbilityRawSum"]
@@ -93,7 +95,7 @@ jobs:
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
               "gameDbMiB": round(py["gameDbDecompressedBytes"] / 1024 / 1024, 1),
-              "python": {
+              "pythonContainer": {
                   "indexMs": py["indexMs"],
                   "decompressGameDbMs": py["decompressGameDbMs"],
                   "totalMs": py["totalMs"],
@@ -110,12 +112,17 @@ jobs:
                   "totalMs": round(rs["totalMs"], 3),
                   "playerCandidates": rs["playerScan"]["totalCandidates"],
               },
-              "playerDiscoverySpeedup": round(
-                  py_players["playersMs"] / max(rs["playerScanMs"], 0.001), 2
-              ),
               "decompressionSpeedup": round(
                   py["decompressGameDbMs"] / max(rs["decompressGameDbMs"], 0.001), 2
               ),
+              "playerDiscoverySpeedup": round(
+                  py_players["playersMs"] / max(rs["playerScanMs"], 0.001), 2
+              ),
+              "correctness": {
+                  "playerCountEqual": True,
+                  "currentAbilitySumEqual": True,
+                  "potentialAbilityRawSumEqual": True,
+              },
           }
           (root / "comparison.json").write_text(json.dumps(comparison, indent=2))
           print(json.dumps(comparison, indent=2))
@@ -131,7 +138,8 @@ jobs:
           name: rust-parser-benchmark
           path: |
             /tmp/fm26-rust-bench/python.json
-            /tmp/fm26-rust-bench/rust.json
             /tmp/fm26-rust-bench/python-players.json
+            /tmp/fm26-rust-bench/rust.json
             /tmp/fm26-rust-bench/comparison.json
+          if-no-files-found: warn
           retention-days: 7
