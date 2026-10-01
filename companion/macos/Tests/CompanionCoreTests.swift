@@ -29,13 +29,60 @@ func withDirectory(_ body: (URL) throws -> Void) throws {
 }
 func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 func payload() -> [String: Any] {
-    ["meta": ["source": "rust-save-parser", "gameDate": "2037-07-01"],
-     "manager": ["club": "Test FC", "clubUid": 123],
-     "formation": ["slots": [["id": "gk", "position": "GK"]]],
-     "players": [["id": "1", "name": "한글 테스트", "ca": 120, "pa": 180, "positions": ["GK"],
-                  "attributes": [:], "hidden": [:], "fitness": [:], "playingTime": [:], "contract": [:], "market": [:]]],
-     "fixtures": [], "externalCandidates": [], "loanOffers": [], "leagues": [], "training": [],
-     "recommendationsHistory": [], "decisions": []]
+    [
+        "schemaVersion": 2,
+        "source": "rust-native",
+        "saveName": "Test Career",
+        "dbVersion": "26.0.0+0",
+        "gameDate": "2037-07-01",
+        "manager": ["name": "Manager", "club": "Test FC", "clubUid": 123],
+        "clubFinance": NSNull(),
+        "fixtures": [],
+        "players": [[
+            "id": "1",
+            "name": "한글 테스트",
+            "age": 20,
+            "nationality": "1",
+            "primaryPosition": "GK",
+            "positions": ["GK"],
+            "ca": 120,
+            "pa": 180,
+            "paKnown": true,
+            "value": 1_000_000,
+            "wage": 10_000,
+            "attributes": [:],
+            "hidden": [:],
+            "playingTime": [
+                "agreed": "Squad Player",
+                "recentMinutes": 180,
+                "startsLast5": 2,
+                "minutesLast5": 220,
+                "recentMinutesKnown": true
+            ],
+            "fitness": [
+                "condition": 95,
+                "matchSharpness": 90,
+                "fatigue": 0,
+                "fatigueKnown": false,
+                "injuryRisk": 0,
+                "injuryRiskKnown": false
+            ],
+            "contract": [
+                "weeklyWage": 10_000,
+                "monthsRemaining": 24,
+                "squadStatus": "Squad Player"
+            ]
+        ]],
+        "coverage": [
+            "players": "native",
+            "attributes": "native",
+            "personality": "native",
+            "contracts": "native-chain-current",
+            "fixtures": "native-managed-upcoming",
+            "recentMinutes": "native-match-history",
+            "finances": "managed-club-native-finance"
+        ]
+    ]
 }
 func json(_ value: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) }
 func parser(_ root: URL, body: String) throws -> URL {
@@ -75,7 +122,7 @@ func request(_ origin: String? = nil, host: String = "127.0.0.1:8765", method: S
                 }
             }),
             ("snapshot rejects demo disguised as live", {
-                var p = payload(); p["meta"] = ["source": "demo", "gameDate": "2037-07-01"]
+                var p = payload(); p["source"] = "demo"
                 try rejects { try SnapshotValidation.validate(json(p)) }
             }),
             ("date validation leap years and malformed input", {
