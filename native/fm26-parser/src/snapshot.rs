@@ -1,5 +1,6 @@
 use crate::club::ClubIndex;
 use crate::contract::{ContractCore, GameDate};
+use crate::match_history::RecentMinutes;
 use crate::person::PersonCore;
 use crate::player_scan::PlayerCandidate;
 use serde::Serialize;
@@ -214,6 +215,7 @@ pub fn build(
     people: &[Option<PersonCore>],
     clubs: &ClubIndex,
     contracts: &[Option<ContractCore>],
+    recent_minutes: &[RecentMinutes],
     clock: GameDate,
     managed_club_uid: u32,
 ) -> Snapshot {
@@ -235,7 +237,8 @@ pub fn build(
 
         let person = people.get(index).and_then(Option::as_ref);
         let contract = contracts.get(index).and_then(Option::as_ref);
-        players.push(player_row(game_db, candidate, person, contract, clock));
+        let recent = recent_minutes.get(index).copied().unwrap_or_default();
+        players.push(player_row(game_db, candidate, person, contract, recent, clock));
     }
 
     Snapshot {
@@ -252,7 +255,7 @@ pub fn build(
                 player_core: "native",
                 person: "native",
                 contracts: "native",
-                recent_minutes: "pending-native-match-history",
+                recent_minutes: "native-match-history",
                 fatigue: "runtime-bridge-required",
                 fixtures: "pending-native-fixture-reader",
                 economy: "pending-native-finance-reader",
@@ -286,6 +289,7 @@ fn player_row(
     player: &PlayerCandidate,
     person: Option<&PersonCore>,
     contract: Option<&ContractCore>,
+    recent: RecentMinutes,
     clock: GameDate,
 ) -> PlayerRow {
     let positions = positions(game_db, player.record_offset);
@@ -339,10 +343,10 @@ fn player_row(
         playing_time: PlayingTime {
             agreed: squad_status(contract.and_then(|value| value.squad_status)).to_owned(),
             actual: None,
-            recent_minutes: 0,
+            recent_minutes: recent.last14,
             starts_last5: 0,
-            minutes_last5: 0,
-            recent_minutes_known: false,
+            minutes_last5: recent.last5,
+            recent_minutes_known: recent.known,
         },
         fitness: Fitness {
             condition: ((condition_raw / 100).min(100)) as u8,
