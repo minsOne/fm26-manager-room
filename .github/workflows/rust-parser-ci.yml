@@ -12,6 +12,7 @@ on:
       - "perf/rust-parser-core"
       - "perf/rust-player-semantics"
       - "perf/rust-contracts"
+      - "feature/rust-quick-snapshot"
     paths:
       - "native/fm26-parser/**"
       - "tools/benchmark_fmsave_section.py"
@@ -125,6 +126,9 @@ jobs:
           assert rs["gameInfo"]["gameDate"]["year"] == py_players["gameDateYear"]
           assert rs["gameInfo"]["gameDate"]["dayOfYear"] == py_players["gameDateDay"]
           assert rs["gameInfo"]["dbVersion"] == py_players["dbVersion"]
+          assert rs["summary"]["clubUid"] == py_players["managedClubUid"]
+          assert rs["summary"]["clubName"] == py_players["managedClubName"]
+          assert rs["summary"]["managerName"] == py_players["managerName"]
           assert rs["contracts"]["playersWithChain"] == py_players["playersWithChain"]
           assert rs["contracts"]["chainRecords"] == py_players["chainRecords"]
           assert rs["contracts"]["chainTeamsResolved"] == py_players["chainTeamsResolved"]
