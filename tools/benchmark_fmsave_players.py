@@ -96,7 +96,7 @@ def main() -> int:
         if managed and player.club_uid == managed[0].club_uid
     ]
     managed_name_hash = 0xCBF29CE484222325
-    for player in managed_players:
+    for player in sorted(managed_players, key=lambda player: int(player.uid)):
         if player.name is None:
             continue
         managed_name_hash = fnv_update(
