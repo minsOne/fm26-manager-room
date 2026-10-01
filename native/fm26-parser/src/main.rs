@@ -1,6 +1,9 @@
 mod club;
 mod container;
 mod contracts;
+mod finance;
+mod fixture;
+mod match_history;
 mod metadata;
 mod names;
 mod person;
@@ -33,6 +36,11 @@ struct BenchReport {
     club_scan_ms: f64,
     game_info_ms: f64,
     contract_decode_ms: f64,
+    match_history_ms: f64,
+    finance_ms: f64,
+    span_decompress_ms: f64,
+    fixture_ms: f64,
+    span_bytes: usize,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
     person_decode: person::PersonDecodeStats,
@@ -41,6 +49,9 @@ struct BenchReport {
     game_info: metadata::GameInfo,
     summary: metadata::SummaryInfo,
     contracts: contracts::ContractStats,
+    match_history: match_history::MatchHistoryStats,
+    finance: finance::FinanceStats,
+    fixtures: fixture::FixtureStats,
 }
 
 fn main() -> Result<()> {
@@ -120,6 +131,12 @@ fn quick_snapshot(path: PathBuf) -> Result<()> {
 
     let (_contract_stats, current_contracts) =
         contracts::decode_all_with_current(&game_db, &candidates, &club_index, clock);
+    let (recent_minutes, _match_history_stats) =
+        match_history::recent_minutes_all(&game_db, &candidates, clock);
+    let (finances, _finance_stats) = finance::read_latest(&game_db, &club_index);
+    let span = container::read_unlisted_after(&mapped, &index, "non_pl_hist_ls")?;
+    let (fixtures, _fixture_stats) =
+        fixture::managed_upcoming(&span, &club_index, summary.club_uid, clock, 12);
 
     let snapshot = snapshot::build(
         &game_db,
@@ -130,7 +147,10 @@ fn quick_snapshot(path: PathBuf) -> Result<()> {
         &candidates,
         &people,
         &current_contracts,
+        &recent_minutes,
         &club_index,
+        &finances,
+        fixtures,
     );
 
     println!("{}", serde_json::to_string_pretty(&snapshot)?);
@@ -212,6 +232,25 @@ fn bench(path: PathBuf) -> Result<()> {
     let contract_stats = contracts::decode_all(&game_db, &candidates, &club_index, clock);
     let contract_decode_ms = elapsed_ms(started);
 
+    let started = Instant::now();
+    let (_recent_minutes, match_history_stats) =
+        match_history::recent_minutes_all(&game_db, &candidates, clock);
+    let match_history_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    let (_finances, finance_stats) = finance::read_latest(&game_db, &club_index);
+    let finance_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    let span = container::read_unlisted_after(&mapped, &index, "non_pl_hist_ls")?;
+    let span_decompress_ms = elapsed_ms(started);
+    let span_bytes = span.len();
+
+    let started = Instant::now();
+    let (_fixtures, fixture_stats) =
+        fixture::managed_upcoming(&span, &club_index, summary.club_uid, clock, 12);
+    let fixture_ms = elapsed_ms(started);
+
     let report = BenchReport {
         file: path.display().to_string(),
         file_bytes: metadata.len(),
@@ -228,6 +267,11 @@ fn bench(path: PathBuf) -> Result<()> {
         club_scan_ms,
         game_info_ms,
         contract_decode_ms,
+        match_history_ms,
+        finance_ms,
+        span_decompress_ms,
+        fixture_ms,
+        span_bytes,
         total_ms: elapsed_ms(total_started),
         player_scan,
         person_decode,
@@ -236,6 +280,9 @@ fn bench(path: PathBuf) -> Result<()> {
         game_info,
         summary,
         contracts: contract_stats,
+        match_history: match_history_stats,
+        finance: finance_stats,
+        fixtures: fixture_stats,
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
