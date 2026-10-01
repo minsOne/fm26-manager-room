@@ -38,6 +38,7 @@ struct BenchReport {
     club_scan: club::ClubScanStats,
     player_club_join: club::PlayerClubJoinStats,
     game_info: metadata::GameInfo,
+    summary: metadata::SummaryInfo,
     contracts: contracts::ContractStats,
 }
 
@@ -126,13 +127,14 @@ fn bench(path: PathBuf) -> Result<()> {
         .clone();
     let game_info_bytes = container::read_section(&mapped, &game_info_entry)?;
     let mut game_info = metadata::decode_game_info(&game_info_bytes)?;
+    let summary_entry = index
+        .section("save_game_summary")
+        .context("save contains no save_game_summary section")?
+        .clone();
+    let summary_bytes = container::read_section(&mapped, &summary_entry)?;
+    let summary = metadata::decode_summary(&summary_bytes)?;
     if game_info.game_date.is_none() {
-        let summary_entry = index
-            .section("save_game_summary")
-            .context("save contains no save_game_summary section")?
-            .clone();
-        let summary_bytes = container::read_section(&mapped, &summary_entry)?;
-        game_info.game_date = metadata::decode_summary_date(&summary_bytes)?;
+        game_info.game_date = summary.game_date;
     }
     let game_info_ms = elapsed_ms(started);
     let clock = game_info
@@ -165,6 +167,7 @@ fn bench(path: PathBuf) -> Result<()> {
         club_scan,
         player_club_join,
         game_info,
+        summary,
         contracts: contract_stats,
     };
 
