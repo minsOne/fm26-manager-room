@@ -27,6 +27,17 @@ export function askCoach(snapshot,question){
   }
   if(/사우디|인플레|경제|market/.test(q)){
     const hot=marketHealth(snapshot)[0];
+    if(!hot){
+      const finance=snapshot.clubFinance;
+      const clubText=finance
+        ? `현재 관리 구단의 실제 세이브 재정은 Balance ${money(finance.balance)}, Transfer Budget ${money(finance.transferBudgetRemaining)}입니다. `
+        : "";
+      return response(
+        clubText+"리그 단위 World Economy는 club → competition 매핑 검증 전이라 아직 판단하지 않습니다.",
+        96,
+        ["실제 save finance","World Economy coverage unavailable"]
+      );
+    }
     return response(`${hot.name}의 Financial/Sporting Power gap은 +${hot.gap}, 상태는 ${hot.status}입니다. World Balance에서는 선수 능력치를 건드리지 않고 클럽 경제만 조정합니다.`,hot.confidence,["구매력","리그 경쟁력","주급 성장","지출 비중"]);
   }
   if(/쉬|체력|부상/.test(q)){
@@ -43,3 +54,11 @@ export function askCoach(snapshot,question){
 
 function response(text,confidence,evidence){return{text,confidence:Math.max(50,Math.min(99,confidence||70)),evidence};}
 function avg(v){return v.length?v.reduce((a,b)=>a+b,0)/v.length:70;}
+
+function money(value){
+  const n=Number(value??0);
+  if(Math.abs(n)>=1e9)return "€"+(n/1e9).toFixed(1)+"B";
+  if(Math.abs(n)>=1e6)return "€"+(n/1e6).toFixed(1)+"M";
+  if(Math.abs(n)>=1e3)return "€"+Math.round(n/1e3)+"K";
+  return "€"+n;
+}
