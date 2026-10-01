@@ -1,3 +1,4 @@
+use crate::player_scan::PlayerCandidate;
 use anyhow::{anyhow, Result};
 use memchr::memmem;
 use serde::Serialize;
@@ -81,6 +82,18 @@ pub struct ClubScanStats {
     pub name_hash_fnv1a64: u64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerClubJoinStats {
+    pub with_team: usize,
+    pub team_resolved: usize,
+    pub team_id_sum: u64,
+    pub club_uid_sum: u64,
+    pub club_nation_sum: u64,
+    pub club_name_hash_fnv1a64: u64,
+    pub affiliate_registration_count: usize,
+}
+
 #[derive(Debug)]
 struct RawClub {
     record_start: usize,
@@ -162,7 +175,9 @@ impl ClubIndex {
             .collect::<HashMap<_, _>>();
 
         let mut name_hash = FNV_OFFSET_BASIS;
-        for club in &clubs {
+        let mut order: Vec<&ClubCore> = clubs.iter().collect();
+        order.sort_by_key(|club| club.club_index);
+        for club in order {
             name_hash = fnv_update(name_hash, &club.uid.to_le_bytes());
             name_hash = fnv_update(name_hash, club.name.as_bytes());
             name_hash = fnv_update(name_hash, &[0xff]);
@@ -209,6 +224,53 @@ impl ClubIndex {
 
     pub fn club(&self, uid: u32) -> Option<&ClubCore> {
         self.club_by_uid.get(&uid).and_then(|index| self.clubs.get(*index))
+    }
+
+    pub fn player_join_stats(&self, players: &[PlayerCandidate]) -> PlayerClubJoinStats {
+        let mut with_team = 0usize;
+        let mut team_resolved = 0usize;
+        let mut team_id_sum = 0u64;
+        let mut club_uid_sum = 0u64;
+        let mut club_nation_sum = 0u64;
+        let mut club_name_hash = FNV_OFFSET_BASIS;
+        let mut affiliate_registration_count = 0usize;
+
+        for player in players {
+            if player.team_id == MISSING_REFERENCE {
+                continue;
+            }
+            with_team += 1;
+            team_id_sum += player.team_id as u64;
+
+            let Some(resolution) = self.resolve_team(player.team_id) else {
+                continue;
+            };
+            let Some(club) = self.club(resolution.club_uid) else {
+                continue;
+            };
+
+            team_resolved += 1;
+            club_uid_sum += club.uid as u64;
+            club_nation_sum += club.nation_id as u64;
+            if resolution.registration_club_uid.is_some() {
+                affiliate_registration_count += 1;
+            }
+
+            club_name_hash = fnv_update(club_name_hash, &player.uid.to_le_bytes());
+            club_name_hash = fnv_update(club_name_hash, &club.uid.to_le_bytes());
+            club_name_hash = fnv_update(club_name_hash, club.name.as_bytes());
+            club_name_hash = fnv_update(club_name_hash, &[0xff]);
+        }
+
+        PlayerClubJoinStats {
+            with_team,
+            team_resolved,
+            team_id_sum,
+            club_uid_sum,
+            club_nation_sum,
+            club_name_hash_fnv1a64: club_name_hash,
+            affiliate_registration_count,
+        }
     }
 }
 
