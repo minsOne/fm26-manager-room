@@ -224,3 +224,39 @@ fn read_u64(buffer: &[u8], offset: usize) -> Result<u64> {
         .expect("eight-byte slice");
     Ok(u64::from_le_bytes(bytes))
 }
+
+
+pub fn read_unlisted_after(
+    mapped: &Mmap,
+    index: &ContainerIndex,
+    entry_name: &str,
+) -> Result<Vec<u8>> {
+    let position = index
+        .entries
+        .iter()
+        .position(|entry| entry.name == entry_name)
+        .ok_or_else(|| anyhow!("directory contains no entry named {entry_name}"))?;
+    let entry = &index.entries[position];
+    let start_u64 = entry
+        .frame_offset
+        .checked_add(entry.compressed_size)
+        .ok_or_else(|| anyhow!("region start overflow after {entry_name}"))?;
+    let end_u64 = index
+        .entries
+        .get(position + 1)
+        .map(|next| next.frame_offset)
+        .unwrap_or(index.trailer_offset);
+
+    if end_u64 <= start_u64 {
+        return Ok(Vec::new());
+    }
+
+    let start = usize::try_from(start_u64).context("region start does not fit usize")?;
+    let end = usize::try_from(end_u64).context("region end does not fit usize")?;
+    let compressed = mapped
+        .get(start..end)
+        .ok_or_else(|| anyhow!("unlisted region after {entry_name} lies outside file"))?;
+
+    zstd::stream::decode_all(Cursor::new(compressed))
+        .with_context(|| format!("could not decompress unlisted region after {entry_name}"))
+}
