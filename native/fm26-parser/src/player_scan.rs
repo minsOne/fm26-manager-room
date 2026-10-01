@@ -16,6 +16,7 @@ pub struct PlayerCandidate {
     pub record_offset: usize,
     pub pindex: u32,
     pub uid: u32,
+    pub team_id: u32,
     pub current_ability: u16,
     pub potential_ability: i16,
 }
@@ -219,6 +220,8 @@ fn accept_candidate(
         }
     }
 
+    let team_id = read_u32(game_db, record_offset + 16)?;
+
     let current_ability = read_u16(game_db, record_offset)?;
     if current_ability > 200 {
         return None;
@@ -242,6 +245,7 @@ fn accept_candidate(
         record_offset,
         pindex,
         uid,
+        team_id,
         current_ability,
         potential_ability,
     })
