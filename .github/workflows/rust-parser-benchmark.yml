@@ -1,0 +1,80 @@
+name: Rust vs Python Save Benchmark
+
+on:
+  push:
+    branches:
+      - "perf/rust-save-parser"
+    paths:
+      - "parser/rust/**"
+      - "tools/benchmark_fmsave.py"
+      - ".github/workflows/rust-parser-benchmark.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python reference parser and downloader
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "gdown==5.2.0"
+          python -m pip install "git+https://github.com/rhiever/fmsave.git@97ac7fe5991fa93f05e42e32f02f37e4c1874d61"
+
+      - name: Download public FM26 save
+        run: |
+          mkdir -p /tmp/fm26-bench
+          python -m gdown --id 1UZlBHKpEae416lx8apbkug-pmZH7RMKd -O /tmp/fm26-bench/public.fm
+          test -s /tmp/fm26-bench/public.fm
+          ls -lh /tmp/fm26-bench/public.fm
+
+      - name: Build Rust release parser
+        run: cargo build --manifest-path parser/rust/Cargo.toml --release
+
+      - name: Rust container benchmark
+        run: |
+          parser/rust/target/release/fm26-manager-room-parser bench             /tmp/fm26-bench/public.fm game_db             | tee /tmp/fm26-bench/rust.json
+
+      - name: Python reference container benchmark
+        run: |
+          python tools/benchmark_fmsave.py             /tmp/fm26-bench/public.fm             --section game_db             | tee /tmp/fm26-bench/python.json
+
+      - name: Compare
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fm26-bench/rust.json").read_text())
+          p=json.loads(Path("/tmp/fm26-bench/python.json").read_text())
+          assert r["section"]["decompressed_bytes"] == p["section"]["decompressed_bytes"]
+          result={
+            "rust":r,
+            "python":p,
+            "indexSpeedup": round(p["index_ms"]/r["index_ms"],2) if r["index_ms"] else None,
+            "decompressSpeedup": round(p["section"]["decompress_ms"]/r["section"]["decompress_ms"],2) if r["section"]["decompress_ms"] else None,
+            "totalSpeedup": round(p["total_ms"]/r["total_ms"],2) if r["total_ms"] else None,
+          }
+          Path("/tmp/fm26-bench/comparison.json").write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          PY
+
+      - name: Remove public save
+        if: always()
+        run: rm -f /tmp/fm26-bench/public.fm
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-python-save-benchmark
+          path: /tmp/fm26-bench/comparison.json
+          retention-days: 7
+          if-no-files-found: warn
