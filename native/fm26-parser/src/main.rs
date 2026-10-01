@@ -4,6 +4,7 @@ mod container;
 mod names;
 mod person;
 mod player_scan;
+mod snapshot;
 
 use anyhow::{bail, Context, Result};
 use memmap2::MmapOptions;
@@ -58,6 +59,35 @@ fn main() -> Result<()> {
             let clock = clock.context("bench requires --clock YYYY-MM-DD")?;
             bench(path, clock)
         }
+        "snapshot" => {
+            let path = args
+                .next()
+                .map(PathBuf::from)
+                .context("usage: fm26-manager-room-parser snapshot <save.fm> --clock YYYY-MM-DD --club-uid N [--pretty]")?;
+            let mut clock = None;
+            let mut club_uid = None;
+            let mut pretty = false;
+            while let Some(flag) = args.next() {
+                match flag.as_str() {
+                    "--clock" => {
+                        let value = args.next().context("--clock needs YYYY-MM-DD")?;
+                        clock = Some(parse_clock(&value)?);
+                    }
+                    "--club-uid" => {
+                        let value = args.next().context("--club-uid needs an integer")?;
+                        club_uid = Some(value.parse::<u32>()?);
+                    }
+                    "--pretty" => pretty = true,
+                    _ => bail!("unknown snapshot option: {flag}"),
+                }
+            }
+            snapshot_command(
+                path,
+                clock.context("snapshot requires --clock YYYY-MM-DD")?,
+                club_uid.context("snapshot requires --club-uid N")?,
+                pretty,
+            )
+        }
         "inspect" => {
             let path = args
                 .next()
@@ -69,9 +99,53 @@ fn main() -> Result<()> {
             eprintln!("Usage:");
             eprintln!("  fm26-manager-room-parser inspect <save.fm>");
             eprintln!("  fm26-manager-room-parser bench <save.fm> --clock YYYY-MM-DD");
+            eprintln!("  fm26-manager-room-parser snapshot <save.fm> --clock YYYY-MM-DD --club-uid N [--pretty]");
             Ok(())
         }
     }
+}
+
+
+fn snapshot_command(
+    path: PathBuf,
+    clock: contract::GameDate,
+    club_uid: u32,
+    pretty: bool,
+) -> Result<()> {
+    let file = File::open(&path)
+        .with_context(|| format!("could not open {}", path.display()))?;
+    let mapped = unsafe { MmapOptions::new().map(&file)? };
+    let index = container::read_index(&mapped)?;
+    let game_db_entry = index
+        .section("game_db")
+        .context("save contains no game_db section")?
+        .clone();
+    let game_db = container::read_section(&mapped, &game_db_entry)?;
+
+    let (_scan, candidates) = player_scan::scan_with_candidates(&game_db);
+    let name_pools = names::NamePools::locate(&game_db)?;
+    let (people, _person_stats) = person::decode_all(&game_db, &candidates, &name_pools)?;
+    let (club_index, _club_stats) = club::ClubIndex::scan(&game_db)?;
+    let (contracts, _contract_stats) =
+        contract::decode_all(&game_db, &candidates, &club_index, clock);
+
+    let value = snapshot::build(
+        index.save_name,
+        &game_db,
+        &candidates,
+        &people,
+        &club_index,
+        &contracts,
+        clock,
+        club_uid,
+    );
+
+    if pretty {
+        println!("{}", serde_json::to_string_pretty(&value)?);
+    } else {
+        println!("{}", serde_json::to_string(&value)?);
+    }
+    Ok(())
 }
 
 fn inspect(path: PathBuf) -> Result<()> {
