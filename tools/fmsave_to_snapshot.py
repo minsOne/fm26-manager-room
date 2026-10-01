@@ -87,6 +87,24 @@ ATTRIBUTE_MAP = {
     "composure": "composure",
 }
 
+def slot(
+    identifier: str,
+    position: str,
+    x: int,
+    y: int,
+    ip_role: str,
+    oop_role: str,
+) -> dict[str, Any]:
+    return {
+        "id": identifier,
+        "position": position,
+        "x": x,
+        "y": y,
+        "ipRole": ip_role,
+        "oopRole": oop_role,
+    }
+
+
 DEFAULT_FORMATION = {
     "id": "433",
     "name": "4-3-3",
@@ -105,24 +123,6 @@ DEFAULT_FORMATION = {
         slot("st", "ST", 50, 12, "Advanced Forward", "Pressing Forward"),
     ],
 }
-
-
-def slot(
-    identifier: str,
-    position: str,
-    x: int,
-    y: int,
-    ip_role: str,
-    oop_role: str,
-) -> dict[str, Any]:
-    return {
-        "id": identifier,
-        "position": position,
-        "x": x,
-        "y": y,
-        "ipRole": ip_role,
-        "oopRole": oop_role,
-    }
 
 
 def main() -> int:
