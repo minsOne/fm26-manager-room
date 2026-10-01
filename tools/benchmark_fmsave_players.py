@@ -39,6 +39,11 @@ def main() -> int:
         finances = list(career.finances())
         finances_ms = elapsed_ms(started_finances)
 
+        started_stages = time.perf_counter()
+        stages = list(career.stages())
+        competitions = list(career.competitions())
+        stages_ms = elapsed_ms(started_stages)
+
         started_fixtures = time.perf_counter()
         fixtures = list(career.fixtures())
         fixtures_ms = elapsed_ms(started_fixtures)
@@ -120,6 +125,9 @@ def main() -> int:
         if previous is None or row.month > previous.month:
             latest_finance[row.club_uid] = row
 
+    stage_by_id = {stage.id: stage for stage in stages}
+    competition_by_id = {competition.id: competition for competition in competitions}
+
     managed_upcoming = []
     if managed_club and game_date:
         managed_upcoming = [
@@ -144,6 +152,7 @@ def main() -> int:
         managed_upcoming = managed_upcoming[:12]
 
     fixture_hash = 0xCBF29CE484222325
+    fixture_competition_hash = 0xCBF29CE484222325
     for fixture in managed_upcoming:
         home = fixture.home_club_uid == managed_club.club_uid
         opponent_uid = fixture.away_club_uid if home else fixture.home_club_uid
@@ -159,6 +168,20 @@ def main() -> int:
         fixture_hash = fnv_update(fixture_hash, bytes([1 if home else 0]))
         fixture_hash = fnv_update(
             fixture_hash, int(opponent_uid or 0).to_bytes(4, "little", signed=False)
+        )
+        stage = stage_by_id.get(fixture.stage_id)
+        competition_id = int(fixture.competition_id or 0)
+        competition = competition_by_id.get(fixture.competition_id)
+        database_id = int(competition.database_id or 0) if competition else 0
+        round_raw = int(stage.round.raw) if stage and stage.round is not None else 0
+        fixture_competition_hash = fnv_update(
+            fixture_competition_hash, competition_id.to_bytes(4, "little", signed=False)
+        )
+        fixture_competition_hash = fnv_update(
+            fixture_competition_hash, database_id.to_bytes(4, "little", signed=False)
+        )
+        fixture_competition_hash = fnv_update(
+            fixture_competition_hash, round_raw.to_bytes(4, "little", signed=False)
         )
 
     managed_players = (
@@ -271,10 +294,21 @@ def main() -> int:
         ),
         "financeNetSum": sum(int(row.net) for row in latest_finance.values()),
         "financeRowCountSum": sum(finance_row_counts.values()),
+        "stagesMs": round(stages_ms, 3),
+        "stageCount": len(stages),
+        "stageIdSum": sum(int(stage.id) for stage in stages),
+        "stageCompetitionIdSum": sum(int(stage.competition_id or 0) for stage in stages),
+        "stageRoundRawSum": sum(
+            int(stage.round.raw) for stage in stages if stage.round is not None
+        ),
+        "competitionCount": len(competitions),
+        "competitionWithDatabaseId": sum(c.database_id is not None for c in competitions),
+        "competitionDatabaseIdSum": sum(int(c.database_id or 0) for c in competitions),
         "fixturesMs": round(fixtures_ms, 3),
         "fixtureRows": len(fixtures),
         "managedUpcomingFixtureCount": len(managed_upcoming),
         "managedUpcomingFixtureHash": fixture_hash,
+        "managedUpcomingCompetitionHash": fixture_competition_hash,
         "managedUpcomingFixtureCore": [
             {
                 "date": fixture.date.isoformat(),
