@@ -1,0 +1,28 @@
+name: Companion Reliability CI
+on:
+  push:
+    branches: ["fix/macos-ingestion-reliability"]
+  pull_request:
+    paths:
+      - "companion/macos/**"
+      - "tools/test_companion_core.sh"
+      - "tools/test_companion_http.py"
+      - ".github/workflows/companion-reliability-ci.yml"
+permissions:
+  contents: read
+concurrency:
+  group: companion-reliability-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - name: Build complete macOS companion
+        run: swift build --package-path companion/macos -c release
+      - name: Run portable Swift core tests
+        run: bash tools/test_companion_core.sh
+      - name: Verify loopback HTTP boundary
+        run: python3 tools/test_companion_http.py --binary companion/macos/.build/release/manager-room-companion
