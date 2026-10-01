@@ -30,8 +30,6 @@ struct BenchReport {
     club_scan_ms: f64,
     total_ms: f64,
     player_scan: player_scan::PlayerScanStats,
-    person_ms: f64,
-    person: person::PersonStats,
     person_decode: person::PersonDecodeStats,
     club_scan: club::ClubScanStats,
     player_club_join: club::PlayerClubJoinStats,
