@@ -1,0 +1,20 @@
+[package]
+name = "fm26-manager-room-parser"
+version = "0.1.0"
+edition = "2021"
+description = "Native FM26 save parser core for Manager Room"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+memchr = "2.7"
+memmap2 = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+zstd = "0.13"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
