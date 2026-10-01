@@ -36,6 +36,12 @@ const FALLBACK_NONZERO_LENGTH: usize = 8;
 const FALLBACK_GATE_LENGTH: usize = 16;
 
 const MISSING: u32 = u32::MAX;
+const NONTERMS_BLOCK_PREFIX: &[u8] = &[
+    0x00,0x00,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0x00,
+    0xff,0xff,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+];
+const TAIL_PRINTED_START_OFFSET: usize = 32;
+const TAIL_E24_OFFSET: usize = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +58,7 @@ impl GameDate {
 
 #[derive(Debug, Clone)]
 struct ChainRecord {
+    tag_at: usize,
     club_uid: Option<u32>,
     team_id: u32,
     wage: u32,
@@ -189,8 +196,23 @@ fn decode_one(
         });
     }
 
-    let in_effect = in_effect_record(&chain, player_club_uid, clock);
     let (fallback_start, fallback_end) = fallback;
+    let registration_missing = player.team_id == MISSING;
+    let only_retained_nonterms = registration_missing
+        && fallback_end.is_none_or(|end| end < clock)
+        && chain.iter().all(|record| {
+            is_retained_nonterms_block(
+                game_db,
+                record,
+                player.record_offset,
+                window_end,
+            )
+        });
+    let in_effect = if only_retained_nonterms {
+        None
+    } else {
+        in_effect_record(&chain, player_club_uid, clock)
+    };
 
     match in_effect {
         None => Some(ContractCore {
@@ -286,6 +308,7 @@ fn decode_chain_record(game_db: &[u8], tag_at: usize, clubs: &ClubIndex) -> Opti
     let tail_at = locate_tail(game_db, tag_at);
     match tail_at {
         None => Some(ChainRecord {
+            tag_at,
             club_uid,
             team_id,
             wage,
@@ -310,6 +333,7 @@ fn decode_chain_record(game_db: &[u8], tag_at: usize, clubs: &ClubIndex) -> Opti
                     game_db.get(head + (HEAD_GATE_OFFSET_BEFORE_BASE - HEAD_TYPE_OFFSET_BEFORE_BASE)).copied()
                 });
             Some(ChainRecord {
+                tag_at,
                 club_uid,
                 team_id,
                 wage,
@@ -481,6 +505,39 @@ fn latest_started_at_club(
         }
     }
     chosen.map(|value| value.0)
+}
+
+fn is_retained_nonterms_block(
+    game_db: &[u8],
+    record: &ChainRecord,
+    record_start: usize,
+    record_end: usize,
+) -> bool {
+    if record.has_terms {
+        return false;
+    }
+    let Some(base) = record.tag_at.checked_sub(TAIL_BASE_OFFSET) else {
+        return false;
+    };
+    if base < record_start {
+        return false;
+    }
+    let needed = [
+        NONTERMS_BLOCK_PREFIX.len(),
+        TAIL_END_OFFSET + 4,
+        TAIL_PRINTED_START_OFFSET + TAG.len(),
+        TAIL_EVENT_COUNT_OFFSET + 4,
+    ].into_iter().max().unwrap_or(0);
+    let Some(block_end) = base.checked_add(needed) else {
+        return false;
+    };
+    if block_end > record_end.min(game_db.len()) {
+        return false;
+    }
+    game_db.get(base..base + NONTERMS_BLOCK_PREFIX.len()) == Some(NONTERMS_BLOCK_PREFIX)
+        && game_db.get(base + TAIL_PRINTED_START_OFFSET..base + TAIL_PRINTED_START_OFFSET + TAG.len()) == Some(TAG)
+        && read_u32(game_db, base + TAIL_EVENT_COUNT_OFFSET) == Some(0)
+        && decode_date(game_db, base + TAIL_END_OFFSET).is_some()
 }
 
 fn carries_no_contract(record: &ChainRecord) -> bool {
