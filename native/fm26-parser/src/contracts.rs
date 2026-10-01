@@ -51,6 +51,7 @@ pub struct ContractStats {
     pub chain_event_count_sum: u64,
 
     pub current_from_chain: usize,
+    pub current_with_terms: usize,
     pub current_wage_sum: u64,
     pub current_end_date_sum: u64,
     pub current_squad_status_sum: u64,
@@ -75,6 +76,7 @@ pub fn decode_all(
         chain_squad_status_sum: 0,
         chain_event_count_sum: 0,
         current_from_chain: 0,
+        current_with_terms: 0,
         current_wage_sum: 0,
         current_end_date_sum: 0,
         current_squad_status_sum: 0,
@@ -111,6 +113,9 @@ pub fn decode_all(
 
         if let Some(current) = in_effect_record(&records, player_club_uid, clock) {
             stats.current_from_chain += 1;
+            if current.has_terms {
+                stats.current_with_terms += 1;
+            }
             stats.current_wage_sum += current.wage as u64;
             stats.current_team_id_sum += current.team_id as u64;
             if let Some(uid) = current.club_uid {
