@@ -33,6 +33,7 @@ pub struct CompetitionStats{
     pub database_id_conflicts:usize,
     pub with_name:usize,
     pub pair_records:usize,
+    pub database_id_sum:u64,
 }
 #[derive(Debug,Clone)]
 pub struct CompetitionIndex{
@@ -49,7 +50,7 @@ impl CompetitionIndex{
         let mut by_id=HashMap::new();
         for id in ids {
             let db=if contested.contains(&id){None}else{pairs.get(&id).copied()};
-            if db.is_some(){stats.with_database_id+=1;}
+            if let Some(value)=db { stats.with_database_id+=1; stats.database_id_sum+=value as u64; }
             let name=db.and_then(|x|names.get(&x).cloned());
             if name.is_some(){stats.with_name+=1;}
             let stage_ids=stages.stages.iter().filter(|s|s.competition_id==Some(id)).map(|s|s.id).collect();
