@@ -86,6 +86,26 @@ jobs:
             > /tmp/fm26-rust-bench/rust.json
           cat /tmp/fm26-rust-bench/rust.json
 
+      - name: Generate native Manager Room snapshot
+        run: |
+          CLOCK=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("/tmp/fm26-rust-bench/python-players.json").read_text())
+          print(data["gameDate"])
+          PY
+          )
+          CLUB_UID=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("/tmp/fm26-rust-bench/python-players.json").read_text())
+          print(data["managedClubUid"])
+          PY
+          )
+          native/fm26-parser/target/release/fm26-manager-room-parser \
+            snapshot /tmp/fm26-rust-bench/public.fm --clock "$CLOCK" --club-uid "$CLUB_UID" \
+            > /tmp/fm26-rust-bench/rust-snapshot.json
+
       - name: Compare timings and correctness
         run: |
           python - <<'PY'
@@ -96,6 +116,7 @@ jobs:
           py = json.loads((root / "python.json").read_text())
           py_players = json.loads((root / "python-players.json").read_text())
           rs = json.loads((root / "rust.json").read_text())
+          snapshot = json.loads((root / "rust-snapshot.json").read_text())
 
           assert py["gameDbDecompressedBytes"] == rs["gameDbDecompressedBytes"]
           assert rs["playerScan"]["totalCandidates"] == py_players["playerCount"]
@@ -142,6 +163,27 @@ jobs:
           assert rs["contracts"]["eventCountSum"] == py_players["contractEventCountSum"]
           assert rs["contracts"]["teamIdSum"] == py_players["contractTeamIdSum"]
           assert rs["contracts"]["clubUidSum"] == py_players["contractClubUidSum"]
+          assert snapshot["manager"]["clubUid"] == py_players["managedClubUid"]
+          assert snapshot["manager"]["club"] == py_players["managedClubName"]
+          assert len(snapshot["players"]) == py_players["managedSquadCount"]
+
+          FNV_PRIME = 0x100000001B3
+          MASK64 = (1 << 64) - 1
+          def fnv(value, data):
+              for byte in data:
+                  value ^= byte
+                  value = (value * FNV_PRIME) & MASK64
+              return value
+
+          snapshot_hash = 0xCBF29CE484222325
+          for player in sorted(snapshot["players"], key=lambda value: int(value["id"])):
+              snapshot_hash = fnv(snapshot_hash, int(player["id"]).to_bytes(4, "little"))
+              snapshot_hash = fnv(snapshot_hash, player["name"].encode("utf-8") + b"\xff")
+              snapshot_hash = fnv(snapshot_hash, int(player["ca"]).to_bytes(2, "little"))
+              snapshot_hash = fnv(snapshot_hash, int(player["pa"]).to_bytes(2, "little"))
+              snapshot_hash = fnv(snapshot_hash, int(player["value"]).to_bytes(4, "little"))
+              snapshot_hash = fnv(snapshot_hash, int(player["wage"]).to_bytes(4, "little"))
+          assert snapshot_hash == py_players["managedPlayerSnapshotHash"]
 
           comparison = {
               "fileMiB": round(py["fileBytes"] / 1024 / 1024, 1),
@@ -202,6 +244,8 @@ jobs:
                   "contractDatesEqual": True,
                   "contractSquadStatusEqual": True,
                   "contractClubEqual": True,
+                  "managedSnapshotCountEqual": True,
+                  "managedSnapshotCoreHashEqual": True,
               },
           }
           (root / "comparison.json").write_text(json.dumps(comparison, indent=2))
@@ -221,5 +265,6 @@ jobs:
             /tmp/fm26-rust-bench/python-players.json
             /tmp/fm26-rust-bench/rust.json
             /tmp/fm26-rust-bench/comparison.json
+            /tmp/fm26-rust-bench/rust-snapshot.json
           if-no-files-found: warn
           retention-days: 7
