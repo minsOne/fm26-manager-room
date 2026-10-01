@@ -1,10 +1,10 @@
-name: Deploy Manager Room Prototype
+name: Deploy Manager Room
 
 on:
   push:
     branches: ["main"]
     paths:
-      - "prototype/**"
+      - "apps/web/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -24,17 +24,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload prototype
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
-          path: "./prototype"
-
-      - name: Deploy to GitHub Pages
-        id: deployment
+          path: "./apps/web"
+      - id: deployment
         uses: actions/deploy-pages@v4
