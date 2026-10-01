@@ -612,3 +612,34 @@ fn read_u16(buffer: &[u8], offset: usize) -> Option<u16> {
 fn read_u32(buffer: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes(buffer.get(offset..offset + 4)?.try_into().ok()?))
 }
+
+
+pub fn managed_club_for_selector(
+    game_db: &[u8],
+    selector: u32,
+    clubs: &ClubIndex,
+    clock: GameDate,
+) -> Option<u32> {
+    if selector == 0 || selector == u32::MAX {
+        return None;
+    }
+    let needle = selector.to_le_bytes();
+    let mut best: Option<(u32, bool, GameDate)> = None;
+    for hit in memmem::find_iter(game_db, &needle) {
+        let Some(tag_at) = hit.checked_sub(SELECTOR_OFFSET) else { continue; };
+        if game_db.get(tag_at..tag_at + TAG.len()) != Some(TAG) {
+            continue;
+        }
+        let Some(record) = decode_chain_record(game_db, tag_at, clubs) else { continue; };
+        let Some(club_uid) = record.club_uid else { continue; };
+        if record.end.is_some_and(|end| end < clock) {
+            continue;
+        }
+        let end_rank = record.end.unwrap_or(GameDate { year: 1901, day_of_year: 1 });
+        let rank = (record.has_terms, end_rank);
+        if best.as_ref().is_none_or(|(_, has_terms, end)| rank > (*has_terms, *end)) {
+            best = Some((club_uid, record.has_terms, end_rank));
+        }
+    }
+    best.map(|value| value.0)
+}
