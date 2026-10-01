@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import time
 from collections import defaultdict
@@ -37,6 +38,10 @@ def main() -> int:
         started_finances = time.perf_counter()
         finances = list(career.finances())
         finances_ms = elapsed_ms(started_finances)
+
+        started_fixtures = time.perf_counter()
+        fixtures = list(career.fixtures())
+        fixtures_ms = elapsed_ms(started_fixtures)
 
     ca_sum = sum(int(player.ability.current) for player in players)
     pa_raw_sum = 0
@@ -114,6 +119,47 @@ def main() -> int:
         previous = latest_finance.get(row.club_uid)
         if previous is None or row.month > previous.month:
             latest_finance[row.club_uid] = row
+
+    managed_upcoming = []
+    if managed_club and game_date:
+        managed_upcoming = [
+            fixture
+            for fixture in fixtures
+            if not fixture.played
+            and fixture.date is not None
+            and fixture.date >= game_date
+            and (
+                fixture.home_club_uid == managed_club.club_uid
+                or fixture.away_club_uid == managed_club.club_uid
+            )
+        ]
+        managed_upcoming.sort(
+            key=lambda fixture: (
+                fixture.date,
+                fixture.kick_off_time or datetime.time.min,
+                fixture.home_team_id,
+                fixture.away_team_id,
+            )
+        )
+        managed_upcoming = managed_upcoming[:12]
+
+    fixture_hash = 0xCBF29CE484222325
+    for fixture in managed_upcoming:
+        home = fixture.home_club_uid == managed_club.club_uid
+        opponent_uid = fixture.away_club_uid if home else fixture.home_club_uid
+        fixture_hash = fnv_update(
+            fixture_hash, date_code(fixture.date).to_bytes(8, "little", signed=False)
+        )
+        fixture_hash = fnv_update(
+            fixture_hash, int(fixture.home_team_id).to_bytes(4, "little", signed=False)
+        )
+        fixture_hash = fnv_update(
+            fixture_hash, int(fixture.away_team_id).to_bytes(4, "little", signed=False)
+        )
+        fixture_hash = fnv_update(fixture_hash, bytes([1 if home else 0]))
+        fixture_hash = fnv_update(
+            fixture_hash, int(opponent_uid or 0).to_bytes(4, "little", signed=False)
+        )
 
     managed_players = (
         [player for player in players if managed_club and player.club_uid == managed_club.club_uid]
@@ -225,6 +271,10 @@ def main() -> int:
         ),
         "financeNetSum": sum(int(row.net) for row in latest_finance.values()),
         "financeRowCountSum": sum(finance_row_counts.values()),
+        "fixturesMs": round(fixtures_ms, 3),
+        "fixtureRows": len(fixtures),
+        "managedUpcomingFixtureCount": len(managed_upcoming),
+        "managedUpcomingFixtureHash": fixture_hash,
         "contractCount": sum(player.contract is not None for player in players),
         "contractWagePresent": sum(
             player.contract is not None and player.contract.wage is not None for player in players
