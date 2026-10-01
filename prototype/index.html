@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FM26 Manager Room Prototype</title>
+  <meta name="description" content="FM26 Manager Room UI prototype" />
+  <style>
+    :root {
+      --bg: #0a0f18;
+      --bg-2: #0f1623;
+      --panel: #121b2a;
+      --panel-2: #172234;
+      --panel-3: #1b2a3f;
+      --line: #26364d;
+      --text: #edf4ff;
+      --muted: #8798ae;
+      --accent: #67d9ff;
+      --accent-2: #8b7cff;
+      --good: #58d69d;
+      --warn: #f6c75d;
+      --danger: #ff6f7d;
+      --info: #78a9ff;
+      --shadow: 0 18px 48px rgba(0,0,0,.26);
+      --radius: 18px;
+      --sidebar: 238px;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); color-scheme: dark; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at 86% 0%, rgba(103,217,255,.08), transparent 30rem),
+        radial-gradient(circle at 12% 90%, rgba(139,124,255,.07), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      line-height: 1.45;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .app { min-height: 100vh; }
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: var(--sidebar);
+      border-right: 1px solid var(--line);
+      background: rgba(9,14,22,.94);
+      backdrop-filter: blur(18px);
+      padding: 22px 14px;
+      z-index: 20;
+      overflow-y: auto;
+    }
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 0 10px 22px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 18px;
+    }
+    .brand-mark {
+      width: 38px; height: 38px; border-radius: 12px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, rgba(103,217,255,.2), rgba(139,124,255,.25));
+      border: 1px solid rgba(103,217,255,.34);
+      font-weight: 900; color: var(--accent);
+    }
+    .brand strong { display: block; font-size: 15px; letter-spacing: -.02em; }
+    .brand small { color: var(--muted); font-size: 11px; }
+    .nav-section { color: #667990; font-weight: 700; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; padding: 14px 12px 6px; }
+    .nav-button {
+      width: 100%; display: flex; align-items: center; gap: 10px;
+      border: 0; background: transparent; color: #aebed0;
+      padding: 10px 12px; border-radius: 12px; cursor: pointer;
+      text-align: left; transition: .16s ease; margin: 2px 0;
+    }
+    .nav-button:hover { background: rgba(255,255,255,.04); color: white; }
+    .nav-button.active {
+      background: linear-gradient(90deg, rgba(103,217,255,.14), rgba(103,217,255,.035));
+      color: white; box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .nav-icon { width: 22px; text-align: center; opacity: .9; }
+    .nav-count { margin-left: auto; min-width: 22px; padding: 2px 6px; text-align: center; border-radius: 999px; color: #081018; background: var(--warn); font-weight: 800; font-size: 10px; }
+    .sidebar-foot {
+      margin-top: 26px; padding: 12px;
+      border: 1px solid var(--line); border-radius: 14px;
+      background: rgba(255,255,255,.025);
+      font-size: 11px; color: var(--muted);
+    }
+    .online { display: inline-flex; align-items: center; gap: 6px; color: var(--good); font-weight: 700; }
+    .dot { width: 7px; height: 7px; border-radius: 99px; background: currentColor; box-shadow: 0 0 12px currentColor; }
+    main { margin-left: var(--sidebar); padding: 22px 26px 50px; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; margin-bottom: 20px;
+    }
+    .page-title h1 { margin: 0; font-size: 22px; letter-spacing: -.035em; }
+    .page-title p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      border: 1px solid var(--line); background: var(--panel); border-radius: 11px;
+      padding: 9px 12px; cursor: pointer; font-weight: 750; font-size: 12px;
+      transition: .15s ease;
+    }
+    .btn:hover { border-color: #40536e; transform: translateY(-1px); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #07131b; }
+    .btn.ghost { background: transparent; }
+    .view { display: none; }
+    .view.active { display: block; animation: appear .18s ease both; }
+    @keyframes appear { from { opacity: .3; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .grid { display: grid; gap: 14px; }
+    .g-12 { grid-template-columns: repeat(12, minmax(0,1fr)); }
+    .span-8 { grid-column: span 8; } .span-7 { grid-column: span 7; }
+    .span-6 { grid-column: span 6; } .span-5 { grid-column: span 5; }
+    .span-4 { grid-column: span 4; } .span-3 { grid-column: span 3; }
+    .card {
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(20,30,46,.96), rgba(15,24,38,.96));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card-head {
+      padding: 15px 16px 12px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      border-bottom: 1px solid rgba(38,54,77,.72);
+    }
+    .card-head h2, .card-head h3 { margin: 0; font-size: 13px; letter-spacing: -.015em; }
+    .card-head small { color: var(--muted); }
+    .card-body { padding: 16px; }
+    .kicker { color: var(--accent); text-transform: uppercase; letter-spacing: .12em; font-size: 9px; font-weight: 900; }
+    .match-hero {
+      position: relative;
+      min-height: 232px;
+      padding: 18px;
+      background:
+       linear-gradient(90deg, rgba(7,13,22,.96), rgba(7,13,22,.57)),
+       radial-gradient(circle at 80% 30%, rgba(103,217,255,.16), transparent 24rem),
+       linear-gradient(135deg,#15263b,#0b111b);
+    }
+    .match-grid { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 22px; margin-top: 24px; }
+    .club { text-align: center; }
+    .crest {
+      width: 62px; height: 62px; border-radius: 19px; margin: 0 auto 10px;
+      display: grid; place-items: center; font-weight: 900; font-size: 18px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.055);
+    }
+    .club strong { display:block; font-size: 14px; }
+    .club span { color: var(--muted); font-size: 11px; }
+    .versus { text-align: center; min-width: 100px; }
+    .versus b { font-size: 13px; display: block; }
+    .versus span { color: var(--muted); font-size: 10px; }
+    .importance {
+      display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+      border-radius: 99px; padding: 5px 9px;
+      background: rgba(255,111,125,.11); color: #ff9aa5; font-size: 10px; font-weight: 850;
+    }
+    .prep {
+      margin-top: 18px; display: grid; grid-template-columns: 1fr auto; align-items:center; gap: 12px;
+    }
+    .progress { height: 7px; border-radius: 99px; background: #202e42; overflow: hidden; }
+    .progress > i { display:block; height:100%; border-radius:inherit; background: linear-gradient(90deg,var(--accent),var(--accent-2)); }
+    .metric-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+    .metric {
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,.025);
+    }
+    .metric strong { display:block; font-size: 22px; letter-spacing: -.04em; }
+    .metric small { color: var(--muted); font-size: 10px; }
+    .metric.good strong { color: var(--good); }
+    .metric.warn strong { color: var(--warn); }
+    .metric.danger strong { color: var(--danger); }
+    .review-list { display: grid; gap: 9px; }
+    .review {
+      display: grid; grid-template-columns: 34px minmax(0,1fr) auto;
+      align-items: center; gap: 11px;
+      padding: 11px; border: 1px solid var(--line); border-radius: 13px;
+      background: rgba(255,255,255,.022);
+    }
+    .avatar { width: 34px; height: 34px; border-radius: 10px; background: #22334a; display:grid; place-items:center; font-size: 11px; font-weight:900; color:#bdd4eb; }
+    .review strong { display:block; font-size: 12px; }
+    .review p { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
+    .tag {
+      display:inline-flex; align-items:center; gap:5px; border-radius:99px; padding:4px 7px;
+      border:1px solid var(--line); font-size:9px; font-weight:850; white-space:nowrap;
+    }
+    .tag.red { background:rgba(255,111,125,.09); border-color:rgba(255,111,125,.25); color:#ff8d98; }
+    .tag.yellow { background:rgba(246,199,93,.08); border-color:rgba(246,199,93,.23); color:#f4cd73; }
+    .tag.green { background:rgba(88,214,157,.08); border-color:rgba(88,214,157,.22); color:#77e3b3; }
+    .tag.blue { background:rgba(103,217,255,.08); border-color:rgba(103,217,255,.22); color:#8ce2ff; }
+    .confidence { text-align:right; }
+    .confidence b { display:block; font-size:11px; }
+    .confidence small { font-size:9px; color:var(--muted); }
+    .fixtures { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+    .fixture { padding: 11px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.02); }
+    .fixture .date { font-size:9px; color:var(--muted); }
+    .fixture strong { display:block; font-size:11px; margin:4px 0 8px; }
+    .fixture .mode { font-size:9px; font-weight:900; color:var(--accent); }
+    .position-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; }
+    .position { border:1px solid var(--line); border-radius:11px; padding:9px; text-align:center; background:rgba(255,255,255,.02); }
+    .position b { display:block; font-size:11px; }
+    .position small { font-size:8px; color:var(--muted); }
+    .position.critical { border-color:rgba(255,111,125,.34); background:rgba(255,111,125,.06); }
+    .position.attention { border-color:rgba(246,199,93,.28); background:rgba(246,199,93,.05); }
+    .pitch {
+      position: relative; min-height: 540px; border-radius: 18px; overflow:hidden;
+      border: 1px solid #315340;
+      background:
+        linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px) 0 0 / 100% 22%,
+        linear-gradient(90deg, rgba(255,255,255,.03), rgba(255,255,255,0)),
+        #163527;
+    }
+    .pitch:before {
+      content:""; position:absolute; inset: 5% 5%; border:1px solid rgba(255,255,255,.18); border-radius:3px;
+    }
+    .pitch:after {
+      content:""; position:absolute; width:90px; height:90px; border:1px solid rgba(255,255,255,.18);
+      border-radius:50%; left:50%; top:50%; transform:translate(-50%,-50%);
+    }
+    .player {
+      position:absolute; transform:translate(-50%,-50%); width:110px;
+      border:1px solid rgba(255,255,255,.14); background:rgba(8,16,13,.82);
+      backdrop-filter: blur(8px); border-radius:13px; padding:8px; text-align:center;
+      box-shadow:0 8px 24px rgba(0,0,0,.25); cursor:pointer;
+    }
+    .player:hover { border-color:var(--accent); }
+    .player strong { display:block; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .player small { color:#a8c6b4; font-size:8px; }
+    .score { display:inline-block; min-width:24px; margin-top:4px; padding:2px 5px; border-radius:99px; font-weight:900; color:#07130d; background:var(--good); font-size:8px; }
+    .mode-tabs { display:flex; gap:6px; flex-wrap:wrap; }
+    .mode-button { border:1px solid var(--line); background:transparent; padding:7px 9px; border-radius:10px; cursor:pointer; font-size:10px; color:var(--muted); }
+    .mode-button.active { background:rgba(103,217,255,.11); border-color:rgba(103,217,255,.28); color:var(--accent); }
+    .table { width:100%; border-collapse:collapse; }
+    .table th { color:#71849b; font-size:9px; text-transform:uppercase; letter-spacing:.08em; text-align:left; padding:8px; border-bottom:1px solid var(--line); }
+    .table td { padding:10px 8px; border-bottom:1px solid rgba(38,54,77,.6); font-size:10px; }
+    .table tr:last-child td { border-bottom:0; }
+    .bar { height:5px; border-radius:99px; background:#213047; overflow:hidden; }
+    .bar i { display:block; height:100%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); }
+    .heat { display:grid; grid-template-columns:repeat(10,1fr); gap:5px; }
+    .heat-cell { aspect-ratio:1; display:grid; place-items:center; border-radius:8px; font-size:9px; font-weight:900; border:1px solid var(--line); }
+    .heat-cell.good { background:rgba(88,214,157,.16); color:#a6f1ce; }
+    .heat-cell.warn { background:rgba(246,199,93,.14); color:#ffe3a2; }
+    .heat-cell.bad { background:rgba(255,111,125,.13); color:#ffa8b0; }
+    .candidate { display:grid; grid-template-columns: 42px minmax(0,1fr) 60px 74px; gap:10px; align-items:center; padding:10px; border:1px solid var(--line); border-radius:13px; margin-bottom:8px; }
+    .candidate:last-child { margin-bottom:0; }
+    .candidate .fit { font-weight:900; color:var(--good); text-align:right; }
+    .candidate .price { font-size:9px; color:var(--muted); text-align:right; }
+    .economy-chart { height:170px; display:flex; align-items:end; gap:12px; padding:10px 6px 0; }
+    .econ-col { flex:1; display:flex; flex-direction:column; justify-content:end; align-items:center; gap:7px; height:100%; }
+    .econ-bar { width:66%; min-width:18px; border-radius:9px 9px 3px 3px; background:linear-gradient(180deg,var(--danger),#a53e51); border:1px solid rgba(255,255,255,.09); }
+    .econ-col:nth-child(2) .econ-bar, .econ-col:nth-child(3) .econ-bar, .econ-col:nth-child(4) .econ-bar { background:linear-gradient(180deg,var(--accent),#367c9b); }
+    .econ-col span { font-size:9px; color:var(--muted); }
+    .chat-layout { display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:14px; }
+    .messages { min-height:520px; display:flex; flex-direction:column; gap:10px; }
+    .message { max-width:78%; padding:11px 12px; border-radius:14px; font-size:11px; }
+    .message.coach { align-self:flex-start; background:var(--panel-2); border:1px solid var(--line); }
+    .message.user { align-self:flex-end; background:rgba(103,217,255,.15); border:1px solid rgba(103,217,255,.22); }
+    .composer { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:auto; }
+    .composer input { min-width:0; border:1px solid var(--line); background:#0e1623; color:var(--text); border-radius:12px; padding:11px 12px; outline:none; }
+    .composer input:focus { border-color:var(--accent); }
+    .context-list { display:grid; gap:8px; }
+    .context-item { padding:10px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.02); }
+    .context-item strong { font-size:10px; display:block; }
+    .context-item small { color:var(--muted); font-size:9px; }
+    .decision-strip { display:flex; gap:7px; flex-wrap:wrap; }
+    .decision-chip { border:1px solid var(--line); background:rgba(255,255,255,.02); border-radius:999px; padding:7px 9px; font-size:9px; }
+    .mobile-menu { display:none; }
+    @media (max-width: 1100px) {
+      .g-12 { grid-template-columns: repeat(6,minmax(0,1fr)); }
+      .span-8,.span-7 { grid-column:span 6; }
+      .span-5,.span-4,.span-3 { grid-column:span 3; }
+      .fixtures { grid-template-columns:repeat(2,1fr); }
+      .chat-layout { grid-template-columns:1fr; }
+    }
+    @media (max-width: 760px) {
+      :root { --sidebar: 0px; }
+      .sidebar {
+        width: min(85vw,300px); transform:translateX(-105%); transition:.2s ease;
+        box-shadow:20px 0 50px rgba(0,0,0,.4);
+      }
+      .sidebar.open { transform:none; }
+      main { margin-left:0; padding:14px; }
+      .mobile-menu { display:inline-flex; }
+      .topbar { align-items:flex-start; }
+      .top-actions .btn:not(.primary) { display:none; }
+      .g-12 { grid-template-columns:1fr; }
+      .span-8,.span-7,.span-6,.span-5,.span-4,.span-3 { grid-column:auto; }
+      .metric-row { grid-template-columns:repeat(2,1fr); }
+      .fixtures { grid-template-columns:1fr 1fr; }
+      .position-grid { grid-template-columns:repeat(3,1fr); }
+      .match-grid { gap:10px; }
+      .crest { width:50px; height:50px; }
+      .pitch { min-height:500px; }
+      .player { width:86px; padding:6px; }
+      .chat-layout { grid-template-columns:1fr; }
+      .candidate { grid-template-columns:36px minmax(0,1fr) 48px; }
+      .candidate .price { display:none; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">MR</div>
+      <div><strong>Manager Room</strong><small>FM26 Assistant Prototype</small></div>
+    </div>
+    <div class="nav-section">Today</div>
+    <button class="nav-button active" data-view="manager"><span class="nav-icon">⌂</span>Manager Room<span class="nav-count">6</span></button>
+    <button class="nav-button" data-view="matchday"><span class="nav-icon">◉</span>Matchday</button>
+    <div class="nav-section">Team</div>
+    <button class="nav-button" data-view="squad"><span class="nav-icon">▦</span>Squad</button>
+    <button class="nav-button" data-view="training"><span class="nav-icon">↗</span>Training<span class="nav-count">7</span></button>
+    <button class="nav-button" data-view="development"><span class="nav-icon">◎</span>Development</button>
+    <div class="nav-section">Planning</div>
+    <button class="nav-button" data-view="recruitment"><span class="nav-icon">⌕</span>Recruitment<span class="nav-count">3</span></button>
+    <button class="nav-button" data-view="economy"><span class="nav-icon">◫</span>Economy</button>
+    <div class="nav-section">Assistant</div>
+    <button class="nav-button" data-view="coach"><span class="nav-icon">✦</span>AI Coach</button>
+    <div class="sidebar-foot">
+      <div class="online"><span class="dot"></span> FM26 Connected</div>
+      <div style="margin-top:6px">Save: Barça 2031/32<br/>Prototype data only</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <button class="btn ghost mobile-menu" id="mobileMenu">☰</button>
+        <div class="page-title">
+          <h1 id="pageTitle">Manager Room</h1>
+          <p id="pageSubtitle">오늘 감독이 반드시 확인해야 할 의사결정만 보여줍니다.</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="btn">Save snapshot</button>
+        <button class="btn">Refresh data</button>
+        <button class="btn primary" data-jump="coach">Ask Coach ✦</button>
+      </div>
+    </div>
+
+    <section class="view active" id="view-manager">
+      <div class="grid g-12">
+        <article class="card span-7">
+          <div class="match-hero">
+            <div class="kicker">Next match · Champions League</div>
+            <div class="match-grid">
+              <div class="club"><div class="crest">FCB</div><strong>Barcelona</strong><span>Home</span></div>
+              <div class="versus"><b>2 Oct · 21:00</b><span>Camp Nou · D-1</span><div class="importance">● 중요도 94</div></div>
+              <div class="club"><div class="crest">FCB</div><strong>Bayern</strong><span>Away</span></div>
+            </div>
+            <div class="prep">
+              <div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:6px"><span>Match readiness</span><b>78%</b></div><div class="progress"><i style="width:78%"></i></div></div>
+              <button class="btn primary" data-jump="matchday">경기 준비</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="card span-5">
+          <div class="card-head"><h2>MUST REVIEW TODAY</h2><span class="tag red">6 actions</span></div>
+          <div class="card-body review-list">
+            <div class="review"><div class="avatar">PD</div><div><strong>Pedri · 휴식 권장</strong><p>최근 14일 347분 · 다음 4일 내 중요경기 2회</p></div><div class="confidence"><b>96%</b><small>Confidence</small></div></div>
+            <div class="review"><div class="avatar">JF</div><div><strong>João · 선발 필요</strong><p>Squad Player · 최근 5경기 28분</p></div><div class="confidence"><b>91%</b><small>Confidence</small></div></div>
+            <div class="review"><div class="avatar">MR</div><div><strong>Rossi · 임대 오퍼 검토</strong><p>3건 도착 · Girona 조건 우수</p></div><div class="confidence"><b>84%</b><small>Confidence</small></div></div>
+            <div class="review"><div class="avatar">DM</div><div><strong>DM 뎁스 위험</strong><p>주전 부재 시 Role Fit -16</p></div><div class="confidence"><b>93%</b><small>Confidence</small></div></div>
+          </div>
+        </article>
+
+        <article class="card span-4">
+          <div class="card-head"><h3>Squad status</h3><small>29 players</small></div>
+          <div class="card-body">
+            <div class="metric-row">
+              <div class="metric danger"><strong>2</strong><small>Rest</small></div>
+              <div class="metric warn"><strong>4</strong><small>Playing time</small></div>
+              <div class="metric good"><strong>18</strong><small>Healthy</small></div>
+              <div class="metric"><strong>3</strong><small>Review</small></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card span-4">
+          <div class="card-head"><h3>Position health</h3><button class="btn" data-jump="squad">Open squad</button></div>
+          <div class="card-body position-grid">
+            <div class="position"><b>GK</b><small>GOOD</small></div>
+            <div class="position attention"><b>RB</b><small>FATIGUE</small></div>
+            <div class="position"><b>CB</b><small>GOOD</small></div>
+            <div class="position"><b>LB</b><small>GOOD</small></div>
+            <div class="position critical"><b>DM</b><small>DEPTH</small></div>
+            <div class="position"><b>CM</b><small>GOOD</small></div>
+            <div class="position"><b>AM</b><small>GOOD</small></div>
+            <div class="position attention"><b>RW</b><small>MINUTES</small></div>
+            <div class="position"><b>LW</b><small>GOOD</small></div>
+            <div class="position attention"><b>ST</b><small>SUCCESSION</small></div>
+          </div>
+        </article>
+
+        <article class="card span-4">
+          <div class="card-head"><h3>Coach briefing</h3><span class="tag blue">Confidence 92%</span></div>
+          <div class="card-body">
+            <div style="font-size:13px;font-weight:800;margin-bottom:8px">이번 주 핵심은 Bayern전을 앞둔 주전 체력 관리입니다.</div>
+            <div style="font-size:10px;color:var(--muted)">Pedri와 RB 주전의 부하가 높고, João는 출전시간 부족 위험이 있습니다. 오늘 리그 경기라면 3~4명 로테이션이 가장 균형적입니다.</div>
+            <div class="decision-strip" style="margin-top:12px"><span class="decision-chip">Pedri 휴식</span><span class="decision-chip">João 선발</span><span class="decision-chip">RB 교대</span></div>
+          </div>
+        </article>
+
+        <article class="card span-8">
+          <div class="card-head"><h3>Upcoming fixtures</h3><small>4-match planning window</small></div>
+          <div class="card-body fixtures">
+            <div class="fixture"><div class="date">TODAY · HOME</div><strong>Mallorca</strong><span class="mode">DEVELOPMENT · 42</span></div>
+            <div class="fixture"><div class="date">+3 DAYS · AWAY</div><strong>Bayern</strong><span class="mode">BEST XI · 96</span></div>
+            <div class="fixture"><div class="date">+7 DAYS · HOME</div><strong>Barcelona Derby</strong><span class="mode">BEST XI · 91</span></div>
+            <div class="fixture"><div class="date">+11 DAYS · AWAY</div><strong>Sevilla</strong><span class="mode">BALANCED · 68</span></div>
+          </div>
+        </article>
+
+        <article class="card span-4">
+          <div class="card-head"><h3>Market alert</h3><button class="btn" data-jump="economy">Economy</button></div>
+          <div class="card-body">
+            <div style="display:flex;justify-content:space-between;align-items:end"><div><div class="kicker">Saudi League</div><strong style="font-size:18px;color:var(--danger)">OVERHEATED</strong></div><span class="tag red">+34 gap</span></div>
+            <div style="margin-top:12px;font-size:10px;color:var(--muted)">Financial Power 94 · Sporting Power 60</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-matchday">
+      <div class="grid g-12">
+        <article class="card span-8">
+          <div class="card-head">
+            <div><h2>Recommended XI · vs Bayern</h2><small>Opponent-aware selection · In possession shape</small></div>
+            <div class="mode-tabs">
+              <button class="mode-button">Best XI</button><button class="mode-button active">Balanced</button><button class="mode-button">Development</button><button class="mode-button">Protect</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="pitch">
+              <div class="player" style="left:50%;top:10%"><strong>Lewandowski</strong><small>Advanced Forward</small><span class="score">91</span></div>
+              <div class="player" style="left:18%;top:29%"><strong>Raphinha</strong><small>Inside Forward</small><span class="score">88</span></div>
+              <div class="player" style="left:50%;top:31%"><strong>Gavi</strong><small>Creator</small><span class="score">90</span></div>
+              <div class="player" style="left:82%;top:29%"><strong>Yamal</strong><small>Wide Forward</small><span class="score">94</span></div>
+              <div class="player" style="left:37%;top:53%"><strong>de Jong</strong><small>Playmaker</small><span class="score">91</span></div>
+              <div class="player" style="left:64%;top:54%"><strong>Casadó</strong><small>Holding Midfielder</small><span class="score">84</span></div>
+              <div class="player" style="left:14%;top:74%"><strong>Balde</strong><small>Wing Back</small><span class="score">89</span></div>
+              <div class="player" style="left:39%;top:76%"><strong>Cubarsí</strong><small>Ball Playing CB</small><span class="score">92</span></div>
+              <div class="player" style="left:62%;top:76%"><strong>Araújo</strong><small>Central Defender</small><span class="score">93</span></div>
+              <div class="player" style="left:86%;top:74%"><strong>Fort</strong><small>Full Back</small><span class="score">82</span></div>
+              <div class="player" style="left:50%;top:92%"><strong>Ter Stegen</strong><small>Sweeper Keeper</small><span class="score">90</span></div>
+            </div>
+          </div>
+        </article>
+        <div class="span-4 grid">
+          <article class="card">
+            <div class="card-head"><h3>Selection conflicts</h3><span class="tag yellow">2</span></div>
+            <div class="card-body review-list">
+              <div class="review"><div class="avatar">PD</div><div><strong>Pedri</strong><p>오늘 선발 가치 93 · 3일 후 98</p></div><span class="tag red">REST</span></div>
+              <div class="review"><div class="avatar">RB</div><div><strong>RB A</strong><p>Fit 94 · 최근 14일 352분</p></div><span class="tag yellow">LIMIT</span></div>
+            </div>
+          </article>
+          <article class="card">
+            <div class="card-head"><h3>Bench coverage</h3><span class="tag green">8.8 / 10</span></div>
+            <div class="card-body">
+              <table class="table"><tbody>
+                <tr><td>GK</td><td>✓</td><td>CB/FB</td><td>✓</td></tr>
+                <tr><td>DM</td><td>✓</td><td>CM/AM</td><td>✓</td></tr>
+                <tr><td>Wide</td><td>✓</td><td>ST</td><td>✓</td></tr>
+              </tbody></table>
+            </div>
+          </article>
+          <article class="card">
+            <div class="card-head"><h3>Minute plan</h3><span class="tag blue">Confidence 88%</span></div>
+            <div class="card-body">
+              <table class="table"><tbody>
+                <tr><td>de Jong</td><td>60–70'</td><td><span class="tag yellow">Manage</span></td></tr>
+                <tr><td>Raphinha</td><td>65'</td><td><span class="tag green">Planned</span></td></tr>
+                <tr><td>Lead at 75'</td><td>DM on</td><td><span class="tag blue">Scenario</span></td></tr>
+              </tbody></table>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-squad">
+      <div class="grid g-12">
+        <article class="card span-5">
+          <div class="card-head"><h2>Position health</h2><small>quality + depth + succession</small></div>
+          <div class="card-body position-grid">
+            <div class="position"><b>GK</b><small>GOOD</small></div><div class="position attention"><b>RB</b><small>DEPTH</small></div>
+            <div class="position"><b>CB</b><small>GOOD</small></div><div class="position"><b>LB</b><small>GOOD</small></div>
+            <div class="position critical"><b>DM</b><small>CRITICAL</small></div><div class="position"><b>CM</b><small>GOOD</small></div>
+            <div class="position"><b>AM</b><small>GOOD</small></div><div class="position attention"><b>RW</b><small>MINUTES</small></div>
+            <div class="position"><b>LW</b><small>GOOD</small></div><div class="position attention"><b>ST</b><small>SUCCESSION</small></div>
+          </div>
+        </article>
+        <article class="card span-7">
+          <div class="card-head"><h2>DM depth</h2><span class="tag red">Recruitment priority #1</span></div>
+          <div class="card-body">
+            <table class="table">
+              <thead><tr><th>Player</th><th>Age</th><th>Role Fit</th><th>CA / PA</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td><b>Rodri</b></td><td>30</td><td>94</td><td>170 / 171</td><td><span class="tag green">Starter</span></td></tr>
+                <tr><td>Casadó</td><td>22</td><td>78</td><td>149 / 171</td><td><span class="tag yellow">Backup</span></td></tr>
+                <tr><td>de Jong</td><td>34</td><td>74</td><td>158 / 164</td><td><span class="tag blue">Emergency</span></td></tr>
+                <tr><td>Youth A</td><td>18</td><td>66</td><td>123 / 187</td><td><span class="tag blue">Future</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+        <article class="card span-6">
+          <div class="card-head"><h3>Emergency cover map</h3><small>real replacement quality</small></div>
+          <div class="card-body">
+            <table class="table"><tbody>
+              <tr><td>GK</td><td><div class="bar"><i style="width:89%"></i></div></td><td>89</td></tr>
+              <tr><td>RB</td><td><div class="bar"><i style="width:76%"></i></div></td><td>76</td></tr>
+              <tr><td>CB</td><td><div class="bar"><i style="width:88%"></i></div></td><td>88</td></tr>
+              <tr><td>DM</td><td><div class="bar"><i style="width:64%"></i></div></td><td style="color:var(--danger)">64</td></tr>
+              <tr><td>ST</td><td><div class="bar"><i style="width:83%"></i></div></td><td>83</td></tr>
+            </tbody></table>
+          </div>
+        </article>
+        <article class="card span-6">
+          <div class="card-head"><h3>Succession</h3><span class="tag yellow">2 watch items</span></div>
+          <div class="card-body">
+            <div class="review-list">
+              <div class="review"><div class="avatar">ST</div><div><strong>ST · planned transition</strong><p>29세 주전 → 21세 CA 158 / PA 189 → 18세 임대</p></div><span class="tag green">Healthy</span></div>
+              <div class="review"><div class="avatar">CB</div><div><strong>CB · no successor</strong><p>31세+ 주전 2명 · 21세 이하 미래 주전 없음</p></div><span class="tag red">Gap</span></div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-training">
+      <div class="grid g-12">
+        <article class="card span-4">
+          <div class="card-head"><h2>Training actions</h2><small>only players needing attention</small></div>
+          <div class="card-body">
+            <div class="metric-row">
+              <div class="metric danger"><strong>7</strong><small>Change</small></div>
+              <div class="metric warn"><strong>4</strong><small>Stop focus</small></div>
+              <div class="metric good"><strong>18</strong><small>Keep</small></div>
+              <div class="metric"><strong>3</strong><small>Review</small></div>
+            </div>
+          </div>
+        </article>
+        <article class="card span-8">
+          <div class="card-head"><h2>Recommended changes</h2><button class="btn primary">Review 7 changes</button></div>
+          <div class="card-body">
+            <table class="table">
+              <thead><tr><th>Player</th><th>Current</th><th>Recommended</th><th>Why</th><th>Confidence</th></tr></thead>
+              <tbody>
+                <tr><td><b>João Ferreira</b><br><small style="color:var(--muted)">19 · ST</small></td><td>Shooting</td><td><span class="tag blue">Attacking Movement</span></td><td>Finishing 14 충분 · Off the Ball 11 부족</td><td>91%</td></tr>
+                <tr><td><b>Luca Rossi</b><br><small style="color:var(--muted)">18 · CM</small></td><td>None</td><td><span class="tag blue">Strength</span></td><td>Role floor 대비 Strength -3</td><td>86%</td></tr>
+                <tr><td><b>Marco Silva</b><br><small style="color:var(--muted)">24 · RW</small></td><td>Quickness</td><td><span class="tag yellow">Stop focus</span></td><td>Acceleration 17 · Pace 17</td><td>96%</td></tr>
+                <tr><td><b>Tom Novak</b><br><small style="color:var(--muted)">20 · DM</small></td><td>Passing</td><td><span class="tag blue">Defensive Positioning</span></td><td>OOP Role bottleneck</td><td>79%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+        <article class="card span-6">
+          <div class="card-head"><h3>Attribute visibility</h3><small>Role gap heatmap</small></div>
+          <div class="card-body">
+            <div class="heat">
+              <div class="heat-cell good">16</div><div class="heat-cell good">17</div><div class="heat-cell good">15</div><div class="heat-cell warn">13</div><div class="heat-cell bad">10</div>
+              <div class="heat-cell good">15</div><div class="heat-cell warn">12</div><div class="heat-cell bad">11</div><div class="heat-cell good">16</div><div class="heat-cell warn">13</div>
+              <div class="heat-cell good">15</div><div class="heat-cell good">16</div><div class="heat-cell warn">12</div><div class="heat-cell bad">9</div><div class="heat-cell good">14</div>
+              <div class="heat-cell warn">13</div><div class="heat-cell good">15</div><div class="heat-cell warn">12</div><div class="heat-cell good">14</div><div class="heat-cell good">16</div>
+            </div>
+            <div style="font-size:10px;color:var(--muted);margin-top:12px">색은 절대 스탯이 아니라 선택한 Role의 목표치 대비 부족도를 우선 반영합니다.</div>
+          </div>
+        </article>
+        <article class="card span-6">
+          <div class="card-head"><h3>Coach Confidence</h3><span class="tag green">Explainable</span></div>
+          <div class="card-body">
+            <div style="font-weight:800;font-size:13px">João → Attacking Movement</div>
+            <table class="table"><tbody>
+              <tr><td>Recommendation</td><td>Attacking Movement</td></tr>
+              <tr><td>Confidence</td><td>91%</td></tr>
+              <tr><td>Evidence</td><td>Role gap · age · CA/PA headroom</td></tr>
+              <tr><td>Uncertainty</td><td>최근 성장 표본 3개월</td></tr>
+              <tr><td>Risk</td><td>Low</td></tr>
+            </tbody></table>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-development">
+      <div class="grid g-12">
+        <article class="card span-4">
+          <div class="card-head"><h2>Development status</h2><small>academy → first team</small></div>
+          <div class="card-body">
+            <div class="review-list">
+              <div class="review"><div class="avatar">↑</div><div><strong>빠른 성장</strong><p>4 players</p></div><span class="tag green">Good</span></div>
+              <div class="review"><div class="avatar">!</div><div><strong>성장 정체</strong><p>3 players</p></div><span class="tag yellow">Review</span></div>
+              <div class="review"><div class="avatar">⌛</div><div><strong>출전 필요</strong><p>5 players</p></div><span class="tag yellow">Minutes</span></div>
+              <div class="review"><div class="avatar">✈</div><div><strong>임대 필요</strong><p>2 players</p></div><span class="tag blue">Loan</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="card span-8">
+          <div class="card-head"><h2>João Ferreira · growth snapshot</h2><span class="tag green">Very good</span></div>
+          <div class="card-body">
+            <div class="metric-row">
+              <div class="metric good"><strong>+9</strong><small>CA · 6 months</small></div>
+              <div class="metric"><strong>147</strong><small>Current ability</small></div>
+              <div class="metric"><strong>188</strong><small>Potential</small></div>
+              <div class="metric warn"><strong>642</strong><small>Minutes</small></div>
+            </div>
+            <div style="margin-top:18px">
+              <table class="table"><thead><tr><th>Attribute</th><th>Then</th><th>Now</th><th>Change</th></tr></thead>
+                <tbody><tr><td>Finishing</td><td>11</td><td>13</td><td style="color:var(--good)">+2</td></tr>
+                <tr><td>Strength</td><td>9</td><td>11</td><td style="color:var(--good)">+2</td></tr>
+                <tr><td>Off the Ball</td><td>11</td><td>12</td><td style="color:var(--good)">+1</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-recruitment">
+      <div class="grid g-12">
+        <article class="card span-4">
+          <div class="card-head"><h2>Recruitment priorities</h2><small>why before who</small></div>
+          <div class="card-body review-list">
+            <div class="review"><div class="avatar">1</div><div><strong>DM</strong><p>백업 수준 부족 · Stress Test critical</p></div><span class="tag red">NOW</span></div>
+            <div class="review"><div class="avatar">2</div><div><strong>RB</strong><p>주전 의존도 높음</p></div><span class="tag yellow">THIS YEAR</span></div>
+            <div class="review"><div class="avatar">3</div><div><strong>CB</strong><p>2년 내 세대교체 필요</p></div><span class="tag blue">SUCCESSION</span></div>
+            <div class="review"><div class="avatar">—</div><div><strong>ST</strong><p>내부 유망주로 해결 가능</p></div><span class="tag green">NO NEED</span></div>
+          </div>
+        </article>
+        <article class="card span-8">
+          <div class="card-head"><h2>DM target profile</h2><span class="tag blue">Generated from squad gap</span></div>
+          <div class="card-body">
+            <div class="metric-row">
+              <div class="metric"><strong>85+</strong><small>Immediate role fit</small></div>
+              <div class="metric"><strong>20–26</strong><small>Age</small></div>
+              <div class="metric"><strong>€45M</strong><small>Budget ceiling</small></div>
+              <div class="metric"><strong>Squad</strong><small>Playing time</small></div>
+            </div>
+            <div style="margin-top:15px" class="candidate"><div class="avatar">MR</div><div><strong>Marco Rossi</strong><br><small style="color:var(--muted)">DM/CM · Holding / Distributor</small></div><div class="fit">92</div><div class="price">€26M</div></div>
+            <div class="candidate"><div class="avatar">JC</div><div><strong>João Costa</strong><br><small style="color:var(--muted)">DM · Destroyer / Holding</small></div><div class="fit">90</div><div class="price">€18M</div></div>
+            <div class="candidate"><div class="avatar">LS</div><div><strong>Luis Silva</strong><br><small style="color:var(--muted)">CM/DM · Playmaker / Holding</small></div><div class="fit">88</div><div class="price">€9M</div></div>
+          </div>
+        </article>
+        <article class="card span-6">
+          <div class="card-head"><h3>Upgrade finder</h3><span class="tag green">Meaningful only</span></div>
+          <div class="card-body" style="font-size:11px">
+            현재 주전 Role Fit 89. <b>+4 이상 개선되는 후보만</b> 표시합니다.
+            <div style="margin-top:12px" class="review"><div class="avatar">2</div><div><strong>확실한 업그레이드 후보 2명</strong><p>비슷한 수준의 고비용 영입은 숨김</p></div><span class="tag blue">View</span></div>
+          </div>
+        </article>
+        <article class="card span-6">
+          <div class="card-head"><h3>Buy vs Develop</h3><span class="tag yellow">Decision support</span></div>
+          <div class="card-body">
+            <table class="table"><tbody>
+              <tr><td>외부 즉시전력</td><td>Fit 92</td><td>€45M</td></tr>
+              <tr><td>내부 유망주</td><td>Fit 83</td><td>PA 190</td></tr>
+              <tr><td>Coach view</td><td colspan="2">1년 유지 가능하면 내부 성장 경로 우선</td></tr>
+            </tbody></table>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-economy">
+      <div class="grid g-12">
+        <article class="card span-5">
+          <div class="card-head"><h2>World market health</h2><span class="tag red">1 anomaly</span></div>
+          <div class="card-body">
+            <div class="economy-chart">
+              <div class="econ-col"><div class="econ-bar" style="height:94%"></div><span>Saudi</span></div>
+              <div class="econ-col"><div class="econ-bar" style="height:86%"></div><span>England</span></div>
+              <div class="econ-col"><div class="econ-bar" style="height:71%"></div><span>Spain</span></div>
+              <div class="econ-col"><div class="econ-bar" style="height:68%"></div><span>Germany</span></div>
+              <div class="econ-col"><div class="econ-bar" style="height:65%"></div><span>Italy</span></div>
+            </div>
+            <div style="font-size:10px;color:var(--muted);margin-top:10px">Financial power index · illustrative prototype data</div>
+          </div>
+        </article>
+        <article class="card span-7">
+          <div class="card-head"><h2>Saudi market imbalance</h2><span class="tag red">OVERHEATED</span></div>
+          <div class="card-body">
+            <div class="metric-row">
+              <div class="metric danger"><strong>94</strong><small>Financial power</small></div>
+              <div class="metric"><strong>60</strong><small>Sporting power</small></div>
+              <div class="metric danger"><strong>+34</strong><small>Distortion gap</small></div>
+              <div class="metric warn"><strong>89%</strong><small>Coach confidence</small></div>
+            </div>
+            <div style="margin-top:14px;font-size:11px">문제는 선수 능력치가 아니라 <b>리그 경쟁력 대비 비정상적인 구매력과 주급 구조</b>입니다.</div>
+          </div>
+        </article>
+        <article class="card span-12">
+          <div class="card-head"><h2>World Balance · Preview only</h2><div class="mode-tabs"><button class="mode-button">Mild</button><button class="mode-button active">Balanced</button><button class="mode-button">Strong</button><button class="mode-button">Custom</button></div></div>
+          <div class="card-body">
+            <table class="table">
+              <thead><tr><th>Scope</th><th>Transfer budget</th><th>Wage budget</th><th>Max wage</th><th>Club balance</th><th>Write policy</th></tr></thead>
+              <tbody>
+                <tr><td>Saudi Big 4</td><td>-45%</td><td>-45%</td><td>-50%</td><td>-30%</td><td><span class="tag yellow">Preview → Approve</span></td></tr>
+                <tr><td>Other Saudi clubs</td><td>-25%</td><td>-25%</td><td>-25%</td><td>—</td><td><span class="tag blue">Optional</span></td></tr>
+                <tr><td>Players</td><td colspan="4">CA / PA / Attributes are never changed</td><td><span class="tag green">Read only</span></td></tr>
+              </tbody>
+            </table>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn">Save snapshot</button><button class="btn primary">Preview exact changes</button></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-coach">
+      <div class="chat-layout">
+        <article class="card">
+          <div class="card-head"><div><h2>AI Coach</h2><small>현재 화면과 세이브 컨텍스트를 자동으로 사용</small></div><span class="tag green">Context aware</span></div>
+          <div class="card-body messages" id="messages">
+            <div class="message coach"><b>코치:</b> 다음 Bayern전을 기준으로 보면 Pedri는 오늘 쉬게 하는 편이 좋습니다. João는 출전시간이 부족하므로 오늘 선발이 가장 자연스럽습니다.</div>
+            <div class="message user">그럼 Pedri 없이 중원 조합은?</div>
+            <div class="message coach"><b>코치:</b> de Jong + Casadó 조합을 추천합니다. 현재 Role Fit 합은 조금 낮아지지만, 다음 Bayern전까지 전체 일정 최적화 기준으로는 더 좋습니다. Confidence 88%.</div>
+            <form class="composer" id="chatForm">
+              <input id="chatInput" aria-label="코치에게 질문" placeholder="예: 다음 3경기 로테이션 짜줘" />
+              <button class="btn primary" type="submit">Send</button>
+            </form>
+          </div>
+        </article>
+        <aside class="card">
+          <div class="card-head"><h3>Active context</h3></div>
+          <div class="card-body context-list">
+            <div class="context-item"><strong>Next match</strong><small>Bayern · D-1 · Importance 94</small></div>
+            <div class="context-item"><strong>Squad alerts</strong><small>Pedri fatigue · DM depth · João minutes</small></div>
+            <div class="context-item"><strong>Manager preference</strong><small>Balanced rotation · youth opportunities</small></div>
+            <div class="context-item"><strong>Confidence policy</strong><small>90+ auto candidate · 70–89 review · &lt;70 observe</small></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  const titles = {
+    manager: ["Manager Room", "오늘 감독이 반드시 확인해야 할 의사결정만 보여줍니다."],
+    matchday: ["Matchday Room", "경기 중요도·상대·피로·출전시간을 같이 보고 선발합니다."],
+    squad: ["Squad Room", "선수 목록보다 포지션의 구조적 문제를 먼저 보여줍니다."],
+    training: ["Training Room", "변경이 필요한 선수만 모아 빠르게 검토합니다."],
+    development: ["Development Room", "누가 크고 있고, 누가 멈췄고, 누구에게 기회가 필요한지 봅니다."],
+    recruitment: ["Recruitment Room", "누구를 살지보다 왜 보강이 필요한지부터 보여줍니다."],
+    economy: ["Economy Room", "장기 세이브의 시장 왜곡을 탐지하고 안전한 조정안을 미리 봅니다."],
+    coach: ["AI Coach", "현재 화면을 이해하는 코치와 자연어로 의사결정을 이어갑니다."]
+  };
+
+  const sidebar = document.getElementById("sidebar");
+  const title = document.getElementById("pageTitle");
+  const subtitle = document.getElementById("pageSubtitle");
+
+  function showView(name) {
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.querySelectorAll(".nav-button").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+    const target = document.getElementById("view-" + name);
+    if (target) target.classList.add("active");
+    if (titles[name]) {
+      title.textContent = titles[name][0];
+      subtitle.textContent = titles[name][1];
+    }
+    sidebar.classList.remove("open");
+    window.scrollTo({top:0, behavior:"smooth"});
+  }
+
+  document.querySelectorAll("[data-view]").forEach(btn => btn.addEventListener("click", () => showView(btn.dataset.view)));
+  document.querySelectorAll("[data-jump]").forEach(btn => btn.addEventListener("click", () => showView(btn.dataset.jump)));
+
+  document.getElementById("mobileMenu").addEventListener("click", () => sidebar.classList.toggle("open"));
+
+  document.querySelectorAll(".mode-tabs").forEach(group => {
+    group.querySelectorAll(".mode-button").forEach(btn => btn.addEventListener("click", () => {
+      group.querySelectorAll(".mode-button").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+    }));
+  });
+
+  const form = document.getElementById("chatForm");
+  const input = document.getElementById("chatInput");
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    const value = input.value.trim();
+    if (!value) return;
+    const user = document.createElement("div");
+    user.className = "message user";
+    user.textContent = value;
+    form.before(user);
+    const coach = document.createElement("div");
+    coach.className = "message coach";
+    coach.innerHTML = "<b>코치:</b> 프로토타입에서는 실제 FM 데이터 호출 대신 UI 흐름만 보여줍니다. 실제 구현에서는 현재 세이브의 선수·일정·Role Fit·Coach Confidence를 조회해서 답하게 됩니다.";
+    form.before(coach);
+    input.value = "";
+    user.scrollIntoView({behavior:"smooth", block:"nearest"});
+  });
+})();
+</script>
+</body>
+</html>
