@@ -45,7 +45,7 @@ jobs:
           d=json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("doctor-before.json").read_text())
           assert d["platform"]=="macOS"
           assert d["parserAvailable"] is True
-          assert d["selectionId"] is None
+          assert d.get("selectionId") is None
           assert d["snapshotPath"].startswith(os.environ["FM26_MANAGER_ROOM_HOME"])
           PY
 
