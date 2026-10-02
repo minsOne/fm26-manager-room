@@ -8,6 +8,9 @@ struct ParserStateSnapshot: Codable {
     let lastError: String?
     let parserPath: String?
     let watchedDirectory: String?
+    let selectionId: String?
+    let selectedSavePath: String?
+    let selectionMode: String?
 }
 
 final class CompanionState: @unchecked Sendable {
@@ -19,8 +22,18 @@ final class CompanionState: @unchecked Sendable {
     private var lastError: String?
     private var parserPath: String?
     private var watchedDirectory: String?
+    private var selectionId: String?
+    private var selectedSavePath: String?
+    private var selectionMode: String?
     func setParserPath(_ path: String?) { lock.withLock { parserPath = path } }
     func setWatchedDirectory(_ path: String?) { lock.withLock { watchedDirectory = path } }
+    func setSelection(id: String?, path: String?, mode: String?) {
+        lock.withLock {
+            selectionId = id
+            selectedSavePath = path
+            selectionMode = mode
+        }
+    }
     func parsingStarted(save: URL) {
         lock.withLock { parsing = true; lastSavePath = save.path; lastError = nil }
     }
@@ -41,7 +54,8 @@ final class CompanionState: @unchecked Sendable {
         lock.withLock {
             ParserStateSnapshot(parsing: parsing, lastSuccessAt: lastSuccessAt,
                 lastDurationMilliseconds: lastDurationMilliseconds, lastSavePath: lastSavePath,
-                lastError: lastError, parserPath: parserPath, watchedDirectory: watchedDirectory)
+                lastError: lastError, parserPath: parserPath, watchedDirectory: watchedDirectory,
+                selectionId: selectionId, selectedSavePath: selectedSavePath, selectionMode: selectionMode)
         }
     }
 }
