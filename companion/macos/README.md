@@ -2,16 +2,67 @@
 
 The macOS Companion is the local, read-only bridge between FM26 save files and Manager Room.
 
+## Recommended install
+
+From the repository root:
+
+```bash
+bash scripts/install-macos.sh
+```
+
+The installer builds the native Rust parser and Swift Companion, installs both under:
+
+```text
+~/Library/Application Support/FM26ManagerRoom/bin
+```
+
+and ad-hoc signs the locally built binaries.
+
+Run diagnostics:
+
+```bash
+"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" doctor
+```
+
+Pin the career save you actually want Manager Room to follow:
+
+```bash
+"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" \
+  pin-save "/path/to/My Career.fm"
+```
+
+Inspect or clear the selection:
+
+```bash
+"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" selection
+"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" unpin-save
+```
+
+Start the local service:
+
+```bash
+"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" serve
+```
+
+Then open:
+
+```text
+https://minsone.github.io/fm26-manager-room/
+```
+
 ## Production flow
 
 ```text
-FM26 writes Career.fm
-  -> save-directory watcher
+Pinned Career.fm
+  -> save watcher
+  -> private staged copy
   -> native Rust parser
-  -> atomic snapshot.json
-  -> localhost API
-  -> Manager Room web UI
+  -> validated atomic snapshot.json
+  -> read-only localhost API
+  -> guarded Manager Room web UI
 ```
+
+A pinned selection watches only that file. A newer neighboring `.fm` file is ignored. In-place writes to the selected file are detected and re-parsed.
 
 ## Default FM26 save folder
 
@@ -19,7 +70,7 @@ FM26 writes Career.fm
 ~/Library/Application Support/Sports Interactive/Football Manager 26/games
 ```
 
-Use `--save-dir` when FM's user-data folder has been customized.
+If no save has been pinned and no explicit `--save` or `--save-dir` is supplied, the compatibility fallback still follows the newest save in the default folder. Pinning is recommended.
 
 ## Development run
 
@@ -48,7 +99,7 @@ companion/macos/.build/release/manager-room-companion \
   --parser native/fm26-parser/target/release/fm26-manager-room-parser
 ```
 
-Serve and watch:
+Serve:
 
 ```bash
 companion/macos/.build/release/manager-room-companion \
@@ -56,14 +107,16 @@ companion/macos/.build/release/manager-room-companion \
   --parser native/fm26-parser/target/release/fm26-manager-room-parser
 ```
 
-Options:
+Useful options:
 - `--save /path/to/Career.fm`
 - `--save-dir /custom/games`
 - `--no-watch`
 - `--port 8765`
 - `--parser /path/to/fm26-manager-room-parser`
+- `--snapshot-file /isolated/snapshot.json`
 
 The parser can also be supplied through `FM26_MANAGER_ROOM_PARSER`.
+Tests and custom installations can isolate all local Manager Room state with `FM26_MANAGER_ROOM_HOME`.
 
 ## HTTP API
 
@@ -72,4 +125,6 @@ The parser can also be supplied through `FM26_MANAGER_ROOM_PARSER`.
 - `GET /api/runtime`
 - `GET /api/snapshot`
 
-All non-GET/OPTIONS methods return **405**. This companion remains read-only.
+Only IPv4 loopback is bound. Browser origins are explicitly allow-listed, private-network preflight is supported, and non-GET/OPTIONS methods are rejected.
+
+This companion remains read-only.

@@ -1,0 +1,81 @@
+name: macOS Install CI
+
+on:
+  pull_request:
+    paths:
+      - "scripts/install-macos.sh"
+      - "companion/macos/**"
+      - "native/fm26-parser/**"
+      - ".github/workflows/macos-install-ci.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "scripts/install-macos.sh"
+      - "companion/macos/**"
+      - "native/fm26-parser/**"
+      - ".github/workflows/macos-install-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install from source into isolated application home
+        env:
+          FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+        run: bash scripts/install-macos.sh
+
+      - name: Verify installed binaries and diagnostics
+        env:
+          FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+        run: |
+          BIN="$FM26_MANAGER_ROOM_HOME/bin"
+          test -x "$BIN/manager-room"
+          test -x "$BIN/fm26-manager-room-parser"
+          "$BIN/manager-room" doctor > "$RUNNER_TEMP/doctor-before.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("doctor-before.json").read_text())
+          assert d["platform"]=="macOS"
+          assert d["parserAvailable"] is True
+          assert d.get("selectionId") is None
+          assert d["snapshotPath"].startswith(os.environ["FM26_MANAGER_ROOM_HOME"])
+          PY
+
+      - name: Verify pin, persistence and clear commands
+        env:
+          FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+        run: |
+          BIN="$FM26_MANAGER_ROOM_HOME/bin"
+          SAVE="$RUNNER_TEMP/Install Test Career.fm"
+          printf 'nonempty test save' > "$SAVE"
+          "$BIN/manager-room" pin-save "$SAVE" > "$RUNNER_TEMP/pin.json"
+          "$BIN/manager-room" selection > "$RUNNER_TEMP/selection.json"
+          "$BIN/manager-room" doctor > "$RUNNER_TEMP/doctor-pinned.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])
+          pin=json.loads((root/"pin.json").read_text())
+          selected=json.loads((root/"selection.json").read_text())
+          doctor=json.loads((root/"doctor-pinned.json").read_text())
+          assert pin["id"] == selected["id"] == doctor["selectionId"]
+          assert doctor["selectedSaveExists"] is True
+          assert doctor["selectedSavePath"].endswith("Install Test Career.fm")
+          PY
+          "$BIN/manager-room" unpin-save
+          test "$("$BIN/manager-room" selection)" = "{}"
+
+      - name: Verify ad-hoc signatures
+        env:
+          FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+        run: |
+          codesign --verify "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
+          codesign --verify "$FM26_MANAGER_ROOM_HOME/bin/fm26-manager-room-parser"

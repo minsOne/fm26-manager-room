@@ -55,11 +55,21 @@ def main() -> None:
                 assert "200" in status and json.loads(body)["status"] == "ok"
                 assert headers["Access-Control-Allow-Origin"] == "https://minsone.github.io"
                 assert json.loads(body)["lastParseDurationMs"] is None
+
+                pna_status, pna_headers, pna_body = request(
+                    "Origin: https://minsone.github.io\r\n"
+                    "Access-Control-Request-Method: GET\r\n"
+                    "Access-Control-Request-Private-Network: true\r\n",
+                    method="OPTIONS",
+                )
+                assert "204" in pna_status and pna_body == b""
+                assert pna_headers["Access-Control-Allow-Origin"] == "https://minsone.github.io"
+                assert pna_headers["Access-Control-Allow-Private-Network"] == "true"
                 assert request("Origin: https://evil.example\r\n")[0].startswith("HTTP/1.1 403")
                 assert request(host=f"attacker.example:{port}")[0].startswith("HTTP/1.1 403")
                 assert request(method="POST")[0].startswith("HTTP/1.1 405")
                 assert request("Origin: null\r\n")[0].startswith("HTTP/1.1 403")
-                print("PASS HTTP fragmented headers, exact CORS, JSON nulls, hostile origin/Host and write rejection")
+                print("PASS HTTP fragmented headers, exact CORS/PNA, JSON nulls, hostile origin/Host and write rejection")
             finally:
                 child.terminate()
                 try:

@@ -5,13 +5,13 @@ enum Command: String {
     case snapshotPath = "snapshot-path"
     case pinSave = "pin-save"
     case unpinSave = "unpin-save"
-    case selection
+    case selection, doctor
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = Command(rawValue: args.first ?? "serve") else {
     FileHandle.standardError.write(Data(
-        "Unknown command. Use serve, parse, probe, snapshot-path, pin-save, unpin-save or selection.\n".utf8
+        "Unknown command. Use serve, parse, probe, snapshot-path, pin-save, unpin-save, selection or doctor.\n".utf8
     ))
     exit(2)
 }
@@ -54,6 +54,43 @@ case .selection:
     } else {
         print("{}")
     }
+
+case .doctor:
+    let explicitParser = option("--parser", in: args)
+    let parserURL = try? NativeParserRunner.resolve(explicit: explicitParser)
+    let selected = selectionStore.load()
+    let defaultDirectory = SaveDirectoryWatcher.defaultFM26Directory()
+    var notes: [String] = []
+    if parserURL == nil {
+        notes.append("Native parser is unavailable. Install both binaries in the same directory or pass --parser.")
+    }
+    if let selected {
+        if !FileManager.default.fileExists(atPath: selected.path) {
+            notes.append("The pinned save no longer exists at its recorded path.")
+        }
+    } else {
+        notes.append("No save is pinned. Run pin-save /path/to/Career.fm for deterministic watching.")
+    }
+    if selected == nil && !FileManager.default.fileExists(atPath: defaultDirectory.path) {
+        notes.append("The default FM26 games directory was not found.")
+    }
+    let report = DoctorReport(
+        platform: "macOS",
+        parserAvailable: parserURL != nil,
+        parserPath: parserURL?.path,
+        snapshotPath: store.url.path,
+        snapshotExists: store.exists,
+        selectionId: selected?.id,
+        selectedSavePath: selected?.path,
+        selectedSaveExists: selected.map { FileManager.default.fileExists(atPath: $0.path) },
+        defaultSaveDirectory: defaultDirectory.path,
+        defaultSaveDirectoryExists: FileManager.default.fileExists(atPath: defaultDirectory.path),
+        webURL: "https://minsone.github.io/fm26-manager-room/",
+        notes: notes
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    print(String(decoding: try encoder.encode(report), as: UTF8.self))
 
 case .parse:
     guard args.count >= 2, !args[1].hasPrefix("--") else {
@@ -191,4 +228,20 @@ func parsePort(_ args: [String]) -> UInt16? {
 func option(_ name: String, in args: [String]) -> String? {
     guard let index = args.firstIndex(of: name), args.indices.contains(index + 1) else { return nil }
     return args[index + 1]
+}
+
+
+struct DoctorReport: Codable {
+    let platform: String
+    let parserAvailable: Bool
+    let parserPath: String?
+    let snapshotPath: String
+    let snapshotExists: Bool
+    let selectionId: String?
+    let selectedSavePath: String?
+    let selectedSaveExists: Bool?
+    let defaultSaveDirectory: String
+    let defaultSaveDirectoryExists: Bool
+    let webURL: String
+    let notes: [String]
 }
