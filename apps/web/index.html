@@ -1,22 +1,19 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <meta name="theme-color" content="#0a0f18"/>
-  <title>FM26 Manager Room</title>
-  <link rel="stylesheet" href="./styles.css"/>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a0f18"><title>FM26 Manager Room</title>
+<link rel="stylesheet" href="./preview.css">
 </head>
 <body>
-<div id="app">
-  <aside id="sidebar"></aside>
-  <main>
-    <header id="topbar"></header>
-    <section id="content" aria-live="polite"></section>
-  </main>
-  <div id="modal"></div>
-  <div id="toast" role="status" aria-live="polite"></div>
-</div>
-<script type="module" src="./app.js"></script>
-</body>
-</html>
+<aside class="sidebar"><div class="brand">MR <span>Manager Room<small>FM26 · Read-only preview</small></span></div>
+<nav id="roomNavigation" aria-label="분석 화면"></nav>
+<a class="demo-link" href="./demo.html">기존 UI 데모 · 예시 데이터</a></aside>
+<main>
+<header><div><h1 id="pageTitle">Manager Room</h1><p>확인된 정보부터 검토합니다. 게임 데이터는 수정하지 않습니다.</p></div>
+<button id="refreshButton" data-refresh>새로고침</button></header>
+<section id="syncStatus" class="sync-status" role="status" aria-live="polite">연결 전</section>
+<label class="search-label" for="searchInput">선수 이름 / UID 검색</label><input id="searchInput" type="search" autocomplete="off" placeholder="현재 수록된 선수 검색">
+<div id="content"></div><div id="playerDetail"></div>
+</main><script type="module" src="./preview.js"></script>
+</body></html>

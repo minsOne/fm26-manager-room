@@ -6,199 +6,98 @@ final class LocalHTTPServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "fm26.manager-room.http")
     private let store: SnapshotStore
     private let companionState: CompanionState
+    private let policy: LocalRequestPolicy
 
-    init(
-        port: UInt16,
-        store: SnapshotStore,
-        companionState: CompanionState
-    ) throws {
-        guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
-            throw ServerError.invalidPort
-        }
-        listener = try NWListener(using: .tcp, on: endpointPort)
-        self.store = store
-        self.companionState = companionState
+    init(port: UInt16, store: SnapshotStore, companionState: CompanionState) throws {
+        guard port > 0, let endpointPort = NWEndpoint.Port(rawValue: port) else { throw ServerError.invalidPort }
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: endpointPort)
+        self.listener = try NWListener(using: parameters)
+        self.store = store; self.companionState = companionState
+        self.policy = LocalRequestPolicy(port: port)
     }
-
     func start() {
-        listener.newConnectionHandler = { [weak self] connection in
-            self?.handle(connection)
-        }
+        listener.newConnectionHandler = { [weak self] connection in self?.handle(connection) }
         listener.stateUpdateHandler = { state in
             if case let .failed(error) = state {
-                fputs("HTTP server failed: \(error)\n", stderr)
+                FileHandle.standardError.write(Data("HTTP server failed: \(error)\n".utf8))
             }
         }
         listener.start(queue: queue)
     }
-
     private func handle(_ connection: NWConnection) {
-        guard isLoopback(connection.endpoint) else {
-            connection.cancel()
-            return
-        }
-
         connection.start(queue: queue)
-        connection.receive(
-            minimumIncompleteLength: 1,
-            maximumLength: 16_384
-        ) { [weak self] data, _, _, _ in
-            guard
-                let self,
-                let data,
-                let request = String(data: data, encoding: .utf8)
-            else {
-                connection.cancel()
-                return
+        // Bounded header read and slow-client timeout. Requests may arrive over several packets.
+        queue.asyncAfter(deadline: .now() + 5) { [weak connection] in connection?.cancel() }
+        receiveHeaders(connection, accumulated: Data())
+    }
+    private func receiveHeaders(_ connection: NWConnection, accumulated: Data) {
+        let remaining = 16_384 - accumulated.count
+        guard remaining > 0 else { reject("431 Request Header Fields Too Large", on: connection); return }
+        connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) { [weak self] data, _, complete, error in
+            guard let self, error == nil, let data, !data.isEmpty else { connection.cancel(); return }
+            var buffer = accumulated; buffer.append(data)
+            if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
+                guard end.upperBound == buffer.endIndex, let text = String(data: buffer, encoding: .utf8) else {
+                    self.reject("400 Bad Request", on: connection); return
+                }
+                self.respond(to: text, on: connection)
+            } else if complete {
+                self.reject("400 Bad Request", on: connection)
+            } else {
+                self.receiveHeaders(connection, accumulated: buffer)
             }
-            self.respond(to: request, on: connection)
         }
     }
-
-    private func respond(to request: String, on connection: NWConnection) {
-        let firstLine = request
-            .split(separator: "\r\n", maxSplits: 1)
-            .first
-            .map(String.init) ?? ""
-        let parts = firstLine.split(separator: " ")
-        let method = parts.first.map(String.init) ?? ""
-        let path = parts.dropFirst().first.map(String.init) ?? "/"
-
-        if method == "OPTIONS" {
-            send(status: "204 No Content", type: "text/plain", body: Data(), on: connection)
-            return
+    private func respond(to text: String, on connection: NWConnection) {
+        let request: LocalRequestPolicy.Request
+        do { request = try policy.parse(text) }
+        catch LocalRequestPolicy.Rejection.forbidden { reject("403 Forbidden", on: connection); return }
+        catch LocalRequestPolicy.Rejection.methodNotAllowed { reject("405 Method Not Allowed", on: connection); return }
+        catch { reject("400 Bad Request", on: connection); return }
+        if request.method == "OPTIONS" {
+            send(status: "204 No Content", body: Data(), request: request, on: connection); return
         }
-
-        guard method == "GET" else {
-            sendJSON(
-                status: "405 Method Not Allowed",
-                value: ["error": "read-only companion"],
-                on: connection
-            )
-            return
-        }
-
-        switch path {
+        switch request.path {
         case "/api/health":
-            let probe = FMProcessProbe.probe()
             let parser = companionState.snapshot()
-            var value: [String: Any] = [
-                "status": "ok",
-                "platform": "macOS",
-                "snapshotAvailable": store.exists,
-                "fmRunning": probe.running,
-                "accessMode": probe.accessMode,
-                "parsing": parser.parsing,
+            // Runtime probing hashes an executable; do not perform that expensive work on each health poll.
+            let value: [String: Any] = [
+                "status": "ok", "platform": "macOS", "snapshotAvailable": store.exists,
+                "accessMode": "read-only-save-snapshot", "parsing": parser.parsing,
+                "lastParseDurationMs": parser.lastDurationMilliseconds.map { $0 as Any } ?? NSNull(),
+                "lastParseError": parser.lastError.map { $0 as Any } ?? NSNull()
             ]
-            value["lastParseDurationMs"] = parser.lastDurationMilliseconds ?? NSNull()
-            value["lastSavePath"] = parser.lastSavePath ?? NSNull()
-            value["lastParseError"] = parser.lastError ?? NSNull()
-            value["watchedDirectory"] = parser.watchedDirectory ?? NSNull()
-            sendJSON(status: "200 OK", value: value, on: connection)
-
+            let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data("{}".utf8)
+            send(body: data, request: request, on: connection)
         case "/api/parser":
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            encoder.dateEncodingStrategy = .iso8601
-            let data = (try? encoder.encode(companionState.snapshot())) ?? Data("{}".utf8)
-            send(
-                status: "200 OK",
-                type: "application/json; charset=utf-8",
-                body: data,
-                on: connection
-            )
-
+            let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+            send(body: (try? encoder.encode(companionState.snapshot())) ?? Data("{}".utf8), request: request, on: connection)
         case "/api/runtime":
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = (try? encoder.encode(FMProcessProbe.probe())) ?? Data("{}".utf8)
-            send(
-                status: "200 OK",
-                type: "application/json; charset=utf-8",
-                body: data,
-                on: connection
-            )
-
+            send(body: (try? JSONEncoder().encode(FMProcessProbe.probe())) ?? Data("{}".utf8), request: request, on: connection)
         case "/api/snapshot":
-            guard store.exists, let data = try? store.read() else {
-                sendJSON(
-                    status: "404 Not Found",
-                    value: ["error": "snapshot unavailable"],
-                    on: connection
-                )
-                return
-            }
-            send(
-                status: "200 OK",
-                type: "application/json; charset=utf-8",
-                body: data,
-                on: connection
-            )
-
-        default:
-            sendJSON(
-                status: "404 Not Found",
-                value: ["error": "not found"],
-                on: connection
-            )
+            guard let data = try? store.read() else { reject("404 Not Found", request: request, on: connection); return }
+            send(body: data, request: request, on: connection)
+        default: reject("404 Not Found", request: request, on: connection)
         }
     }
-
-    private func sendJSON(
-        status: String,
-        value: [String: Any],
-        on connection: NWConnection
-    ) {
-        let data = (
-            try? JSONSerialization.data(
-                withJSONObject: value,
-                options: [.sortedKeys]
-            )
-        ) ?? Data("{}".utf8)
-        send(
-            status: status,
-            type: "application/json; charset=utf-8",
-            body: data,
-            on: connection
-        )
+    private func reject(_ status: String, request: LocalRequestPolicy.Request? = nil, on connection: NWConnection) {
+        send(status: status, body: Data("{\"error\":\"request rejected\"}".utf8), request: request, on: connection)
     }
-
-    private func send(
-        status: String,
-        type: String,
-        body: Data,
-        on connection: NWConnection
-    ) {
-        let headers = [
-            "HTTP/1.1 \(status)",
-            "Content-Type: \(type)",
-            "Content-Length: \(body.count)",
-            "Access-Control-Allow-Origin: *",
-            "Access-Control-Allow-Methods: GET, OPTIONS",
-            "Access-Control-Allow-Headers: Content-Type",
-            "Cache-Control: no-store",
-            "Connection: close",
-            "",
-            "",
-        ].joined(separator: "\r\n")
-
-        var response = Data(headers.utf8)
-        response.append(body)
-        connection.send(
-            content: response,
-            completion: .contentProcessed { _ in
-                connection.cancel()
+    private func send(status: String = "200 OK", body: Data, request: LocalRequestPolicy.Request?, on connection: NWConnection) {
+        var headers = ["HTTP/1.1 \(status)", "Content-Type: application/json; charset=utf-8",
+            "Content-Length: \(body.count)", "Cache-Control: no-store", "Connection: close",
+            "X-Content-Type-Options: nosniff", "Vary: Origin"]
+        if let origin = request?.origin {
+            headers += ["Access-Control-Allow-Origin: \(origin)", "Access-Control-Allow-Methods: GET, OPTIONS",
+                        "Access-Control-Allow-Headers: Content-Type"]
+            if request?.method == "OPTIONS" && request?.privateNetworkRequested == true {
+                headers.append("Access-Control-Allow-Private-Network: true")
             }
-        )
+        }
+        var response = Data((headers.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+        response.append(body)
+        connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
     }
-
-    private func isLoopback(_ endpoint: NWEndpoint) -> Bool {
-        guard case let .hostPort(host, _) = endpoint else { return false }
-        let value = String(describing: host).lowercased()
-        return value == "127.0.0.1" || value == "::1" || value == "localhost"
-    }
-
-    enum ServerError: Error {
-        case invalidPort
-    }
+    enum ServerError: Error { case invalidPort }
 }
