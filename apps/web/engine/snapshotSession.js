@@ -79,6 +79,15 @@ export class SnapshotSession {
       if (this.disposed) return;
       this.state.parser = parser; this.state.metadataWarning = warning;
       this.state.receivedAt = this.now();
+
+      // A persisted Companion selection ID is more stable than saveName for same-career saves.
+      const selectionId = typeof parser?.selectionId === "string" && parser.selectionId.trim()
+        ? parser.selectionId.trim() : null;
+      if (selectionId) {
+        snapshot.selectionId = selectionId;
+        snapshot.careerKey = JSON.stringify([selectionId, snapshot.manager.clubUid]);
+      }
+
       const previous = this.state.snapshot;
       if (previous && previous.careerKey !== snapshot.careerKey) {
         this.state.pending = snapshot; this.state.status = "career-changed";
