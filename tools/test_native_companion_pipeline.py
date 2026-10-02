@@ -91,16 +91,35 @@ def main() -> int:
                 report.update(initialImportAndAPIMs=round((time.monotonic()-started)*1000,2),
                               parserReportedMs=state.get('lastDurationMilliseconds'),
                               players=len(actual['players']),fixtures=len(actual.get('fixtures',[])))
-                # The private test directory only: make the next import fail.
+                # Corrupt the explicitly selected file in place. Pinned mode must ignore
+                # neighboring saves, retain the last good snapshot, then recover when the
+                # same selected path becomes valid again.
                 good_bytes=destination.read_bytes()
-                (saves/'invalid.fm').write_bytes(b'This is deliberately not an FM26 save.')
+                good_success=state.get('lastSuccessAt')
+                sample.write_bytes(b'This is deliberately not an FM26 save.')
                 failed=poll(lambda: get('/api/parser').get('lastError'))
                 if not failed or destination.read_bytes()!=good_bytes or get('/api/snapshot')!=expected:
                     raise RuntimeError('failed_import_did_not_preserve_last_good_snapshot')
+
+                shutil.copyfile(args.save,sample)
+                def recovered():
+                    current=get('/api/parser')
+                    return current if (
+                        not current.get('parsing')
+                        and not current.get('lastError')
+                        and current.get('lastSuccessAt')
+                        and current.get('lastSuccessAt') != good_success
+                    ) else None
+                recovered_state=poll(recovered)
+                if get('/api/snapshot')!=expected or destination.read_bytes()!=good_bytes:
+                    raise RuntimeError('restored_pinned_save_did_not_recover')
                 if digest(args.save)!=before or digest(sample)!=before:
                     raise RuntimeError('original_save_changed')
-                report.update(passed=True,sourceUnchanged=True,httpEqualsNative=True,
-                              invalidSavePreservesSnapshot=True)
+                report.update(
+                    passed=True,sourceUnchanged=True,httpEqualsNative=True,
+                    invalidSavePreservesSnapshot=True,pinnedSaveRecovery=True,
+                    recoveryParserReportedMs=recovered_state.get('lastDurationMilliseconds')
+                )
     except Exception as error:
         report.update(errorType=type(error).__name__,reason='integration_failed')
     finally:
