@@ -1,0 +1,66 @@
+name: Public Pages Loopback
+
+on:
+  pull_request:
+    paths:
+      - "tools/test_public_pages_loopback.py"
+      - ".github/workflows/public-pages-loopback.yml"
+      - "companion/macos/**"
+      - "native/fm26-parser/**"
+  push:
+    branches: ["main"]
+    paths:
+      - "tools/test_public_pages_loopback.py"
+      - ".github/workflows/public-pages-loopback.yml"
+      - "companion/macos/**"
+      - "native/fm26-parser/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build real local binaries
+        run: |
+          cargo build --release --manifest-path native/fm26-parser/Cargo.toml
+          swift build --package-path companion/macos -c release
+
+      - name: Install browser and fixture downloader
+        run: |
+          python -m pip install "gdown==5.2.0" "playwright==1.57.0"
+          python -m playwright install chromium
+
+      - name: Download public test save privately
+        run: |
+          mkdir -m 700 -p "$RUNNER_TEMP/pages-loopback"
+          python -m gdown 1UZlBHKpEae416lx8apbkug-pmZH7RMKd -O "$RUNNER_TEMP/pages-loopback/public.fm"
+          test -s "$RUNNER_TEMP/pages-loopback/public.fm"
+
+      - name: Public HTTPS Pages to real loopback API
+        run: |
+          python tools/test_public_pages_loopback.py \
+            --save "$RUNNER_TEMP/pages-loopback/public.fm" \
+            --parser native/fm26-parser/target/release/fm26-manager-room-parser \
+            --companion companion/macos/.build/release/manager-room-companion \
+            --report "$RUNNER_TEMP/pages-loopback/report.json"
+
+      - name: Remove save
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pages-loopback/public.fm"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-pages-loopback-report
+          path: ${{ runner.temp }}/pages-loopback/report.json
+          if-no-files-found: warn
+          retention-days: 7
