@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { normalizeRealSnapshot } from '../engine/realSnapshot.js';
+const read = overrides => normalizeRealSnapshot({schemaVersion:2, source:'rust-native', saveName:'test', gameDate:'2037-07-01', manager:{clubUid:1}, players:[{id:'1', name:'Test', ca:100, pa:100, paKnown:false, ...overrides}]}).players[0];
+test('native age availability is authoritative', () => assert.equal(read({age:20,ageKnown:false}).age,null));
+test('native birthday is not promoted when person data is unknown', () => assert.equal(read({ageKnown:false,birthDate:'2017-01-01'}).birthDate,null));
+test('personality availability does not erase observed attribute-based hidden values', () => assert.deepEqual(read({personalityKnown:false,hidden:{professionalism:20,pressure:19,consistency:11}}).hidden,{consistency:11}));
+test('explicit last-five unknown overrides general record presence', () => assert.equal(read({playingTime:{recentMinutesKnown:true,recentMinutes:90,minutesLast5:90,minutesLast5Known:false}}).appearances,null));
+test('contradictory wage flags fail to unknown', () => assert.equal(read({wageKnown:false,contract:{weeklyWage:0,weeklyWageKnown:true}}).wage,null));
+test('verified zero wage is retained without inventing currency', () => assert.equal(read({wageKnown:true,contract:{weeklyWage:0,weeklyWageKnown:true}}).wage,0));
+test('verified raw zeros for fitness are retained', () => {const p=read({fitness:{condition:0,conditionKnown:true,matchSharpness:0,matchSharpnessKnown:true}});assert.equal(p.condition,0);assert.equal(p.sharpness,0);});
+test('fitness placeholders stay unknown', () => {const p=read({fitness:{condition:100,conditionKnown:false,matchSharpness:0,matchSharpnessKnown:false}});assert.equal(p.condition,null);assert.equal(p.sharpness,null);});
+test('PA range code is preserved without using CA as PA', () => {const p=read({paRangeCode:-9});assert.equal(p.pa,null);assert.equal(p.paRangeCode,-9);});
+test('native foot bytes do not join the named attribute map', () => {const p=read({leftFoot:20,rightFoot:10,attributes:{passing:14},positionRatings:{GK:1,MC:20}});assert.equal(p.leftFoot,20);assert.deepEqual(p.attributes,{passing:14});assert.deepEqual(p.positionRatings,{GK:1,MC:20});});
+test('explicit end-date unavailability overrides a placeholder date', () => {const p=read({contract:{end:'2040-01-01',endKnown:false,monthsRemaining:30}});assert.equal(p.contractEnd,null);assert.equal(p.monthsRemaining,null);});
