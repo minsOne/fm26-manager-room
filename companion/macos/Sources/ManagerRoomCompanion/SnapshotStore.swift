@@ -4,11 +4,16 @@ struct SnapshotStore: Sendable {
     let url: URL
 
     static func defaultStore() -> SnapshotStore {
-        let base = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0]
-        .appendingPathComponent("FM26ManagerRoom", isDirectory: true)
+        let base: URL
+        if let override = ProcessInfo.processInfo.environment["FM26_MANAGER_ROOM_HOME"], !override.isEmpty {
+            base = URL(fileURLWithPath: override, isDirectory: true).standardizedFileURL
+        } else {
+            base = FileManager.default.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
+            )[0]
+            .appendingPathComponent("FM26ManagerRoom", isDirectory: true)
+        }
 
         try? FileManager.default.createDirectory(
             at: base,
