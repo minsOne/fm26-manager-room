@@ -266,6 +266,48 @@ func request(_ origin: String? = nil, host: String = "127.0.0.1:8765", method: S
                     let second = try Data(contentsOf: counter); try check(second.count == 2)
                 }
             }),
+            ("pinned selection persists and reuses the same identity", {
+                try withDirectory { dir in
+                    let first = try save(dir)
+                    let selectionStore = SaveSelectionStore(url: dir.appendingPathComponent("selection.json"))
+                    let a = try selectionStore.pin(first)
+                    let b = try selectionStore.pin(first)
+                    try check(a.id == b.id)
+                    try check(selectionStore.load() == b)
+                    let second = dir.appendingPathComponent("Other.fm")
+                    try Data("other save".utf8).write(to: second)
+                    let d = try selectionStore.pin(second)
+                    try check(d.id != a.id)
+                    try check(d.path == second.resolvingSymlinksInPath().standardizedFileURL.path)
+                    try selectionStore.clear()
+                    try check(selectionStore.load() == nil)
+                }
+            }),
+            ("pinned watcher ignores newer neighbor saves but tracks in-place writes", {
+                try withDirectory { dir in
+                    let pinned = try save(dir)
+                    let other = dir.appendingPathComponent("Other.fm")
+                    try Data("newer neighbor".utf8).write(to: other)
+                    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(120)], ofItemAtPath: other.path)
+                    let state = CompanionState(), counter = dir.appendingPathComponent("calls")
+                    let binary = try parser(dir, body: "printf x >> \(quote(counter.path))\n" + emitValid())
+                    let runner = NativeParserRunner(parserURL: binary, store: SnapshotStore(url: dir.appendingPathComponent("snapshot.json")), state: state)
+                    let watcher = SaveDirectoryWatcher(directoryURL: dir, runner: runner, state: state,
+                        pinnedSaveURL: pinned, debounceSeconds: 0.08, pollSeconds: 0.03)
+                    try watcher.start(); defer { watcher.stop() }
+                    try eventually { (try? Data(contentsOf: counter).count) == 1 }
+                    try check(state.snapshot().lastSavePath == pinned.resolvingSymlinksInPath().standardizedFileURL.path)
+
+                    let otherHandle = try FileHandle(forWritingTo: other)
+                    try otherHandle.seekToEnd(); try otherHandle.write(contentsOf: Data("updated".utf8)); try otherHandle.close()
+                    Thread.sleep(forTimeInterval: 0.25)
+                    try check((try? Data(contentsOf: counter).count) == 1)
+
+                    let pinnedHandle = try FileHandle(forWritingTo: pinned)
+                    try pinnedHandle.seekToEnd(); try pinnedHandle.write(contentsOf: Data("updated".utf8)); try pinnedHandle.close()
+                    try eventually { (try? Data(contentsOf: counter).count) == 2 }
+                }
+            }),
             ("missing watch directory is never created", {
                 try withDirectory { dir in
                     let missing = dir.appendingPathComponent("not-created")
