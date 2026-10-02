@@ -44,6 +44,22 @@ test("refresh failure retains identical last-good snapshot",async()=>{let fail=f
 test("invalid refresh does not replace published data",async()=>{let input=raw();const s=session(()=>json(input));await s.refresh();const previous=s.state.snapshot;input={};await s.refresh();assert.equal(s.state.snapshot,previous);assert.equal(s.state.status,"stale");});
 test("no overlapping fetch and no revision increment on same data",async()=>{let calls=0;const s=session(()=>{calls++;return json(raw());});await Promise.all([s.refresh(),s.refresh(),s.refresh()]);assert.equal(calls,1);await s.refresh();assert.equal(s.state.revision,1);});
 test("changed same-career snapshot increments revision",async()=>{const x=raw();const s=session(()=>json(x));await s.refresh();x.players[0].ca=127;await s.refresh();assert.equal(s.state.revision,2);assert.equal(s.state.snapshot.players[0].ca,127);});
+test("backend selection id keeps renamed pinned save in the same career",async()=>{
+  let x=raw();
+  const fetcher=async url=>url.endsWith("/api/parser")
+    ? json({parsing:false,lastError:null,selectionId:"pin-123",selectionMode:"pinned"})
+    : json(x);
+  const s=new SnapshotSession({fetcher});
+  await s.refresh();
+  assert.equal(s.state.revision,1);
+  x={...raw(),saveName:"Career renamed.fm"};x.players[0].ca=129;
+  await s.refresh();
+  assert.equal(s.state.status,"current");
+  assert.equal(s.state.pending,null);
+  assert.equal(s.state.snapshot.saveName,"Career renamed.fm");
+  assert.equal(s.state.snapshot.players[0].ca,129);
+  assert.equal(s.state.revision,2);
+});
 test("career switch is explicit and never silently replaces",async()=>{let x=raw();const s=session(()=>json(x));await s.refresh();const old=s.state.snapshot;x={...raw(),saveName:"Other.fm"};await s.refresh();assert.equal(s.state.snapshot,old);assert.equal(s.state.status,"career-changed");assert.equal(s.state.pending.saveName,"Other.fm");assert.ok(s.acceptPending());assert.equal(s.state.snapshot.saveName,"Other.fm");});
 test("parser failure marks stale even when snapshot endpoint succeeds",async()=>{const s=new SnapshotSession({fetcher:async url=>json(url.endsWith("/api/parser")?{lastError:"parse failed"}:raw())});await s.refresh();assert.equal(s.state.status,"stale");assert.equal(s.state.snapshot.players.length,1);});
 test("missing parser API is explicit and not a demo",async()=>{const s=new SnapshotSession({fetcher:async url=>url.endsWith("/api/parser")?new Response("",{status:404}):json(raw())});await s.refresh();assert.equal(s.state.status,"current");assert.equal(s.state.parser,null);assert.match(statusHTML(s.state),/가장 최근 게임 저장/);});

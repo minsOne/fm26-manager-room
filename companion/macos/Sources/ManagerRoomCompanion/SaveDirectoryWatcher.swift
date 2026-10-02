@@ -14,6 +14,7 @@ final class SaveDirectoryWatcher: @unchecked Sendable {
     private let runner: NativeParserRunner
     private let state: CompanionState
     private let queue = DispatchQueue(label: "fm26.manager-room.save-watcher")
+    private let pinnedSaveURL: URL?
     private let isolationKey = DispatchSpecificKey<UInt8>()
     private let debounceSeconds: TimeInterval
     private let pollSeconds: TimeInterval
@@ -25,8 +26,12 @@ final class SaveDirectoryWatcher: @unchecked Sendable {
     private var retryAfter = ContinuousClock.now
 
     init(directoryURL: URL, runner: NativeParserRunner, state: CompanionState,
+         pinnedSaveURL: URL? = nil,
          debounceSeconds: TimeInterval = 1.5, pollSeconds: TimeInterval = 1) {
-        self.directoryURL = directoryURL; self.runner = runner; self.state = state
+        self.directoryURL = directoryURL
+        self.runner = runner
+        self.state = state
+        self.pinnedSaveURL = pinnedSaveURL?.resolvingSymlinksInPath().standardizedFileURL
         self.debounceSeconds = max(0.05, debounceSeconds)
         self.pollSeconds = max(0.02, pollSeconds)
         queue.setSpecific(key: isolationKey, value: 1)
@@ -39,6 +44,11 @@ final class SaveDirectoryWatcher: @unchecked Sendable {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw CocoaError(.fileNoSuchFile)
+        }
+        if let pinnedSaveURL {
+            guard signature(pinnedSaveURL) != nil else {
+                throw SaveSelectionError.invalidSave(pinnedSaveURL.path)
+            }
         }
         onQueue {
             guard timer == nil else { return }
@@ -80,22 +90,28 @@ final class SaveDirectoryWatcher: @unchecked Sendable {
         }
     }
     private func newestSaveSignature() -> SaveFileSignature? {
+        if let pinnedSaveURL {
+            return signature(pinnedSaveURL)
+        }
         guard let urls = try? FileManager.default.contentsOfDirectory(at: directoryURL,
             includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return nil }
-        return urls.compactMap { url -> SaveFileSignature? in
-            guard url.pathExtension.lowercased() == "fm",
-                  let a = try? FileManager.default.attributesOfItem(atPath: url.path),
-                  a[.type] as? FileAttributeType == .typeRegular,
-                  let size = a[.size] as? NSNumber, size.int64Value > 0,
-                  let modified = a[.modificationDate] as? Date,
-                  let inode = a[.systemFileNumber] as? NSNumber else { return nil }
-            return SaveFileSignature(path: url.path, size: size.int64Value,
-                modificationDate: modified, inode: inode.uint64Value)
-        }.max {
+        return urls.compactMap(signature).max {
             if $0.modificationDate != $1.modificationDate { return $0.modificationDate < $1.modificationDate }
             return $0.path < $1.path
         }
     }
+
+    private func signature(_ url: URL) -> SaveFileSignature? {
+        guard url.pathExtension.lowercased() == "fm",
+              let a = try? FileManager.default.attributesOfItem(atPath: url.path),
+              a[.type] as? FileAttributeType == .typeRegular,
+              let size = a[.size] as? NSNumber, size.int64Value > 0,
+              let modified = a[.modificationDate] as? Date,
+              let inode = a[.systemFileNumber] as? NSNumber else { return nil }
+        return SaveFileSignature(path: url.resolvingSymlinksInPath().standardizedFileURL.path,
+            size: size.int64Value, modificationDate: modified, inode: inode.uint64Value)
+    }
+
     static func defaultFM26Directory() -> URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Sports Interactive", isDirectory: true)
