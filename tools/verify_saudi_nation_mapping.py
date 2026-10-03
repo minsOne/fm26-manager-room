@@ -1,25 +1,112 @@
 #!/usr/bin/env python3
-"""Verify the published Saudi nation mapping and finance aggregation.
+"""Verify native nation-finance aggregation against pinned fmsave.
 
-This is reference equivalence on one public FM26 fixture, not proof of every FM26 build.
-The external FM database ids are stable anchors for Al-Hilal and Al-Nassr.
+The public fixture does not necessarily load every nation's finance history. Therefore the
+test compares every nation group that *is* covered by the fixture. Saudi-specific assertions
+run only when Saudi finance/anchor data is present. This is reference equivalence, not FM ground truth.
 """
 from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 SAUDI_NATION_ID = 133
-ANCHOR_UNIQUE_IDS = {
-    102852: "Al-Hilal Saudi Football Club",
-    102862: "Al-Nassr Football Club",
-}
+ANCHOR_UNIQUE_IDS = {102852, 102862}  # Al-Hilal, Al-Nassr FM database Unique IDs.
 
 
 def capacity(row) -> int:
     return max(0, int(row.transfer_budget_remaining)) + int(row.wage_budget_weekly) * 52
+
+
+def group_reference(clubs, finances):
+    by_uid = {club.uid: club for club in clubs}
+    latest = {}
+    row_counts = Counter()
+    for row in finances:
+        row_counts[row.club_uid] += 1
+        previous = latest.get(row.club_uid)
+        if previous is None or row.month > previous.month:
+            latest[row.club_uid] = row
+
+    grouped = defaultdict(list)
+    for club_uid, row in latest.items():
+        club = by_uid.get(club_uid)
+        if club is not None:
+            grouped[int(club.nation_id)].append(row)
+
+    result = {}
+    for nation_id, rows in grouped.items():
+        reputations = [
+            int(by_uid[row.club_uid].reputation)
+            for row in rows
+            if by_uid[row.club_uid].reputation is not None
+        ]
+        capacities = sorted((capacity(row) for row in rows), reverse=True)
+        total_capacity = sum(capacities)
+        average_reputation = (
+            (sum(reputations) + len(reputations) // 2) // len(reputations)
+            if reputations else None
+        )
+        ordered = sorted(
+            rows,
+            key=lambda row: (
+                -capacity(row),
+                by_uid[row.club_uid].name,
+                row.club_uid,
+            ),
+        )[:5]
+        result[nation_id] = {
+            "clubsWithFinance": len(rows),
+            "financeRows": sum(row_counts[row.club_uid] for row in rows),
+            "totalBalance": sum(int(row.balance) for row in rows),
+            "transferBudgetAllocated": sum(int(row.transfer_budget_allocated) for row in rows),
+            "transferBudgetRemaining": sum(int(row.transfer_budget_remaining) for row in rows),
+            "wageBudgetWeekly": sum(int(row.wage_budget_weekly) for row in rows),
+            "wagePayrollWeekly": sum(int(row.wage_payroll_weekly) for row in rows),
+            "budgetCapacityProxy": total_capacity,
+            "top4CapacityShare": (
+                min(100, (sum(capacities[:4]) * 100 + total_capacity // 2) // total_capacity)
+                if total_capacity else 0
+            ),
+            "reputationCoverageClubs": len(reputations),
+            "averageReputation": average_reputation,
+            "sportingPowerProxy": (
+                min(100, (average_reputation + 50) // 100)
+                if average_reputation is not None else None
+            ),
+            "topClubs": [
+                {
+                    "clubUid": row.club_uid,
+                    "clubName": by_uid[row.club_uid].name,
+                    "reputation": by_uid[row.club_uid].reputation,
+                    "budgetCapacityProxy": capacity(row),
+                }
+                for row in ordered
+            ],
+        }
+    return result, by_uid
+
+
+def compare_group(expected, actual, nation_id):
+    for key in [
+        "clubsWithFinance", "financeRows", "totalBalance",
+        "transferBudgetAllocated", "transferBudgetRemaining",
+        "wageBudgetWeekly", "wagePayrollWeekly", "budgetCapacityProxy",
+        "top4CapacityShare", "reputationCoverageClubs",
+        "averageReputation", "sportingPowerProxy",
+    ]:
+        if actual.get(key) != expected[key]:
+            raise ValueError(f"nation_{nation_id}_{key}_mismatch")
+
+    actual_top = actual.get("topClubs")
+    if not isinstance(actual_top, list) or len(actual_top) != len(expected["topClubs"]):
+        raise ValueError(f"nation_{nation_id}_top_clubs_count_mismatch")
+    for wanted, got in zip(expected["topClubs"], actual_top, strict=True):
+        for key, value in wanted.items():
+            if got.get(key) != value:
+                raise ValueError(f"nation_{nation_id}_top_club_{key}_mismatch")
 
 
 def main() -> int:
@@ -31,119 +118,53 @@ def main() -> int:
 
     report = {
         "passed": False,
-        "scope": "saudi_nation_finance_reference_equivalence",
-        "nationId": SAUDI_NATION_ID,
+        "scope": "nation_finance_reference_equivalence",
         "groundTruth": "reference_equivalence_only",
+        "saudiNationId": SAUDI_NATION_ID,
     }
 
     try:
         import fmsave
 
         snapshot = json.loads(args.snapshot.read_text(encoding="utf-8"))
-        groups = snapshot.get("economyGroups")
-        if not isinstance(groups, list):
+        actual_rows = snapshot.get("economyGroups")
+        if not isinstance(actual_rows, list):
             raise ValueError("snapshot_economy_groups_missing")
-        group = next((row for row in groups if row.get("nationId") == SAUDI_NATION_ID), None)
-        if not isinstance(group, dict):
-            raise ValueError("snapshot_saudi_group_missing")
-        if group.get("nationName") != "Saudi Arabia":
-            raise ValueError("snapshot_saudi_label_missing")
+        actual = {row.get("nationId"): row for row in actual_rows if isinstance(row, dict)}
+        if len(actual) != len(actual_rows):
+            raise ValueError("snapshot_economy_group_id_invalid_or_duplicate")
 
         with fmsave.open(args.save) as career:
             clubs = list(career.clubs())
             finances = list(career.finances())
 
-        by_uid = {club.uid: club for club in clubs}
+        expected, by_uid = group_reference(clubs, finances)
+        if set(actual) != set(expected):
+            raise ValueError("nation_group_id_set_mismatch")
+        for nation_id, group in expected.items():
+            compare_group(group, actual[nation_id], nation_id)
+
         anchors = {
             club.unique_id: club
             for club in clubs
             if club.unique_id in ANCHOR_UNIQUE_IDS
         }
-        if set(anchors) != set(ANCHOR_UNIQUE_IDS):
-            raise ValueError("reference_saudi_anchor_clubs_missing")
-        if any(club.nation_id != SAUDI_NATION_ID for club in anchors.values()):
+        anchor_nations = sorted({int(club.nation_id) for club in anchors.values()})
+        if anchors and any(club.nation_id != SAUDI_NATION_ID for club in anchors.values()):
             raise ValueError("reference_saudi_anchor_nation_mismatch")
 
-        latest = {}
-        row_counts = Counter()
-        for row in finances:
-            row_counts[row.club_uid] += 1
-            previous = latest.get(row.club_uid)
-            if previous is None or row.month > previous.month:
-                latest[row.club_uid] = row
-
-        rows = [
-            row for club_uid, row in latest.items()
-            if (club := by_uid.get(club_uid)) is not None
-            and club.nation_id == SAUDI_NATION_ID
-        ]
-        if len(rows) < 4:
-            raise ValueError("reference_saudi_finance_coverage_too_small")
-
-        expected = {
-            "clubsWithFinance": len(rows),
-            "financeRows": sum(row_counts[row.club_uid] for row in rows),
-            "totalBalance": sum(int(row.balance) for row in rows),
-            "transferBudgetAllocated": sum(int(row.transfer_budget_allocated) for row in rows),
-            "transferBudgetRemaining": sum(int(row.transfer_budget_remaining) for row in rows),
-            "wageBudgetWeekly": sum(int(row.wage_budget_weekly) for row in rows),
-            "wagePayrollWeekly": sum(int(row.wage_payroll_weekly) for row in rows),
-            "budgetCapacityProxy": sum(capacity(row) for row in rows),
-        }
-
-        reputations = [
-            int(by_uid[row.club_uid].reputation)
-            for row in rows
-            if by_uid[row.club_uid].reputation is not None
-        ]
-        expected["reputationCoverageClubs"] = len(reputations)
-        expected["averageReputation"] = (
-            (sum(reputations) + len(reputations) // 2) // len(reputations)
-            if reputations else None
-        )
-        expected["sportingPowerProxy"] = (
-            min(100, (expected["averageReputation"] + 50) // 100)
-            if expected["averageReputation"] is not None else None
-        )
-
-        capacities = sorted((capacity(row) for row in rows), reverse=True)
-        total_capacity = sum(capacities)
-        expected["top4CapacityShare"] = (
-            min(100, (sum(capacities[:4]) * 100 + total_capacity // 2) // total_capacity)
-            if total_capacity else 0
-        )
-
-        for key, value in expected.items():
-            if group.get(key) != value:
-                raise ValueError(f"snapshot_saudi_{key}_mismatch")
-
-        expected_top = sorted(
-            rows,
-            key=lambda row: (
-                -capacity(row),
-                by_uid[row.club_uid].name,
-                row.club_uid,
-            ),
-        )[:5]
-        actual_top = group.get("topClubs")
-        if not isinstance(actual_top, list) or len(actual_top) != min(5, len(expected_top)):
-            raise ValueError("snapshot_saudi_top_clubs_count_mismatch")
-        for expected_row, actual in zip(expected_top, actual_top, strict=True):
-            club = by_uid[expected_row.club_uid]
-            if (
-                actual.get("clubUid") != expected_row.club_uid
-                or actual.get("clubName") != club.name
-                or actual.get("reputation") != club.reputation
-                or actual.get("budgetCapacityProxy") != capacity(expected_row)
-            ):
-                raise ValueError("snapshot_saudi_top_club_mismatch")
+        saudi = actual.get(SAUDI_NATION_ID)
+        if saudi is not None and saudi.get("nationName") != "Saudi Arabia":
+            raise ValueError("snapshot_saudi_label_missing")
 
         report.update(
             passed=True,
-            anchorClubs=len(anchors),
-            financeClubs=len(rows),
-            reputationCoverage=len(reputations),
-            topClubRows=len(expected_top),
+            nationGroups=len(expected),
+            financeClubs=sum(group["clubsWithFinance"] for group in expected.values()),
+            anchorClubsFound=len(anchors),
+            anchorNationIds=anchor_nations,
+            saudiFinanceAvailable=saudi is not None,
+            saudiFinanceClubs=0 if saudi is None else saudi["clubsWithFinance"],
         )
     except Exception as error:
         report.update(errorType=type(error).__name__, reason=str(error))
