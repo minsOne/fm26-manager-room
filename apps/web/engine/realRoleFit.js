@@ -51,29 +51,29 @@ export function verifiedRoleFit(player, position, role) {
   }
 
   const attributeScore = Math.round(weighted / (20 * knownWeight) * 100);
-  const position = verifiedPositionFamiliarity(player, position);
-  if (position.score === null) {
+  const familiarity = verifiedPositionFamiliarity(player, position);
+  if (familiarity.score === null) {
     return {
       ...unavailable("포지션 숙련도를 확인할 수 없습니다."),
       coverage,
       missing,
       evidence,
       attributeScore,
-      position
+      position:familiarity
     };
   }
 
   // Manager Room heuristic, not an FM/SI role rating:
   // most weight is the observed role attributes, with a smaller verified position-familiarity term.
-  const score = Math.round(attributeScore * 0.82 + position.score * 0.18);
+  const score = Math.round(attributeScore * 0.82 + familiarity.score * 0.18);
   const strongest = [...evidence].sort((a,b)=>(b.value*b.weight)-(a.value*a.weight)).slice(0,3);
   const gaps = [...evidence].sort((a,b)=>(a.value*a.weight)-(b.value*b.weight)).slice(0,3);
 
   return {
     score,
     attributeScore,
-    positionScore: position.score,
-    position,
+    positionScore: familiarity.score,
+    position:familiarity,
     coverage,
     missing,
     evidence,
