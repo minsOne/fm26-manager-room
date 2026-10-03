@@ -24,6 +24,14 @@ Run diagnostics:
 "$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" doctor
 ```
 
+After pinning a real save, run the full parser validation without replacing your current snapshot:
+
+```bash
+"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" doctor --deep
+```
+
+`doctor --deep` stages a private copy, runs the installed Rust parser, validates the result, and reports player/fixture counts and parse time.
+
 Pin the career save you actually want Manager Room to follow:
 
 ```bash
@@ -38,13 +46,19 @@ Inspect or clear the selection:
 "$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" unpin-save
 ```
 
-Start the local service:
+Start the local service and open Manager Room in your default browser:
+
+```bash
+"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" serve --open-web
+```
+
+Or start without opening a browser:
 
 ```bash
 "$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" serve
 ```
 
-Then open:
+Web UI:
 
 ```text
 https://minsone.github.io/fm26-manager-room/
@@ -114,6 +128,7 @@ Useful options:
 - `--port 8765`
 - `--parser /path/to/fm26-manager-room-parser`
 - `--snapshot-file /isolated/snapshot.json`
+- `--open-web`
 
 The parser can also be supplied through `FM26_MANAGER_ROOM_PARSER`.
 Tests and custom installations can isolate all local Manager Room state with `FM26_MANAGER_ROOM_HOME`.
