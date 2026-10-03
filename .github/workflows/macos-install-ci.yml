@@ -5,7 +5,6 @@ on:
     paths:
       - "scripts/install-macos.sh"
       - "scripts/uninstall-macos.sh"
-      - "scripts/uninstall-macos.sh"
       - "companion/macos/**"
       - "native/fm26-parser/**"
       - ".github/workflows/macos-install-ci.yml"
@@ -13,6 +12,7 @@ on:
     branches: ["main"]
     paths:
       - "scripts/install-macos.sh"
+      - "scripts/uninstall-macos.sh"
       - "companion/macos/**"
       - "native/fm26-parser/**"
       - ".github/workflows/macos-install-ci.yml"
@@ -91,7 +91,10 @@ jobs:
           FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
           FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/manager-room-shim
         run: |
-          "$FM26_MANAGER_ROOM_HOME/bin/manager-room" serve             --parser "$FM26_MANAGER_ROOM_HOME/bin/fm26-manager-room-parser"             --save-dir "$RUNNER_TEMP" --no-watch --port 18765             > "$RUNNER_TEMP/install-service.log" 2>&1 &
+          "$FM26_MANAGER_ROOM_HOME/bin/manager-room" serve \
+            --parser "$FM26_MANAGER_ROOM_HOME/bin/fm26-manager-room-parser" \
+            --save-dir "$RUNNER_TEMP" --no-watch --port 18765 \
+            > "$RUNNER_TEMP/install-service.log" 2>&1 &
           PID=$!
           trap 'kill "$PID" 2>/dev/null || true' EXIT
           python3 - <<'PY'
