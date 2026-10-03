@@ -73,7 +73,7 @@ export function renderRoom(view, state, ui) {
       const review=matchdayReview(s,ui.formation);
       const workload=workloadReview(s);
       body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${upcoming.map(f=>`<option value="${esc(f.id)}" ${ui.fixtureId===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
-      body+=card("선발 후보 배치 · 검토용",
+      body+=card("선발 후보 배치 · 전역 최적화 검토용",
         note(review.note)
         +table(["슬롯","선수","역할","Role Fit","최종 확정 전 미확인"],review.lineup.map(row=>[
           esc(row.slot.position),
@@ -82,7 +82,16 @@ export function renderRoom(view, state, ui) {
           numeric(row.score),
           esc(row.missing.join(" · ")||"핵심 항목 확인됨")
         ]))
-        +note(`배치 ${review.selectedCount}/11명 · 핵심 확인 ${review.observedCritical}/${review.criticalDenominator}. ${review.readyForFinalDecision?"최종 확인 가능":"자동 선발 확정은 보류"}`));
+        +note(`배치 ${review.selectedCount}/11명 · Role Fit 합 ${review.totalRoleFit} · 핵심 확인 ${review.observedCritical}/${review.criticalDenominator}. ${review.readyForFinalDecision?"최종 확인 가능":"자동 선발 확정은 보류"}`));
+      body+=card("벤치 커버리지 · 검토용",
+        note(review.bench.note)
+        +table(["선수","커버 가능 포지션","최고 Role Fit","최종 확정 전 미확인"],review.bench.players.map(row=>[
+          playerLink(row.player),
+          esc(row.coverage.map(item=>item.position).join(" / ")),
+          numeric(row.bestScore),
+          esc(row.missing.join(" · ")||"핵심 항목 확인됨")
+        ]),"검증 가능한 벤치 후보가 없습니다.")
+        +note(`후보 ${review.bench.selectedCount}명 · 커버 ${review.bench.coveredPositions.join(" / ")||"없음"} · 미커버 ${review.bench.missingCoverage.join(" / ")||"없음"}. ${review.bench.readyForFinalDecision?"최종 확인 가능":"벤치 확정은 보류"}`));
       body+=card("부하 검토",workload.length
         ? table(["선수","신호","확인된 근거","미확인","행동"],workload.map(row=>[
             playerLink(row.player),esc(row.flags.join(" · ")),esc(row.evidence.join(" · ")),
