@@ -60,7 +60,9 @@ case .doctor:
     let parserURL = try? NativeParserRunner.resolve(explicit: explicitParser)
     let selected = selectionStore.load()
     let defaultDirectory = SaveDirectoryWatcher.defaultFM26Directory()
+    let deep = args.contains("--deep")
     var notes: [String] = []
+
     if parserURL == nil {
         notes.append("Native parser is unavailable. Install both binaries in the same directory or pass --parser.")
     }
@@ -74,23 +76,77 @@ case .doctor:
     if selected == nil && !FileManager.default.fileExists(atPath: defaultDirectory.path) {
         notes.append("The default FM26 games directory was not found.")
     }
+
+    var deepResult = DoctorDeepResult.notRequested
+    if deep {
+        guard let parserURL else {
+            deepResult = .failed("Native parser is unavailable.")
+            breakDoctor(&deepResult)
+        }
+        guard let selected else {
+            deepResult = .failed("No pinned save is available for deep validation.")
+            breakDoctor(&deepResult)
+        }
+        let selectedURL = URL(fileURLWithPath: selected.path)
+        guard FileManager.default.fileExists(atPath: selectedURL.path) else {
+            deepResult = .failed("Pinned save does not exist.")
+            breakDoctor(&deepResult)
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("manager-room-doctor-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: root,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700]
+            )
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            let temporaryStore = SnapshotStore(url: root.appendingPathComponent("snapshot.json"))
+            let temporaryState = CompanionState()
+            let runner = NativeParserRunner(
+                parserURL: parserURL,
+                store: temporaryStore,
+                state: temporaryState,
+                timeoutSeconds: 120
+            )
+            let duration = try runner.parse(saveURL: selectedURL)
+            let data = try temporaryStore.read()
+            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let players = (object?["players"] as? [[String: Any]])?.count ?? 0
+            let fixtures = (object?["fixtures"] as? [[String: Any]])?.count ?? 0
+            deepResult = .passed(durationMilliseconds: duration, players: players, fixtures: fixtures)
+        } catch {
+            deepResult = .failed(error.localizedDescription)
+        }
+    }
+
+    let selectedExists = selected.map { FileManager.default.fileExists(atPath: $0.path) }
+    let healthy = parserURL != nil
+        && selectedExists != false
+        && (!deep || deepResult.passed)
+
     let report = DoctorReport(
         platform: "macOS",
+        healthy: healthy,
         parserAvailable: parserURL != nil,
         parserPath: parserURL?.path,
         snapshotPath: store.url.path,
         snapshotExists: store.exists,
         selectionId: selected?.id,
         selectedSavePath: selected?.path,
-        selectedSaveExists: selected.map { FileManager.default.fileExists(atPath: $0.path) },
+        selectedSaveExists: selectedExists,
         defaultSaveDirectory: defaultDirectory.path,
         defaultSaveDirectoryExists: FileManager.default.fileExists(atPath: defaultDirectory.path),
         webURL: "https://minsone.github.io/fm26-manager-room/",
+        deep: deepResult,
         notes: notes
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     print(String(decoding: try encoder.encode(report), as: UTF8.self))
+    if !healthy { exit(4) }
 
 case .parse:
     guard args.count >= 2, !args[1].hasPrefix("--") else {
@@ -116,6 +172,10 @@ case .serve:
     let port = parsePort(args) ?? 8765
     let server = try LocalHTTPServer(port: port, store: store, companionState: state)
     server.start()
+
+    if args.contains("--open-web") {
+        openManagerRoomWeb()
+    }
 
     let explicitParser = option("--parser", in: args)
     let explicitSave = option("--save", in: args).map {
@@ -192,6 +252,9 @@ case .serve:
     if let selectedSave { print("Selected save: \(selectedSave.path)") }
     else { print("Watched directory: \(directory.path)") }
     print("Mode: native save parser + read-only localhost API; FM runtime writes are disabled.")
+    if args.contains("--open-web") {
+        print("Opening Manager Room in the default browser.")
+    }
 
     withExtendedLifetime((server, watcher)) {
         RunLoop.main.run()
@@ -233,6 +296,7 @@ func option(_ name: String, in args: [String]) -> String? {
 
 struct DoctorReport: Codable {
     let platform: String
+    let healthy: Bool
     let parserAvailable: Bool
     let parserPath: String?
     let snapshotPath: String
@@ -243,5 +307,48 @@ struct DoctorReport: Codable {
     let defaultSaveDirectory: String
     let defaultSaveDirectoryExists: Bool
     let webURL: String
+    let deep: DoctorDeepResult
     let notes: [String]
+}
+
+struct DoctorDeepResult: Codable {
+    let requested: Bool
+    let passed: Bool
+    let durationMilliseconds: Int?
+    let players: Int?
+    let fixtures: Int?
+    let error: String?
+
+    static let notRequested = DoctorDeepResult(
+        requested: false, passed: true, durationMilliseconds: nil,
+        players: nil, fixtures: nil, error: nil
+    )
+
+    static func passed(durationMilliseconds: Int, players: Int, fixtures: Int) -> DoctorDeepResult {
+        DoctorDeepResult(
+            requested: true, passed: true, durationMilliseconds: durationMilliseconds,
+            players: players, fixtures: fixtures, error: nil
+        )
+    }
+
+    static func failed(_ error: String) -> DoctorDeepResult {
+        DoctorDeepResult(
+            requested: true, passed: false, durationMilliseconds: nil,
+            players: nil, fixtures: nil, error: error
+        )
+    }
+}
+
+func breakDoctor(_ result: inout DoctorDeepResult) {
+    // Marker helper used to keep doctor failure paths explicit without throwing.
+}
+
+func openManagerRoomWeb() {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    process.arguments = ["https://minsone.github.io/fm26-manager-room/"]
+    process.standardInput = FileHandle.nullDevice
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try? process.run()
 }
