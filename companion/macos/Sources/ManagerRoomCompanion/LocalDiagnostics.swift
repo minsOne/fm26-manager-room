@@ -31,7 +31,12 @@ enum LocalDiagnostics {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
-    static func health(port: UInt16) -> [String: Any]? { json(path: "/api/health", port: port) }
+    static func health(port: UInt16) -> [String: Any]? {
+        guard let value = json(path: "/api/health", port: port),
+              value["status"] as? String == "ok", value["platform"] as? String == "macOS",
+              value["accessMode"] as? String == "read-only-save-snapshot" else { return nil }
+        return value
+    }
 
     static func portAvailable(_ port: UInt16) -> Bool {
         let fd = socket(AF_INET, SOCK_STREAM, 0)

@@ -29,7 +29,8 @@ def eventually(fn, timeout=15):
 
 
 def digest(path):
-    return hashlib.file_digest(path.open("rb"), "sha256").hexdigest()
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def main():
@@ -97,7 +98,12 @@ def main():
                 occupied.listen()
                 cli("start", "--no-open", *common, *parser_args, ok=False)
                 assert occupied.fileno() >= 0
-            cli("start", "--no-open", *common, *parser_args)
+            launch = subprocess.Popen([binary, "start", "--no-open", *common, *parser_args],
+                                      env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            eventually(lambda: (home / "service.json").exists())
+            cli("start", "--no-open", *common, *parser_args, ok=False)
+            out, err = launch.communicate(timeout=160)
+            assert launch.returncode == 0, (out, err)
             service = json.loads((home / "service.json").read_text())
             assert api("/api/health")["instanceId"] == service["instanceID"]
             assert api("/api/parser")["selectionId"] == pin["id"]
@@ -136,7 +142,9 @@ def main():
             # Forged/stale PID must never terminate another process.
             sleeper = subprocess.Popen(["/bin/sleep", "30"])
             try:
-                forged = dict(service, pid=sleeper.pid, birth="wrong process birth")
+                birth = subprocess.check_output(["/bin/ps", "-ww", "-p", str(sleeper.pid), "-o", "lstart="],
+                                                text=True, env=dict(env, LC_ALL="C")).strip()
+                forged = dict(service, pid=sleeper.pid, birth=birth)
                 (home / "service.json").write_text(json.dumps(forged))
                 cli("stop")
                 assert sleeper.poll() is None

@@ -55,7 +55,7 @@ struct ServiceControl {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-p", String(pid), "-o", field]
+        process.arguments = ["-ww", "-p", String(pid), "-o", field]
         process.environment = ProcessInfo.processInfo.environment.merging(["LC_ALL": "C"]) { _, new in new }
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
