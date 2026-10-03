@@ -3,6 +3,7 @@ import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 import { verifiedSquadDepth } from "./engine/realDepth.js";
 import { recruitmentReview } from "./engine/realRecruitment.js";
 import { matchdayReview, workloadReview } from "./engine/realMatchday.js";
+import { rotationReview, rotationModes } from "./engine/realRotation.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -71,19 +72,31 @@ export function renderRoom(view, state, ui) {
       break;
     }
     case "matchday": {
-      const review=matchdayReview(s,ui.formation);
+      const rotation=rotationReview(s,{fixtureId:ui.fixtureId,formation:ui.formation,mode:ui.rotationMode,stale});
+      const review=rotation.plans[0]?.review??matchdayReview(s,ui.formation,{stale,decisionMissing:[rotation.reason]});
       const workload=workloadReview(s);
-      body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${upcoming.map(f=>`<option value="${esc(f.id)}" ${ui.fixtureId===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
+      const selectedFixture=rotation.plans[0]?.fixture.id;
+      body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${rotation.status==="deferred"?'<option value="" selected disabled>선택한 경기 미수록 · 다시 선택하세요</option>':""}${upcoming.map(f=>`<option value="${esc(f.id)}" ${selectedFixture===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
+      body+=card("로테이션 검토 모드",`<label for="rotationModeSelect">감독의 검토 방향</label><select id="rotationModeSelect">${Object.entries(rotationModes).map(([key,label])=>`<option value="${key}" ${rotation.mode===key?"selected":""}>${label}</option>`).join("")}</select>`
+        +note("검토 점수는 Role Fit과 별개입니다. 모드별 출전량·계획상 부하·유소년 우선순위를 반영한 휴리스틱이며 성공 확률이나 실제 피로가 아닙니다."));
+      if(rotation.status==="deferred") {
+        body+=card("로테이션 판단 보류",note(rotation.reason));
+        body+=card("일정",fixtureTable);
+        break;
+      }
       body+=card("선발 후보 배치 · 전역 최적화 검토용",
         note(review.note)
-        +table(["슬롯","선수","역할","Role Fit","최종 확정 전 미확인"],review.lineup.map(row=>[
+        +table(["슬롯","선수","역할","Role Fit","검토 점수","배치 근거","최종 확정 전 미확인"],review.lineup.map(row=>[
           esc(row.slot.position),
           row.player?playerLink(row.player):show(null),
           show(row.role),
           numeric(row.score),
+          numeric(row.selectionScore),
+          esc(row.selectionEvidence.join(" · ")),
           esc(row.missing.join(" · ")||"핵심 항목 확인됨")
         ]))
-        +note(`배치 ${review.selectedCount}/11명 · Role Fit 합 ${review.totalRoleFit} · 핵심 확인 ${review.observedCritical}/${review.criticalDenominator}. ${review.readyForFinalDecision?"최종 확인 가능":"자동 선발 확정은 보류"}`));
+        +note(`배치 ${review.selectedCount}/11명 · Role Fit 합 ${review.totalRoleFit} · 핵심 확인 ${review.observedCritical}/${review.criticalDenominator}. ${review.readyForFinalDecision?"감독 최종 확인 필요":"자동 선발 확정은 보류"}`)
+        +note(`경기 단위 미확인: ${review.decisionMissing.join(" · ")||"없음"}`));
       body+=card("벤치 커버리지 · 검토용",
         note(review.bench.note)
         +table(["선수","커버 가능 포지션","최고 Role Fit","최종 확정 전 미확인"],review.bench.players.map(row=>[
@@ -92,7 +105,20 @@ export function renderRoom(view, state, ui) {
           numeric(row.bestScore),
           esc(row.missing.join(" · ")||"핵심 항목 확인됨")
         ]),"검증 가능한 벤치 후보가 없습니다.")
-        +note(`후보 ${review.bench.selectedCount}명 · 커버 ${review.bench.coveredPositions.join(" / ")||"없음"} · 미커버 ${review.bench.missingCoverage.join(" / ")||"없음"}. ${review.bench.readyForFinalDecision?"최종 확인 가능":"벤치 확정은 보류"}`));
+        +note(`후보 ${review.bench.selectedCount}명 · 커버 ${review.bench.coveredPositions.join(" / ")||"없음"} · 미커버 ${review.bench.missingCoverage.join(" / ")||"없음"}. 실제 벤치 인원·교체·대회별 등록 규정 확인 전에는 확정 보류`));
+      if(rotation.plans.length){
+        body+=card("향후 최대 5경기 로테이션 · 계획 시나리오",
+          note(rotation.note)
+          +table(["날짜","상대","이전 경기와 간격 (일)","다음 경기까지 휴식일","일정 밀집","직전 계획 대비 새 선발","선발 후보"],rotation.plans.map(plan=>[
+            esc(plan.fixture.date),esc(plan.fixture.opponent),numeric(plan.gapBefore),numeric(plan.restDaysAfter),
+            esc(plan.congested?"4일 이내 간격":"수록 일정에서 밀집 신호 없음"),numeric(plan.changedStarters),
+            plan.review.lineup.filter(row=>row.player).map(row=>`${esc(row.slot.position)} ${playerLink(row.player)}`).join(" · ")
+          ])));
+        body+=card("출전분 관측과 계획",table(["선수","스냅샷 기준 최근 14일 수록 출전분","기록 범위","계획 선발","계획상 예약 출전분","의학적 출전 상한"],rotation.players.filter(row=>row.plannedStarts>0).map(row=>[
+          playerLink(row.player),numeric(row.observedMinutes),esc(row.observedMinutes===null?"미확인":row.historyComplete?"완전성 확인":"수록 하한"),
+          numeric(row.plannedStarts),numeric(row.plannedMinutes),show(row.medicalMinuteCap)
+        ])));
+      }
       body+=card("부하 검토",workload.length
         ? table(["선수","신호","확인된 근거","미확인","행동"],workload.map(row=>[
             playerLink(row.player),esc(row.flags.join(" · ")),esc(row.evidence.join(" · ")),

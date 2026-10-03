@@ -14,6 +14,11 @@
 - Role fit
 - Coach Confidence
 
+Current read-only increment: [schedule-aware rotation review](schedule-aware-rotation.md)
+connects selected real fixtures, four review modes, unique per-match assignments
+and five-fixture planned workload. Competition eligibility, manager locks/minute
+limits and live medical evidence remain required before complete Matchday readiness.
+
 ## Phase 2 — Development & market
 - Training advisor
 - Growth snapshots
