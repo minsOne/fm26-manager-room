@@ -6,6 +6,7 @@ trap 'rm -rf "$BUILD"' EXIT
 SOURCES="$ROOT/companion/macos/Sources/ManagerRoomCompanion"
 swiftc -swift-version 6 -parse-as-library \
   "$SOURCES/CompanionState.swift" "$SOURCES/SnapshotStore.swift" "$SOURCES/SaveSelectionStore.swift" \
+  "$SOURCES/DevelopmentHistoryStore.swift" \
   "$SOURCES/SnapshotValidation.swift" "$SOURCES/NativeParserRunner.swift" \
   "$SOURCES/SaveDirectoryWatcher.swift" "$SOURCES/LocalRequestPolicy.swift" \
   "$ROOT/companion/macos/Tests/CompanionCoreTests.swift" -o "$BUILD/companion-tests"
