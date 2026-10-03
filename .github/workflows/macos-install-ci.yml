@@ -118,6 +118,9 @@ jobs:
           FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
           FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/manager-room-shim
         run: |
+          SAVE="$RUNNER_TEMP/Uninstall Test Career.fm"
+          printf 'nonempty uninstall fixture' > "$SAVE"
+          "$FM26_MANAGER_ROOM_HOME/bin/manager-room" pin-save "$SAVE" > /dev/null
           test -f "$FM26_MANAGER_ROOM_HOME/selection.json"
           bash scripts/uninstall-macos.sh
           test ! -e "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
