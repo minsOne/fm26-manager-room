@@ -90,6 +90,78 @@ function normalizePlayers(rows, gameDate) {
     };
   });
 }
+
+function normalizeEconomyGroups(rows) {
+  if (rows.length > 1000) throw new Error("경제 그룹 수가 허용 범위를 초과했습니다.");
+  const ids=new Set();
+
+  return rows.map(group=>{
+    if(!obj(group)) throw new Error("경제 그룹 형식이 잘못되었습니다.");
+    const nationId=integer(group.nationId,1,999);
+    if(nationId===null || ids.has(nationId)) throw new Error("경제 그룹 nation ID가 없거나 중복됩니다.");
+    ids.add(nationId);
+
+    const requiredInteger=(key,min=0,max=Number.MAX_SAFE_INTEGER)=>{
+      const value=integer(group[key],min,max);
+      if(value===null) throw new Error(`경제 그룹 ${nationId}: ${key} 값이 잘못되었습니다.`);
+      return value;
+    };
+    const signedInteger=(key)=>{
+      const value=integer(group[key],Number.MIN_SAFE_INTEGER,Number.MAX_SAFE_INTEGER);
+      if(value===null) throw new Error(`경제 그룹 ${nationId}: ${key} 값이 잘못되었습니다.`);
+      return value;
+    };
+
+    const topClubs=array(group,"topClubs").map(club=>{
+      if(!obj(club)) throw new Error(`경제 그룹 ${nationId}: 상위 클럽 형식이 잘못되었습니다.`);
+      const clubUid=integer(club.clubUid,1,Number.MAX_SAFE_INTEGER);
+      if(clubUid===null) throw new Error(`경제 그룹 ${nationId}: 클럽 UID가 잘못되었습니다.`);
+      const value=(key,min=0,max=Number.MAX_SAFE_INTEGER)=>{
+        const parsed=integer(club[key],min,max);
+        if(parsed===null) throw new Error(`경제 그룹 ${nationId}: 클럽 ${key} 값이 잘못되었습니다.`);
+        return parsed;
+      };
+      return {
+        clubUid:String(clubUid),
+        clubName:text(club.clubName)??`Club ${clubUid}`,
+        balance:value("balance",Number.MIN_SAFE_INTEGER,Number.MAX_SAFE_INTEGER),
+        transferBudgetRemaining:value("transferBudgetRemaining",Number.MIN_SAFE_INTEGER,Number.MAX_SAFE_INTEGER),
+        wageBudgetWeekly:value("wageBudgetWeekly"),
+        wagePayrollWeekly:value("wagePayrollWeekly"),
+        reputation:club.reputation==null?null:value("reputation",1,10000),
+        budgetCapacityProxy:value("budgetCapacityProxy")
+      };
+    });
+
+    const averageReputation=group.averageReputation==null?null:integer(group.averageReputation,1,10000);
+    if(group.averageReputation!=null && averageReputation===null) {
+      throw new Error(`경제 그룹 ${nationId}: 평균 reputation 값이 잘못되었습니다.`);
+    }
+    const sportingPowerProxy=group.sportingPowerProxy==null?null:integer(group.sportingPowerProxy,0,100);
+    if(group.sportingPowerProxy!=null && sportingPowerProxy===null) {
+      throw new Error(`경제 그룹 ${nationId}: 스포츠력 proxy 값이 잘못되었습니다.`);
+    }
+
+    return {
+      nationId,
+      nationName:text(group.nationName),
+      clubsWithFinance:requiredInteger("clubsWithFinance",0,100000),
+      financeRows:requiredInteger("financeRows"),
+      totalBalance:signedInteger("totalBalance"),
+      transferBudgetAllocated:signedInteger("transferBudgetAllocated"),
+      transferBudgetRemaining:signedInteger("transferBudgetRemaining"),
+      wageBudgetWeekly:requiredInteger("wageBudgetWeekly"),
+      wagePayrollWeekly:requiredInteger("wagePayrollWeekly"),
+      budgetCapacityProxy:requiredInteger("budgetCapacityProxy"),
+      top4CapacityShare:requiredInteger("top4CapacityShare",0,100),
+      reputationCoverageClubs:requiredInteger("reputationCoverageClubs",0,100000),
+      averageReputation,
+      sportingPowerProxy,
+      topClubs
+    };
+  });
+}
+
 export function normalizeRealSnapshot(input) {
   if (!obj(input)) throw new Error("스냅샷 최상위 형식이 잘못되었습니다.");
   const flat = input.source === "rust-native";
@@ -132,6 +204,7 @@ export function normalizeRealSnapshot(input) {
       "balance", "transferBudgetAllocated", "transferBudgetRemaining", "wageBudgetWeekly", "wagePayrollWeekly", "financeRows"
     ].map(key => [key, number(input.clubFinance[key])])) : null,
     currency: meta.currencyKnown === true ? text(meta.currency) : null,
+    economyGroups: normalizeEconomyGroups(array(input, "economyGroups")),
     leagues: array(input, "leagues"), loanOffers: array(input, "loanOffers"),
     outcomes: array(input, "recommendationsHistory"),
     formation: obj(input.formation) ? input.formation : null
