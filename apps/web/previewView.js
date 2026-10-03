@@ -2,6 +2,7 @@ import { medicalReview, playingTimeReview, growthReview, number } from "./engine
 import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 import { verifiedSquadDepth } from "./engine/realDepth.js";
 import { recruitmentReview } from "./engine/realRecruitment.js";
+import { matchdayReview, workloadReview } from "./engine/realMatchday.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -68,10 +69,29 @@ export function renderRoom(view, state, ui) {
       body += card("선수단 관측값",table(fitHeaders,players.map(playerRow)));
       break;
     }
-    case "matchday": body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${upcoming.map(f=>`<option value="${esc(f.id)}" ${ui.fixtureId===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
-      body+=card("선발 검토",note("현재 부상·징계·대회 등록 및 벤치 규정의 검증이 끝나지 않아 자동 Best XI는 보류합니다.")
-        +table(["선수","컨디션","수록 14일 출전","기용 판단"],players.map(p=>[playerLink(p),numeric(p.condition),p.minutes===null?show(null):`${numeric(p.minutes)}분${p.historyComplete?"":" 이상 (수록분)"}`,esc(medicalReview(p,s,stale).action)])));
-      body+=card("일정",fixtureTable); break;
+    case "matchday": {
+      const review=matchdayReview(s,ui.formation);
+      const workload=workloadReview(s);
+      body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${upcoming.map(f=>`<option value="${esc(f.id)}" ${ui.fixtureId===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
+      body+=card("선발 후보 배치 · 검토용",
+        note(review.note)
+        +table(["슬롯","선수","역할","Role Fit","최종 확정 전 미확인"],review.lineup.map(row=>[
+          esc(row.slot.position),
+          row.player?playerLink(row.player):show(null),
+          show(row.role),
+          numeric(row.score),
+          esc(row.missing.join(" · ")||"핵심 항목 확인됨")
+        ]))
+        +note(`배치 ${review.selectedCount}/11명 · 핵심 확인 ${review.observedCritical}/${review.criticalDenominator}. ${review.readyForFinalDecision?"최종 확인 가능":"자동 선발 확정은 보류"}`));
+      body+=card("부하 검토",workload.length
+        ? table(["선수","신호","확인된 근거","미확인","행동"],workload.map(row=>[
+            playerLink(row.player),esc(row.flags.join(" · ")),esc(row.evidence.join(" · ")),
+            esc(row.missing.join(" · ")),esc(row.action)
+          ]))
+        : note("현재 수록된 출전량/컨디션에서 별도 검토 신호가 없습니다. 피로·부상 위험 미확인은 정상으로 해석하지 않습니다."));
+      body+=card("일정",fixtureTable);
+      break;
+    }
     case "tactics": {
       const rows = players.map(p=>{
         const position = p.primaryPosition ?? p.positions[0] ?? null;
