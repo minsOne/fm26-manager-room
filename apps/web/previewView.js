@@ -3,6 +3,7 @@ import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 import { verifiedSquadDepth } from "./engine/realDepth.js";
 import { recruitmentReview } from "./engine/realRecruitment.js";
 import { matchdayReview, workloadReview } from "./engine/realMatchday.js";
+import { economyReview, saudiEconomyReview } from "./engine/realEconomy.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -138,9 +139,44 @@ export function renderRoom(view, state, ui) {
       +table(["선수","시장 관심","출전 약속","계약 종료"],players.map(p=>[playerLink(p),numeric(p.interest),show(p.agreed),show(p.contractEnd)])));break;
     case "contracts": body=card("계약 관측값",note("주급의 0 값은 파서 기본값일 수 있습니다. 통화·금액 유효성 확인 전에는 유로 표시나 비용 비교를 하지 않습니다.")
       +table(["선수","계약 종료","잔여 개월","확인된 주급","파서 원시 주급 (미검증)"],players.map(p=>[playerLink(p),show(p.contractEnd),numeric(p.monthsRemaining),numeric(p.wage),numeric(p.rawWage)])));break;
-    case "economy": body=card("관리팀 재정",s.clubFinance?table(["항목","파서 관측값"],Object.entries(s.clubFinance).map(([k,v])=>[esc(k),numeric(v)])):note("관리팀 재정 데이터 미수록"));
-      body+=card("세계 경제",note(`리그 자료 ${s.leagues.length}개 수록. 국가·리그 연결과 시계열 지출이 검증되기 전에는 사우디 과열 지수를 계산하지 않습니다. 현재 예산은 실제 지출이나 인플레이션과 다릅니다.`))
-      +note("금액 단위 확인 필요 · World Balance 게임 수정 비활성");break;
+    case "economy": {
+      const groups=economyReview(s);
+      const saudi=saudiEconomyReview(s);
+      body=card("관리팀 재정",s.clubFinance
+        ? table(["항목","파서 관측값"],Object.entries(s.clubFinance).map(([k,v])=>[esc(k),numeric(v)]))
+        : note("관리팀 재정 데이터 미수록"));
+      body+=card("국가별 재정 관측 · Manager Room proxy",
+        note("통화 단위 확인 전 원시 숫자로 표시합니다. Financial Capacity는 양(+) 이적예산 + 연환산 주급예산의 국가 간 상대 proxy이며 실제 지출이 아닙니다.")
+        +table(["국가","재정 클럽","재정력 상대지수","Sporting proxy","격차","상위4 집중도"],groups.slice(0,15).map(row=>[
+          esc(row.label),
+          numeric(row.clubsWithFinance),
+          numeric(row.financialCapacityIndex),
+          numeric(row.sportingPower),
+          numeric(row.comparableGap),
+          row.top4CapacityShare===null?show(null):esc(`${row.top4CapacityShare}%`)
+        ]),"국가별 재정 집계가 수록되지 않았습니다."));
+      if(saudi.available){
+        body+=card("Saudi Arabia · 실제 세이브 관측",
+          `<p><strong>${esc(saudi.status)}</strong></p>`
+          +note(saudi.note)
+          +table(["항목","관측값"],[
+            ["Financial Capacity Index",numeric(saudi.group.financialCapacityIndex)],
+            ["Sporting Power proxy",numeric(saudi.group.sportingPower)],
+            ["비교 격차",numeric(saudi.group.comparableGap)],
+            ["재정 클럽 수",numeric(saudi.group.clubsWithFinance)],
+            ["Reputation 커버",`${numeric(saudi.group.reputationCoverageClubs)} / ${numeric(saudi.group.clubsWithFinance)}`],
+            ["상위 4개 집중도",esc(`${saudi.group.top4CapacityShare}%`)]
+          ])
+          +table(["상위 클럽","잔여 이적예산","주급 예산","Reputation"],saudi.group.topClubs.map(club=>[
+            esc(club.clubName),numeric(club.transferBudgetRemaining),numeric(club.wageBudgetWeekly),numeric(club.reputation)
+          ]),"상위 클럽 상세 미수록")
+          +note(`추가 검증 필요: ${saudi.missing.join(" · ")}. ${saudi.action}`));
+      }else{
+        body+=card("Saudi Arabia",note("검증된 nation 133 재정 그룹이 이 스냅샷에 없습니다. 이를 사우디 재정이 없다는 뜻으로 해석하지 않습니다."));
+      }
+      body+=note("World Balance 게임 수정 비활성 · 현재 화면은 read-only 관측입니다.");
+      break;
+    }
     case "reports": body=card("추천 사후 검증",`<h3>수록 기록 ${s.outcomes.length}건</h3>`+note("결과의 정의와 표본이 검증되기 전에는 정확도나 성공 확률을 표시하지 않습니다."));break;
     case "coach": body=card("AI 연결 상태",note("외부 AI 모델은 아직 연결되지 않았습니다. 기존 데모의 규칙 기반 답변을 실제 ChatGPT 분석으로 표시하지 않습니다. 선수 버튼을 누르면 확인된 근거를 직접 볼 수 있습니다."));break;
     default: body=card("자료",table(fitHeaders,players.map(playerRow)));
