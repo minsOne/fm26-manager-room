@@ -6,6 +6,7 @@ mod fixture;
 mod match_history;
 mod metadata;
 mod names;
+mod nation;
 mod person;
 mod player_scan;
 mod snapshot;
