@@ -11,7 +11,7 @@ const daysBetween = (a,b) => (Date.parse(`${b}T00:00:00Z`)-Date.parse(`${a}T00:0
 const known = (value,min,max) => Number.isFinite(value) && value>=min && value<=max;
 
 /**
- * Sequential, review-only scenario. Every planned starter reserves 90 minutes;
+ * Sequential, review-only scenario. Manager caps and substitutions split a 90-minute scenario;
  * these reservations are neither observed minutes nor medical minute caps.
  * We do not project recovery, injuries, eligibility, fatigue or match results.
  */
@@ -58,23 +58,24 @@ export function rotationReview(snapshot, options={}) {
     const changedStarters=previousPlan?review.lineup.filter(row=>row.player && !previousIds.has(row.player.id)).length:null;
     const plan={fixture,gapBefore,gapAfter,restDaysBefore:gapBefore===null?null:Math.max(0,gapBefore-1),
       restDaysAfter:gapAfter===null?null:Math.max(0,gapAfter-1),congested,changedStarters,review,
-      plannedStarterMinutes:90,medicalMinuteCap:null,readyForFinalDecision:review.readyForFinalDecision};
+      scenarioMinutes:90,medicalMinuteCap:null,readyForFinalDecision:review.readyForFinalDecision};
     plans.push(plan);
     // No reservations or downstream optimization may assume an unresolved lineup.
-    if(review.selectionConflicts.length) break;
-    for(const row of review.lineup){
-      if(row.player) reservations.get(row.player.id).push({fixtureId:fixture.id,date:fixture.date,minutes:90});
+    if(review.selectionConflicts.length || review.minutePlan.pending.length) break;
+    for(const row of review.minutePlan.appearances){
+      reservations.get(row.playerId).push({fixtureId:fixture.id,date:fixture.date,minutes:row.minutes,kind:row.kind,slotId:row.slotId});
     }
   }
   return {
-    mode,plans,status:plans.some(p=>p.review.selectionConflicts.length)?"conflict":"review",official:false,readyForFinalDecision:false,
+    mode,plans,status:plans.some(p=>p.review.selectionConflicts.length)?"conflict":plans.some(p=>p.review.minutePlan.pending.length)?"planning-required":"review",official:false,readyForFinalDecision:false,
     conflicts:plans.flatMap(p=>p.review.selectionConflicts.map(c=>({...c,fixture:p.fixture}))),
     players:(snapshot.players??[]).map(player=>({player,observedMinutes:player.minutes??null,
-      historyComplete:player.historyComplete===true,plannedStarts:reservations.get(player.id).length,
+      historyComplete:player.historyComplete===true,plannedStarts:reservations.get(player.id).filter(r=>r.kind==="starter").length,
+      plannedSubAppearances:reservations.get(player.id).filter(r=>r.kind==="substitute").length,
       plannedMinutes:reservations.get(player.id).reduce((sum,row)=>sum+row.minutes,0),
       reservations:reservations.get(player.id),medicalMinuteCap:null})),
-    methodology:"manager-room-sequential-rotation-v1",
-    note:"각 경기의 검토 점수를 전역 배치한 순차 시나리오입니다. 전체 경기의 공동 최적해나 체력 예측이 아닙니다. 계획상 선발마다 90분을 예약하며 실제 출전분·의학적 상한과 구분합니다. 경기마다 다시 저장·확인하세요."
+    methodology:"manager-room-sequential-rotation-v2",
+    note:"각 경기의 검토 점수를 전역 배치한 순차 시나리오입니다. 전체 경기의 공동 최적해나 체력 예측이 아닙니다. 90분 시나리오에서 감독 상한·교체 시점을 반영한 출전분을 예약하며 실제 출전분·의학적 상한과 구분합니다. 경기마다 다시 저장·확인하세요."
   };
 }
 

@@ -1,5 +1,6 @@
 import { bestVerifiedRoles } from "./realRoleFit.js";
 import { maximumWeightAssignment } from "./realAssignment.js";
+import { minuteDirectives, minutePlan } from "./realMinutePlan.js";
 import { selectionConstraints } from "./realSelection.js";
 
 export const reviewFormations = {
@@ -68,30 +69,43 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
   }
 
   const constraints=selectionConstraints(snapshot,slots,bySlot,options.constraints);
-  const fixedIds=new Set(constraints.lockedStarters.values());
+  const directives=minuteDirectives(snapshot,slots,bySlot,options.constraints);
+  constraints.conflicts.push(...directives.conflicts);
+  const excludedIds=new Set([...constraints.restIds,...directives.excludedIds]);
+  const fixedIds=new Set([...constraints.lockedStarters.values(),...directives.incomingIds]);
   const remaining=new Map([...bySlot].filter(([id])=>!constraints.lockedRows.has(id))
-    .map(([id,rows])=>[id,rows.filter(row=>!constraints.restIds.has(row.player.id) && !fixedIds.has(row.player.id))]));
+    .map(([id,rows])=>[id,rows.filter(row=>!excludedIds.has(row.player.id) && !fixedIds.has(row.player.id))]));
   const optimized=constraints.conflicts.length?[]:maximumWeightAssignment(remaining);
   const assigned=constraints.conflicts.length?new Map():new Map([
     ...constraints.lockedRows,...optimized.map(({slotId,row})=>[slotId,row]).filter(([,row])=>row)
   ]);
 
-  const lineup=slots.map(current=>assigned.get(current.id)??{
+  let lineup=slots.map(current=>assigned.get(current.id)??{
     slot:current,player:null,role:null,score:null,roleFit:null,
     missing:[constraints.conflicts.length?"감독 지정 충돌 해결":"비교 가능한 역할 적합도 후보"],selectionScore:null,selectionEvidence:[],availabilityKnown:false,official:false
   });
+  const minutes=constraints.conflicts.length
+    ?{conflicts:[],pending:[],changes:[],appearances:[],reservedRows:[],status:"conflict",medicalMinuteCap:null}
+    :minutePlan(lineup,bySlot,directives,excludedIds);
+  constraints.conflicts.push(...minutes.conflicts);
+  if(constraints.conflicts.length) {
+    lineup=lineup.map(row=>({slot:row.slot,player:null,role:null,score:null,roleFit:null,missing:["감독 지정 충돌 해결"],selectionScore:null,selectionEvidence:[],availabilityKnown:false,official:false}));
+    minutes.changes=[];minutes.appearances=[];minutes.reservedRows=[];minutes.status="conflict";
+  }
   const missingSlots=lineup.filter(row=>!row.player).map(row=>row.slot);
   const selectedWithUnknowns=lineup.filter(row=>row.player && row.missing.length);
   const observedCritical=lineup.reduce((sum,row)=>
     sum+(row.player ? 5-row.missing.length : 0),0);
   const criticalDenominator=lineup.filter(row=>row.player).length*5;
   const totalRoleFit=lineup.reduce((sum,row)=>sum+(row.score??0),0);
-  const bench=benchReview(constraints.conflicts.length?{...snapshot,players:[]}:snapshot,lineup,9,65,constraints.restIds);
+  const bench=benchReview(constraints.conflicts.length?{...snapshot,players:[]}:snapshot,lineup,9,65,excludedIds,minutes.reservedRows);
   const decisionMissing=[
     snapshot.buildVerified===true?null:"빌드 지원 확인",
     options.stale?"최신 스냅샷":null,
     ...(options.decisionMissing??[]),
-    constraints.conflicts.length?"감독 지정 충돌":null
+    constraints.conflicts.length?"감독 지정 충돌":null,
+    minutes.pending.length?"교체 후보·출전시간 계획":null,
+    minutes.changes.some(c=>criticalMissing(c.incoming).length)?"교체 선수 의료·출전 자격":null
   ].filter(Boolean);
   bench.readyForFinalDecision=bench.readyForFinalDecision && decisionMissing.length===0;
 
@@ -102,8 +116,9 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
     unavailable,
     resting:(snapshot.players??[]).filter(p=>constraints.restIds.has(p.id)),
     selectionConflicts:constraints.conflicts,
-    status:constraints.conflicts.length?"conflict":"review",
-    constraints:{lockedStarters:Object.fromEntries(constraints.lockedStarters),restIds:[...constraints.restIds]},
+    status:constraints.conflicts.length?"conflict":minutes.status,
+    minutePlan:minutes,
+    constraints:{lockedStarters:Object.fromEntries(constraints.lockedStarters),restIds:[...constraints.restIds],minuteCaps:Object.fromEntries(directives.caps),substitutions:Object.fromEntries(directives.substitutions)},
     missingSlots,
     selectedWithUnknowns,
     selectedCount:lineup.filter(row=>row.player).length,
@@ -115,7 +130,7 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
     decisionMissing,
     readyForFinalDecision:missingSlots.length===0 && selectedWithUnknowns.length===0 && decisionMissing.length===0,
     assignmentMethod:"global-maximum-weight-v1",
-    methodology:"manager-room-matchday-review-v4",
+    methodology:"manager-room-matchday-review-v5",
     official:false,
     note:options.adjustments
       ?"감독의 고정·휴식 조건에서 Role Fit 원점수를 유지하고, 선택한 모드의 검토 점수 합을 최대화한 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
@@ -127,9 +142,10 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
  * Builds a review bench from players outside the XI.
  * Positional coverage is based only on verified role-fit scores >= minimumFit.
  */
-export function benchReview(snapshot, lineup, max=9, minimumFit=65, restIds=new Set()) {
+export function benchReview(snapshot, lineup, max=9, minimumFit=65, restIds=new Set(), reservedRows=[]) {
   const selectedIds=new Set((lineup??[]).filter(row=>row.player).map(row=>row.player.id));
   const candidates=[];
+  const reserved=new Map(reservedRows.map(row=>[row.player.id,row]));
 
   for(const player of snapshot.players??[]){
     if(selectedIds.has(player.id) || restIds.has(player.id)) continue;
@@ -142,21 +158,23 @@ export function benchReview(snapshot, lineup, max=9, minimumFit=65, restIds=new 
         coverage.push({position,score:best.score,role:best.role});
       }
     }
-    if(!coverage.length) continue;
+    if(!coverage.length && !reserved.has(player.id)) continue;
     coverage.sort((a,b)=>b.score-a.score || a.position.localeCompare(b.position));
 
     candidates.push({
       player,
       coverage,
-      bestScore:coverage[0].score,
+      bestScore:coverage[0]?.score??reserved.get(player.id).score,
+      plannedSubstitute:reserved.has(player.id),
       missing:criticalMissing(player),
       official:false
     });
   }
 
-  const chosen=[];
-  const used=new Set();
+  const chosen=candidates.filter(row=>reserved.has(row.player.id)).slice(0,max);
+  const used=new Set(chosen.map(row=>row.player.id));
   const uncovered=new Set(benchCoveragePositions);
+  for(const row of chosen) for(const item of row.coverage) uncovered.delete(item.position);
 
   while(chosen.length<max){
     let best=null;

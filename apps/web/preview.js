@@ -3,7 +3,7 @@ import { rooms, esc, statusHTML, renderRoom, playerDetail } from "./previewView.
 import { editFixtureSelection } from "./engine/realSelection.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
-const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,bridge};
+const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge};
 let current = {snapshot:null,status:"empty",revision:0};
 let session, timer, generation=0, renderedKey="";
 const menu = document.getElementById("roomNavigation");
@@ -41,6 +41,10 @@ function startSession() {
 }
 function editSelection(fixtureId,edit){
   if(!current.snapshot?.fixtures.some(f=>f.id===fixtureId && f.date>=current.snapshot.gameDate)) return;
+  // Native details toggle events can still be queued when an edit replaces the DOM.
+  // Capture the visible panel state synchronously before removing those elements.
+  ui.restPanelOpen=document.querySelector('details[data-rest-controls]')?.open??ui.restPanelOpen;
+  ui.minutePanelOpen=document.querySelector('details[data-minute-controls]')?.open??ui.minutePanelOpen;
   ui.fixtureId=fixtureId;
   editFixtureSelection(ui.constraintsByFixture,fixtureId,edit);
   render();
@@ -56,7 +60,7 @@ document.addEventListener("click",event=>{
   if(button.hasAttribute("data-accept-career")) {
     ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
     ui.constraintsByFixture.clear();
-    ui.restPanelOpen=false;
+    ui.restPanelOpen=false;ui.minutePanelOpen=false;
     document.getElementById("searchInput").value="";session.acceptPending();render();
   }
 });
@@ -66,9 +70,12 @@ document.addEventListener("change",e=>{
   if(e.target.id==="formationSelect") {ui.formation=e.target.value;render();}
   if(e.target.id==="rotationModeSelect") {ui.rotationMode=e.target.value;render();}
   if(e.target.hasAttribute("data-lock-slot"))editSelection(e.target.dataset.fixtureId,{type:"lock",slotId:e.target.dataset.lockSlot,playerId:e.target.value});
+  if(e.target.hasAttribute("data-minute-cap-player"))editSelection(e.target.dataset.fixtureId,{type:"cap",playerId:e.target.dataset.minuteCapPlayer,minutes:e.target.validity.badInput?"invalid":e.target.value===""?null:Number(e.target.value)});
+  if(e.target.hasAttribute("data-sub-slot"))editSelection(e.target.dataset.fixtureId,{type:"sub",slotId:e.target.dataset.subSlot,field:e.target.dataset.subField,value:e.target.dataset.subField==="minute"?(e.target.validity.badInput?"invalid":e.target.value===""?null:Number(e.target.value)):e.target.value});
   if(e.target.hasAttribute("data-rest-player"))editSelection(e.target.dataset.fixtureId,{type:"rest",playerId:e.target.dataset.restPlayer,rest:e.target.checked});
 });
 document.addEventListener("toggle",e=>{
+  if(e.target.isConnected && e.target.hasAttribute("data-minute-controls"))ui.minutePanelOpen=e.target.open;
   if(e.target.isConnected && e.target.hasAttribute("data-rest-controls"))ui.restPanelOpen=e.target.open;
 },true);
 document.addEventListener("submit",e=>{
@@ -78,7 +85,7 @@ document.addEventListener("submit",e=>{
     try {localStorage.setItem("managerRoom.bridge",ui.bridge);} catch {}
     ui.selectedId=null;ui.fixtureId=null;ui.query="";ui.formation="4-3-3";ui.rotationMode="balanced";
     ui.constraintsByFixture.clear();
-    ui.restPanelOpen=false;
+    ui.restPanelOpen=false;ui.minutePanelOpen=false;
     document.getElementById("searchInput").value="";ui.view="manager";startSession();
   } catch(error) {document.getElementById("syncStatus").textContent=error.message;}
 });

@@ -84,12 +84,15 @@ export function renderRoom(view, state, ui) {
         body+=card("일정",fixtureTable);
         break;
       }
-      body+=selectionControls(s,rotation.plans[0],ui.restPanelOpen);
+      body+=selectionControls(s,rotation.plans[0],ui.restPanelOpen,ui.minutePanelOpen);
       if(rotation.conflicts.length) body+=card("선택 충돌 · 배치 보류",
         note("지정을 자동으로 풀거나 다른 선수로 바꾸지 않습니다. 충돌 경기 이후의 로테이션도 보류합니다.")
         +table(["경기","슬롯","원인·해결 방법"],rotation.conflicts.map(c=>[
           esc(`${c.fixture.date} · ${c.fixture.opponent}`),show(c.slotId),esc(c.message)
         ])));
+      if(review.minutePlan.pending.length) body+=card("교체 계획 보류",note("교체 후보를 확보하기 전에는 이 경기와 이후 경기의 출전분을 예약하지 않습니다.")+table(["슬롯","원인"],review.minutePlan.pending.map(p=>[esc(p.slotId),esc(p.message)])));
+      body+=card("출전시간·교체 계획 · 90분 시나리오",note("감독이 정한 상한과 교체 시점입니다. 의료상 허용 시간은 미확인입니다. 슬롯당 1회 교체만 검토하며 연장·추가시간·대회별 교체 횟수와 창은 반영하지 않습니다.")
+        +table(["슬롯","나갈 선수","교체 시점","들어갈 선수","투입 출전분","후보 근거"],review.minutePlan.changes.map(c=>[esc(c.slot.id),playerLink(c.outgoing),numeric(c.minute),playerLink(c.incoming),numeric(90-c.minute),c.automatic?"역할 근거 기반 자동 검토":"감독 지정"]),review.status==="conflict"?"감독 지정 충돌 해결 후 계획을 다시 계산합니다.":review.minutePlan.pending.length?"교체 후보를 확보해야 합니다.":"상한·교체 지정 없음: 배치된 선발은 계획상 90분입니다."));
       body+=card("선발 후보 배치 · 전역 최적화 검토용",
         note(review.note)
         +table(["슬롯","선수","역할","Role Fit","검토 점수","배치 근거","최종 확정 전 미확인"],review.lineup.map(row=>[
@@ -106,7 +109,7 @@ export function renderRoom(view, state, ui) {
       body+=card("벤치 커버리지 · 검토용",
         note(review.bench.note)
         +table(["선수","커버 가능 포지션","최고 Role Fit","최종 확정 전 미확인"],review.bench.players.map(row=>[
-          playerLink(row.player),
+          playerLink(row.player)+(row.plannedSubstitute?" · 교체 계획":""),
           esc(row.coverage.map(item=>item.position).join(" / ")),
           numeric(row.bestScore),
           esc(row.missing.join(" · ")||"핵심 항목 확인됨")
@@ -115,14 +118,15 @@ export function renderRoom(view, state, ui) {
       if(rotation.plans.length){
         body+=card("향후 최대 5경기 로테이션 · 계획 시나리오",
           note(rotation.note)
-          +table(["날짜","상대","이전 경기와 간격 (일)","다음 경기까지 휴식일","일정 밀집","직전 계획 대비 새 선발","선발 후보"],rotation.plans.map(plan=>[
+          +table(["날짜","상대","이전 경기와 간격 (일)","다음 경기까지 휴식일","일정 밀집","직전 계획 대비 새 선발","교체 계획","선발 후보"],rotation.plans.map(plan=>[
             esc(plan.fixture.date),esc(plan.fixture.opponent),numeric(plan.gapBefore),numeric(plan.restDaysAfter),
             esc(plan.congested?"4일 이내 간격":"수록 일정에서 밀집 신호 없음"),numeric(plan.changedStarters),
-            plan.review.selectionConflicts.length?"감독 지정 충돌 · 이후 계획 보류":plan.review.lineup.filter(row=>row.player).map(row=>`${esc(row.slot.id)} ${playerLink(row.player)}${row.locked?" (고정)":""}`).join(" · ")
+            plan.review.minutePlan.changes.map(c=>`${esc(c.slot.id)} ${numeric(c.minute)}분: ${playerLink(c.outgoing)} → ${playerLink(c.incoming)}`).join(" · ")||"지정 없음",
+            plan.review.selectionConflicts.length?"감독 지정 충돌 · 이후 계획 보류":plan.review.minutePlan.pending.length?"교체 후보 부족 · 이후 계획 보류":plan.review.lineup.filter(row=>row.player).map(row=>`${esc(row.slot.id)} ${playerLink(row.player)}${row.locked?" (고정)":""}`).join(" · ")
           ])));
-        body+=card("출전분 관측과 계획",table(["선수","스냅샷 기준 최근 14일 수록 출전분","기록 범위","계획 선발","계획상 예약 출전분","의학적 출전 상한"],rotation.players.filter(row=>row.plannedStarts>0).map(row=>[
+        body+=card("출전분 관측과 계획",table(["선수","스냅샷 기준 최근 14일 수록 출전분","기록 범위","계획 선발","계획 교체 투입","계획상 예약 출전분","의학적 출전 상한"],rotation.players.filter(row=>row.plannedMinutes>0).map(row=>[
           playerLink(row.player),numeric(row.observedMinutes),esc(row.observedMinutes===null?"미확인":row.historyComplete?"완전성 확인":"수록 하한"),
-          numeric(row.plannedStarts),numeric(row.plannedMinutes),show(row.medicalMinuteCap)
+          numeric(row.plannedStarts),numeric(row.plannedSubAppearances),numeric(row.plannedMinutes),show(row.medicalMinuteCap)
         ])));
       }
       body+=card("부하 검토",workload.length
@@ -213,7 +217,7 @@ function roleFitDetail(player) {
     ])));
 }
 
-function selectionControls(snapshot,plan,restPanelOpen){
+function selectionControls(snapshot,plan,restPanelOpen,minutePanelOpen){
   const review=plan.review;
   const fixtureId=esc(plan.fixture.id);
   const locks=review.constraints.lockedStarters;
@@ -233,11 +237,24 @@ function selectionControls(snapshot,plan,restPanelOpen){
   }).join("");
   const restFields=[...players,...[...restIds].filter(id=>!playerIds.has(id)).map(id=>({id,name:`UID ${id} · 현재 미수록`}))]
     .map(p=>`<label class="rest-field"><input type="checkbox" data-rest-player="${esc(p.id)}" data-fixture-id="${fixtureId}" ${restIds.has(p.id)?"checked":""}> ${esc(p.name)} · UID ${esc(p.id)}</label>`).join("");
+  const caps=review.constraints.minuteCaps;
+  const capFields=[...players,...Object.keys(caps).filter(id=>!playerIds.has(id)).map(id=>({id,name:`UID ${id} · 현재 미수록`}))].map(p=>
+    `<label class="selection-field">${esc(p.name)} · UID ${esc(p.id)} 감독 상한 (분)<input type="number" min="0" max="90" step="1" placeholder="지정 없음" data-minute-cap-player="${esc(p.id)}" data-fixture-id="${fixtureId}" value="${Number.isInteger(caps[p.id])?caps[p.id]:""}"></label>`).join("");
+  const subFields=slots.map(slot=>{
+    const d=review.constraints.substitutions[slot.id]??{};
+    return `<label class="selection-field">${esc(slot.id)} 교체 시점 (분)<input id="sub-minute-${esc(slot.id)}" type="number" min="1" max="89" step="1" placeholder="선발 상한 사용" data-sub-slot="${esc(slot.id)}" data-sub-field="minute" data-fixture-id="${fixtureId}" value="${Number.isInteger(d.minute)?d.minute:""}"></label>
+      <label class="selection-field">${esc(slot.id)} 교체 투입 선수<select id="sub-player-${esc(slot.id)}" data-sub-slot="${esc(slot.id)}" data-sub-field="playerId" data-fixture-id="${fixtureId}"><option value="">자동 검토 후보</option>
+      ${d.playerId && !playerIds.has(d.playerId)?`<option selected value="${esc(d.playerId)}">UID ${esc(d.playerId)} · 현재 미수록</option>`:""}
+      ${players.map(p=>`<option value="${esc(p.id)}" ${d.playerId===p.id?"selected":""}>${esc(p.name)} · UID ${esc(p.id)}</option>`).join("")}</select></label>`;
+  }).join("");
   return card("감독 지정 · 선택한 경기만 적용",
     note(`${plan.fixture.date} · ${plan.fixture.opponent}. 선발 고정은 남은 슬롯의 전역 배치에 우선합니다. 휴식 지정은 선발·벤치에서 모두 제외합니다. 브라우저 세션의 계획이며 실제 게임 설정을 바꾸지 않습니다.`)
     +note("같은 커리어의 재수집·모드·포메이션 변경 시 지정을 유지합니다. 새 커리어·Bridge 변경·페이지 재로드 시 초기화됩니다. 고정은 미확인 의료·출전 자격을 확인된 것으로 만들지 않습니다.")
     +`<div class="selection-grid">${lockFields}</div>`
     +obsolete.map(([id,playerId])=>`<p>현재 포메이션에 없는 고정: ${esc(id)} · UID ${esc(playerId)} <button data-unlock-slot="${esc(id)}" data-fixture-id="${fixtureId}">이 슬롯 고정 해제</button></p>`).join("")
     +`<details data-rest-controls ${restPanelOpen?"open":""}><summary>이 경기 휴식 지정 (${restIds.size}명)</summary><div class="selection-grid">${restFields}</div></details>`
+    +note("감독 상한은 빈칸=미지정, 0=출전 제외, 1~90분=계획 상한입니다. 짧은 상한에는 교체 후보가 필요합니다. 교체 선수만 지정할 때는 시점 또는 선발의 짧은 상한을 입력하세요.")
+    +`<div class="selection-grid">${subFields}</div>`
+    +`<details data-minute-controls ${minutePanelOpen?"open":""}><summary>감독 출전시간 상한 (${Object.keys(caps).length}명)</summary><div class="selection-grid">${capFields}</div></details>`
     +`<button data-clear-selection data-fixture-id="${fixtureId}">이 경기 지정 초기화</button>`);
 }
