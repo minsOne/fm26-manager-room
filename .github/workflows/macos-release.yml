@@ -1,0 +1,97 @@
+name: macOS Release Package
+
+on:
+  pull_request:
+    paths:
+      - "scripts/package-macos.sh"
+      - "scripts/install-macos.sh"
+      - "companion/macos/**"
+      - "native/fm26-parser/**"
+      - ".github/workflows/macos-release.yml"
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version label"
+        required: false
+        default: "dev"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve package version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version || '' }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="pr-${{ github.event.pull_request.number || 'dev' }}"
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build release binaries
+        run: |
+          cargo build --release --manifest-path native/fm26-parser/Cargo.toml
+          swift build --package-path companion/macos -c release
+
+      - name: Create package
+        run: bash scripts/package-macos.sh "${{ steps.version.outputs.value }}" "$RUNNER_TEMP/dist"
+
+      - name: Verify package installation in isolated home
+        env:
+          FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/package-install
+        run: |
+          ZIP="$(find "$RUNNER_TEMP/dist" -maxdepth 1 -name '*.zip' -print -quit)"
+          test -n "$ZIP"
+          mkdir -p "$RUNNER_TEMP/unpacked"
+          ditto -x -k "$ZIP" "$RUNNER_TEMP/unpacked"
+          ROOT="$(find "$RUNNER_TEMP/unpacked" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -x "$ROOT/install.sh"
+          "$ROOT/install.sh"
+          "$FM26_MANAGER_ROOM_HOME/bin/manager-room" doctor > "$RUNNER_TEMP/package-doctor.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("package-doctor.json").read_text())
+          assert d["parserAvailable"] is True
+          assert d["snapshotPath"].startswith(os.environ["FM26_MANAGER_ROOM_HOME"])
+          PY
+          codesign --verify "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
+          codesign --verify "$FM26_MANAGER_ROOM_HOME/bin/fm26-manager-room-parser"
+
+      - name: Verify checksum
+        run: |
+          cd "$RUNNER_TEMP/dist"
+          FILE="$(find . -maxdepth 1 -name '*.zip' -print -quit)"
+          shasum -a 256 -c "${FILE}.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-package
+          path: |
+            ${{ runner.temp }}/dist/*.zip
+            ${{ runner.temp }}/dist/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish tagged GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/dist/*.zip "$RUNNER_TEMP"/dist/*.zip.sha256 \
+            --verify-tag \
+            --title "FM26 Manager Room $GITHUB_REF_NAME" \
+            --notes "Read-only macOS package. Ad-hoc signed, not Apple-notarized. See README inside the archive."
