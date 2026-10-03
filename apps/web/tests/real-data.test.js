@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeRealSnapshot, validDate, medicalReview, playingTimeReview, growthReview } from "../engine/realSnapshot.js";
 import { SnapshotSession, validateBridge } from "../engine/snapshotSession.js";
+import { applyDevelopmentHistory, historySummary } from "../engine/developmentHistory.js";
 import { rooms, renderRoom, statusHTML, playerDetail } from "../previewView.js";
 import { verifiedRoleFit, bestVerifiedRoles } from "../engine/realRoleFit.js";
 
@@ -12,7 +13,11 @@ const raw = () => ({schemaVersion:2,source:"rust-native",saveName:"Career.fm",ga
     fitness:{condition:100,fatigue:0,fatigueKnown:false,injuryRisk:0,injuryRiskKnown:false},
     contract:{monthsRemaining:99,weeklyWage:0,end:null},snapshots:[{date:"2037-07-01",ca:125}]}],fixtures:[]});
 const json = (v,status=200) => new Response(JSON.stringify(v),{status,headers:{"Content-Type":"application/json"}});
-const session = (get,options={}) => new SnapshotSession({fetcher:async url=>url.endsWith("/api/parser")?json({parsing:false,lastError:null}):get(),...options});
+const session = (get,options={}) => new SnapshotSession({fetcher:async url=>{
+  if(url.endsWith("/api/parser")) return json({parsing:false,lastError:null});
+  if(url.endsWith("/api/history")) return new Response("",{status:404});
+  return get();
+},...options});
 
 for(const [name,mutate,field] of [
   ["unknown fatigue zero",x=>{},"fatigue"], ["unknown injury zero",x=>{},"injuryRisk"],
@@ -102,6 +107,69 @@ test("best verified roles stay within the requested position family",()=>{
   const roles=bestVerifiedRoles(p,"ST",10);
   assert.deepEqual(roles.map(r=>r.role).sort(),["Advanced Forward","Pressing Forward"].sort());
   assert.ok(roles.every(r=>r.score!==null));
+});
+
+
+test("selected career history produces comparable growth across save dates",()=>{
+  const s=normalizeRealSnapshot(raw());
+  const history={
+    schemaVersion:1,selectionId:"pin-123",points:[
+      {gameDate:"2037-06-01",players:[{id:"7",ca:120,pa:180,value:900000,attributes:{passing:13,strength:9}}]},
+      {gameDate:"2037-07-01",players:[{id:"7",ca:125,pa:180,value:1000000,attributes:{passing:14,strength:10}}]}
+    ]
+  };
+  applyDevelopmentHistory(s,history,"pin-123");
+  const review=growthReview(s.players[0],s);
+  const summary=historySummary(s.players[0],s);
+  assert.equal(s.lineageId,"pin-123");
+  assert.equal(review.delta,5);
+  assert.equal(summary.points,2);
+  assert.equal(summary.caDelta,5);
+  assert.deepEqual(summary.attributeChanges.map(x=>[x.name,x.delta]).sort(),[["passing",1],["strength",1]]);
+});
+
+test("development history never crosses selected career identity",()=>{
+  const s=normalizeRealSnapshot(raw());
+  const before=structuredClone(s.players[0].history);
+  applyDevelopmentHistory(s,{
+    schemaVersion:1,selectionId:"other-career",
+    points:[{gameDate:"2037-06-01",players:[{id:"7",ca:80,attributes:{passing:1}}]}]
+  },"pin-123");
+  assert.deepEqual(s.players[0].history,before);
+  assert.equal(s.lineageId,undefined);
+});
+
+test("future and unknown player history rows are ignored",()=>{
+  const s=normalizeRealSnapshot(raw());
+  applyDevelopmentHistory(s,{
+    schemaVersion:1,selectionId:"pin-123",points:[
+      {gameDate:"2037-08-01",players:[{id:"7",ca:130,attributes:{passing:15}}]},
+      {gameDate:"2037-06-01",players:[{id:"999",ca:199,attributes:{passing:20}}]},
+      {gameDate:"2037-06-01",players:[{id:"7",ca:120,attributes:{passing:13}}]}
+    ]
+  },"pin-123");
+  assert.equal(s.players[0].history.length,1);
+  assert.equal(s.players[0].history[0].date,"2037-06-01");
+  assert.equal(s.players[0].history[0].ca,120);
+});
+
+test("snapshot session merges optional backend history only for pinned selection",async()=>{
+  let x=raw();
+  const fetcher=async url=>{
+    if(url.endsWith("/api/parser")) return json({parsing:false,lastError:null,selectionId:"pin-123",selectionMode:"pinned"});
+    if(url.endsWith("/api/history")) return json({
+      schemaVersion:1,selectionId:"pin-123",points:[
+        {gameDate:"2037-06-01",players:[{id:"7",ca:120,attributes:{passing:13}}]},
+        {gameDate:"2037-07-01",players:[{id:"7",ca:125,attributes:{passing:14}}]}
+      ]
+    });
+    return json(x);
+  };
+  const s=new SnapshotSession({fetcher});
+  await s.refresh();
+  assert.equal(s.state.status,"current");
+  assert.equal(s.state.snapshot.lineageId,"pin-123");
+  assert.equal(growthReview(s.state.snapshot.players[0],s.state.snapshot).delta,5);
 });
 
 for(const url of ["https://evil.example","http://127.0.0.1.evil.example:8765","http://u:p@localhost:8765","http://localhost:8765/path","file:///tmp/x","http://localhost:8765/?x=1","http://localhost:8765/#x"])
