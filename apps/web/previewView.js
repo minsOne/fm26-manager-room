@@ -3,6 +3,7 @@ import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 import { verifiedSquadDepth } from "./engine/realDepth.js";
 import { recruitmentReview } from "./engine/realRecruitment.js";
 import { matchdayReview, workloadReview } from "./engine/realMatchday.js";
+import { verifiedTrainingReview, verifiedTrainingReviews } from "./engine/realTraining.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -112,8 +113,26 @@ export function renderRoom(view, state, ui) {
           +table(["선수","포지션","최적 역할","Role Fit","능력치 커버리지","해석"],rows));
       break;
     }
-    case "training": body=card("집중훈련 검토",note("현재 집중훈련과 FM26 역할별 훈련 목록의 확인이 필요합니다. 여기서는 PA와 CA를 대조할 뿐 성장량·적합한 집중훈련을 단정하지 않습니다.")
-      +table(["선수","CA","PA","PA − CA","현재 집중훈련"],players.map(p=>[playerLink(p),numeric(p.ca),numeric(p.pa),numeric(p.ca===null||p.pa===null?null:p.pa-p.ca),show(null)]))); break;
+    case "training": {
+      const reviews=verifiedTrainingReviews({...s,players});
+      body=card("집중훈련 초점 후보 · 검토용",
+        note("FM/SI 공식 훈련 추천이 아닙니다. 확인된 1~20 능력치와 역할 적합도에서 상대적 약점만 찾습니다. 현재 집중훈련·훈련 부하·실시간 의료 상태가 확인되기 전에는 변경 권고나 자동 적용을 하지 않습니다.")
+        +table(["선수","기준 역할","초점 후보","역할 병목","근거 커버리지","PA 여유","상태"],reviews.map(r=>[
+          playerLink(r.player),
+          show(r.role),
+          r.primary?esc(r.primary.label):show(null),
+          esc(r.bottlenecks.map(x=>`${x.attribute} ${x.value}`).join(" · ")||"자료 부족"),
+          r.primary?`${Math.round(r.primary.coverage*100)}%`:show(null),
+          numeric(r.paHeadroom),
+          esc(r.action)
+        ])));
+      body+=card("적용 전 필수 확인",
+        note("훈련 초점 후보는 실제 변경 버튼이 아닙니다.")
+        +table(["선수","미확인 항목"],reviews.filter(r=>r.uncertainty.length).map(r=>[
+          playerLink(r.player),esc(r.uncertainty.join(" · "))
+        ]),"현재 표시 가능한 선수가 없습니다."));
+      break;
+    }
     case "development": body=card("성장 관측",table(["선수","나이","CA 변화","근거"],players.map(p=>{
       const g=growthReview(p,s); return [playerLink(p),numeric(p.age),numeric(g.delta),esc(g.message)];
     }))); break;
@@ -154,6 +173,7 @@ export function playerDetail(player, s) {
     + `<div class="summary-grid">${card("일반 능력치",table(["항목","관측값"],Object.entries(player.attributes).map(([k,v])=>[esc(k),numeric(v)])))}
       ${card("히든·성격",table(["항목","관측값"],Object.entries(player.hidden).map(([k,v])=>[esc(k),numeric(v)])))}</div>`
     + roleFitDetail(player)
+    + trainingReviewDetail(player)
     + `</section>`;
 }
 
@@ -169,4 +189,23 @@ function roleFitDetail(player) {
       esc(r.role), numeric(r.score), numeric(r.attributeScore), numeric(r.positionScore),
       `${Math.round(r.coverage*100)}%`, esc(r.label)
     ])));
+}
+
+
+function trainingReviewDetail(player) {
+  const review = verifiedTrainingReview(player);
+  if (!review.role) {
+    return card("훈련 초점 검토", note(review.note) + note("미확인: " + review.uncertainty.join(" · ")));
+  }
+  const candidateRows = [review.primary, ...review.alternatives].filter(Boolean);
+  return card("훈련 초점 검토 · Manager Room 휴리스틱",
+    note(review.note)
+    + table(["후보","역할 대비 gap","커버리지","근거"], candidateRows.map(row=>[
+      esc(row.label),
+      numeric(row.gap),
+      `${Math.round(row.coverage*100)}%`,
+      esc(row.evidence.slice(0,3).map(x=>`${x.attribute} ${x.value}`).join(" · "))
+    ]), "추가 초점 우선순위가 높은 항목을 찾지 못했습니다.")
+    + `<p>기준 역할: ${show(review.role)} · Role Fit ${numeric(review.roleFit)} · PA 여유 ${numeric(review.paHeadroom)}</p>`
+    + note("미확인: " + review.uncertainty.join(" · ")));
 }
