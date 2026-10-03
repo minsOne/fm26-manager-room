@@ -28,6 +28,7 @@ final class NativeParserRunner: @unchecked Sendable {
     let parserURL: URL
     private let store: SnapshotStore
     private let state: CompanionState
+    private let historyStore: DevelopmentHistoryStore?
     private let queue = DispatchQueue(label: "fm26.manager-room.parser", qos: .userInitiated)
     private let parseLock = NSLock()
     private let timeoutSeconds: Double
@@ -35,9 +36,13 @@ final class NativeParserRunner: @unchecked Sendable {
     private let errorLimit: UInt64
 
     init(parserURL: URL, store: SnapshotStore, state: CompanionState,
+         historyStore: DevelopmentHistoryStore? = nil,
          timeoutSeconds: Double = 120, outputLimit: UInt64 = 64 * 1024 * 1024,
          errorLimit: UInt64 = 8 * 1024 * 1024) {
-        self.parserURL = parserURL; self.store = store; self.state = state
+        self.parserURL = parserURL
+        self.store = store
+        self.state = state
+        self.historyStore = historyStore
         self.timeoutSeconds = max(0.05, timeoutSeconds)
         self.outputLimit = outputLimit; self.errorLimit = errorLimit
         state.setParserPath(parserURL.path)
@@ -115,6 +120,21 @@ final class NativeParserRunner: @unchecked Sendable {
             guard before == (try InputSignature(saveURL)) else { throw NativeParserError.saveChanged }
             // Atomic replacement only after all gates. Failure never unlinks the last valid snapshot.
             try store.write(data)
+
+            // Development history is derived from a successful validated snapshot only.
+            // History failure must not invalidate the current snapshot.
+            if let historyStore,
+               let selectionId = state.snapshot().selectionId,
+               !selectionId.isEmpty {
+                do {
+                    try historyStore.record(snapshot: data, selectionId: selectionId)
+                } catch {
+                    FileHandle.standardError.write(Data(
+                        "Development history update failed: \(error.localizedDescription)\n".utf8
+                    ))
+                }
+            }
+
             let elapsed = started.duration(to: .now).components
             let milliseconds = Int(elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000)
             state.parsingSucceeded(save: saveURL, durationMilliseconds: milliseconds)
