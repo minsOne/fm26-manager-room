@@ -21,6 +21,32 @@ snapshot inputs. No game file, attributes, CA, PA or match results are changed.
 - Bench review excludes that fixture's XI and prioritizes verified positional coverage.
   Nine is a review capacity, not a verified competition-specific bench allowance.
 
+## Manager directives
+
+The Matchday UI supports hard starter locks by formation slot and rest directives
+for the selected fixture. A lock reserves that player before globally optimizing
+remaining slots; resting players are excluded from both XI and bench. The engine
+accepts an optional `constraintsByFixture` Map of fixture ID to
+`{lockedStarters: {slotId: playerUid}, restIds: [playerUid]}` for rotation review.
+Direct Matchday review accepts the same directive record as `options.constraints`.
+
+Duplicate locks, lock/rest collisions, missing players, obsolete formation slots,
+known unavailable locked players, unverified locked roles and malformed directives
+produce explicit conflicts. No constraint is silently relaxed. The conflicting
+fixture emits neither XI nor bench and makes no minute reservations; later fixtures
+are deferred. Earlier valid drafts retain their hypothetical reservations.
+
+Unknown medicine does not prevent an evidence-based review lock, but remains
+unknown and cannot pass final decision gates. Refreshing a career retains directives
+and validates them against new evidence: a disappeared/injured player can therefore
+turn a previously valid lock into a conflict.
+
+Directives are isolated by fixture, retained across same-career refresh, mode and
+formation changes, and reset when accepting a different career, changing Bridge or
+reloading the page. Obsolete slot locks remain visible and removable after formation
+changes. Rest-panel expansion also survives edits. These are in-memory browser
+preferences, not persisted match instructions or game writes.
+
 ## Selection utility
 
 Role Fit remains the existing 0–100 Manager Room heuristic. Selection utility
@@ -65,8 +91,8 @@ not verified yet, so rotation plans remain review-only even with otherwise
 complete synthetic inputs. A snapshot update retains fixture/mode selection;
 accepting a different career or changing Bridge resets them.
 
-Remaining P1 work includes validated competition-specific eligibility, locked
-starters/rest requests, explicit manager-approved minute limits/substitutions,
+Remaining P1 work includes validated competition-specific eligibility,
+explicit manager-approved minute limits/substitutions,
 per-match timeline windows, and runtime medical evidence. This iteration is not
 a claim that the complete Matchday feature is production-ready.
 
@@ -74,8 +100,10 @@ a claim that the complete Matchday feature is production-ready.
 
 Node regression tests cover unique assignment, observed/planned separation,
 all four modes, date boundaries, missing selected fixtures, unknowns, stale data,
-source immutability and UI escaping. Synthetic Chromium tests exercise immediate
-selection changes and retained/reset state. The integrated macOS workflow uses
+source immutability, hard locks/rest, conflict gating and UI escaping. Synthetic
+Chromium tests exercise lock/rest conflict resolution and retained/reset state.
+The integrated macOS workflow uses
 the actual public FM26 save, Rust/Swift API, UID/field audit and Chromium/WebKit
-to verify real rotation plans and selection retention after a real save reimport.
+to verify real rotation plans, hard manager directives and selection retention after
+a real save reimport.
 CI evidence does not replace the user's actual Mac/FM26 validation.

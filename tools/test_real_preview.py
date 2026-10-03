@@ -15,7 +15,9 @@ def fixture():
     return {"schemaVersion":2,"source":"rust-native","saveName":"Browser test.fm","gameDate":"2037-07-01",
       "manager":{"clubUid":45,"club":"Test FC","name":"Coach"},
       "players":[{"id":"7","name":"Young Player","age":18,"ca":125,"pa":125,"paKnown":False,
-        "positions":["CM"],"attributes":{"passing":14},"hidden":{"professionalism":17},
+        "positions":["CM","DM"],"positionRatings":{"MC":20,"DM":20},
+        "attributes":{key:14 for key in ["passing","vision","firstTouch","technique","decisions","composure","positioning","anticipation","stamina","workRate","offTheBall"]},
+        "hidden":{"professionalism":17},
         "fitness":{"condition":100,"fatigue":0,"fatigueKnown":False,"injuryRisk":0,"injuryRiskKnown":False},
         "playingTime":{"recentMinutes":0,"recentMinutesKnown":False},"contract":{"weeklyWage":0,"end":None}}],
       "fixtures":[{"id":"m1","date":"2037-07-02","opponent":"Next FC","home":True,"competitionKnown":False},
@@ -71,11 +73,27 @@ def main():
         plan_panel=page.locator("section.panel").filter(has=page.get_by_role("heading",name="향후 최대 5경기 로테이션 · 계획 시나리오",exact=True))
         assert "Later FC" in plan_panel.inner_text() and "Next FC" not in plan_panel.inner_text()
         print("PASS selected fixture immediately anchors the rendered rotation plan")
+        page.locator('#lock-rdm').select_option('7')
+        assert '감독 고정' in page.locator('#content').inner_text()
+        page.locator('details[data-rest-controls] summary').click()
+        page.locator('input[data-rest-player="7"]').check()
+        page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).wait_for()
+        assert page.locator('#lock-rdm').input_value()=='7'
+        assert page.locator('input[data-rest-player="7"]').is_checked()
+        page.locator('input[data-rest-player="7"]').uncheck()
+        assert page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).count()==0
+        assert '감독 고정' in page.locator('#content').inner_text()
+        page.locator('#fixtureSelect').select_option('m1')
+        assert page.locator('#lock-rdm').input_value()==''
+        page.locator('#fixtureSelect').select_option('m2')
+        assert page.locator('#lock-rdm').input_value()=='7'
+        print("PASS hard lock/rest conflict is explicit, resolvable and isolated per fixture")
         state["snapshot"]["players"][0]["ca"]=128
         page.locator("#refreshButton").click()
         page.wait_for_function("document.querySelector('#fixtureSelect')?.value === 'm2' && !document.querySelector('#refreshButton').disabled")
         assert page.locator("#fixtureSelect").input_value()=="m2"
         assert page.locator("#rotationModeSelect").input_value()=="protect"
+        assert page.locator('#lock-rdm').input_value()=='7'
         print("PASS refresh retains selected fixture and rotation mode")
         state["snapshot"]["fixtures"]=state["snapshot"]["fixtures"][:1]
         page.locator("#refreshButton").click()
@@ -86,6 +104,15 @@ def main():
         page.locator("#refreshButton").click()
         page.wait_for_function("document.querySelector('#fixtureSelect')?.value === 'm2' && !document.querySelector('#refreshButton').disabled")
         print("PASS missing selected fixture defers instead of silently switching")
+        state["snapshot"]["players"]=[]
+        page.locator('#refreshButton').click()
+        page.wait_for_function("document.querySelector('#content').textContent.includes('고정 선수 UID 7가 최신 스냅샷')")
+        assert page.locator('#lock-rdm').input_value()=='7'
+        state["snapshot"]["players"]=copy.deepcopy(payload["players"])
+        page.locator('#refreshButton').click()
+        page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).count()==0
+        print("PASS disappearing locked player causes conflict without replacing the retained directive")
         state["fail"]=True; page.locator("#refreshButton").click()
         page.get_by_text("이전 정상 데이터 유지",exact=True).wait_for()
         assert page.locator("#fixtureSelect").input_value()=="m2"
@@ -100,6 +127,7 @@ def main():
         page.locator("[data-accept-career]").click()
         assert "Other career.fm" in page.locator("#syncStatus").inner_text()
         assert page.locator("#rotationModeSelect").input_value()=="balanced"
+        assert all(value=='' for value in page.locator('select[data-lock-slot]').evaluate_all('(fields)=>fields.map(f=>f.value)'))
         print("PASS new career needs explicit acceptance")
         state["snapshot"]=copy.deepcopy(state["snapshot"])
         state["snapshot"]["players"][0]["name"]='<img src=x onerror="window.PWNED=true">'

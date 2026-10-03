@@ -51,7 +51,8 @@ export function rotationReview(snapshot, options={}) {
       mode!=="best-xi" && (snapshot.players??[]).some(p=>!known(p.minutes,0,20160) || p.historyComplete!==true)
         ?"최근 출전 기록·완전성":null
     ].filter(Boolean);
-    const review=matchdayReview(snapshot,options.formation,{adjustments,stale:options.stale,decisionMissing:missing});
+    const constraints=options.constraintsByFixture?.get(fixture.id);
+    const review=matchdayReview(snapshot,options.formation,{adjustments,stale:options.stale,decisionMissing:missing,constraints});
     const previousPlan=plans.at(-1);
     const previousIds=new Set(previousPlan?.review.lineup.filter(row=>row.player).map(row=>row.player.id)??[]);
     const changedStarters=previousPlan?review.lineup.filter(row=>row.player && !previousIds.has(row.player.id)).length:null;
@@ -59,12 +60,15 @@ export function rotationReview(snapshot, options={}) {
       restDaysAfter:gapAfter===null?null:Math.max(0,gapAfter-1),congested,changedStarters,review,
       plannedStarterMinutes:90,medicalMinuteCap:null,readyForFinalDecision:review.readyForFinalDecision};
     plans.push(plan);
+    // No reservations or downstream optimization may assume an unresolved lineup.
+    if(review.selectionConflicts.length) break;
     for(const row of review.lineup){
       if(row.player) reservations.get(row.player.id).push({fixtureId:fixture.id,date:fixture.date,minutes:90});
     }
   }
   return {
-    mode,plans,status:"review",official:false,readyForFinalDecision:false,
+    mode,plans,status:plans.some(p=>p.review.selectionConflicts.length)?"conflict":"review",official:false,readyForFinalDecision:false,
+    conflicts:plans.flatMap(p=>p.review.selectionConflicts.map(c=>({...c,fixture:p.fixture}))),
     players:(snapshot.players??[]).map(player=>({player,observedMinutes:player.minutes??null,
       historyComplete:player.historyComplete===true,plannedStarts:reservations.get(player.id).length,
       plannedMinutes:reservations.get(player.id).reduce((sum,row)=>sum+row.minutes,0),

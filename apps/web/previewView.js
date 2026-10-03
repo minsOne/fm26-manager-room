@@ -72,7 +72,7 @@ export function renderRoom(view, state, ui) {
       break;
     }
     case "matchday": {
-      const rotation=rotationReview(s,{fixtureId:ui.fixtureId,formation:ui.formation,mode:ui.rotationMode,stale});
+      const rotation=rotationReview(s,{fixtureId:ui.fixtureId,formation:ui.formation,mode:ui.rotationMode,stale,constraintsByFixture:ui.constraintsByFixture});
       const review=rotation.plans[0]?.review??matchdayReview(s,ui.formation,{stale,decisionMissing:[rotation.reason]});
       const workload=workloadReview(s);
       const selectedFixture=rotation.plans[0]?.fixture.id;
@@ -84,12 +84,18 @@ export function renderRoom(view, state, ui) {
         body+=card("일정",fixtureTable);
         break;
       }
+      body+=selectionControls(s,rotation.plans[0],ui.restPanelOpen);
+      if(rotation.conflicts.length) body+=card("선택 충돌 · 배치 보류",
+        note("지정을 자동으로 풀거나 다른 선수로 바꾸지 않습니다. 충돌 경기 이후의 로테이션도 보류합니다.")
+        +table(["경기","슬롯","원인·해결 방법"],rotation.conflicts.map(c=>[
+          esc(`${c.fixture.date} · ${c.fixture.opponent}`),show(c.slotId),esc(c.message)
+        ])));
       body+=card("선발 후보 배치 · 전역 최적화 검토용",
         note(review.note)
         +table(["슬롯","선수","역할","Role Fit","검토 점수","배치 근거","최종 확정 전 미확인"],review.lineup.map(row=>[
           esc(row.slot.position),
           row.player?playerLink(row.player):show(null),
-          show(row.role),
+          show(row.role)+(row.locked?" · 감독 고정":""),
           numeric(row.score),
           numeric(row.selectionScore),
           esc(row.selectionEvidence.join(" · ")),
@@ -112,7 +118,7 @@ export function renderRoom(view, state, ui) {
           +table(["날짜","상대","이전 경기와 간격 (일)","다음 경기까지 휴식일","일정 밀집","직전 계획 대비 새 선발","선발 후보"],rotation.plans.map(plan=>[
             esc(plan.fixture.date),esc(plan.fixture.opponent),numeric(plan.gapBefore),numeric(plan.restDaysAfter),
             esc(plan.congested?"4일 이내 간격":"수록 일정에서 밀집 신호 없음"),numeric(plan.changedStarters),
-            plan.review.lineup.filter(row=>row.player).map(row=>`${esc(row.slot.position)} ${playerLink(row.player)}`).join(" · ")
+            plan.review.selectionConflicts.length?"감독 지정 충돌 · 이후 계획 보류":plan.review.lineup.filter(row=>row.player).map(row=>`${esc(row.slot.id)} ${playerLink(row.player)}${row.locked?" (고정)":""}`).join(" · ")
           ])));
         body+=card("출전분 관측과 계획",table(["선수","스냅샷 기준 최근 14일 수록 출전분","기록 범위","계획 선발","계획상 예약 출전분","의학적 출전 상한"],rotation.players.filter(row=>row.plannedStarts>0).map(row=>[
           playerLink(row.player),numeric(row.observedMinutes),esc(row.observedMinutes===null?"미확인":row.historyComplete?"완전성 확인":"수록 하한"),
@@ -205,4 +211,33 @@ function roleFitDetail(player) {
       esc(r.role), numeric(r.score), numeric(r.attributeScore), numeric(r.positionScore),
       `${Math.round(r.coverage*100)}%`, esc(r.label)
     ])));
+}
+
+function selectionControls(snapshot,plan,restPanelOpen){
+  const review=plan.review;
+  const fixtureId=esc(plan.fixture.id);
+  const locks=review.constraints.lockedStarters;
+  const restIds=new Set(review.constraints.restIds);
+  const players=snapshot.players;
+  const playerIds=new Set(players.map(p=>p.id));
+  const slots=review.lineup.map(row=>row.slot);
+  const obsolete=Object.entries(locks).filter(([id])=>!slots.some(s=>s.id===id));
+  const lockFields=slots.map(slot=>{
+    const selected=Object.hasOwn(locks,slot.id)?locks[slot.id]:"";
+    return `<label class="selection-field" for="lock-${esc(slot.id)}">${esc(slot.id)} (${esc(slot.position)}) 선발 고정
+      <select id="lock-${esc(slot.id)}" data-lock-slot="${esc(slot.id)}" data-fixture-id="${fixtureId}">
+        <option value="" ${selected?"":"selected"}>자동 검토 배치</option>
+        ${selected && !playerIds.has(selected)?`<option selected value="${esc(selected)}">UID ${esc(selected)} · 현재 미수록</option>`:""}
+        ${players.map(p=>`<option value="${esc(p.id)}" ${selected===p.id?"selected":""}>${esc(p.name)} · UID ${esc(p.id)}</option>`).join("")}
+      </select></label>`;
+  }).join("");
+  const restFields=[...players,...[...restIds].filter(id=>!playerIds.has(id)).map(id=>({id,name:`UID ${id} · 현재 미수록`}))]
+    .map(p=>`<label class="rest-field"><input type="checkbox" data-rest-player="${esc(p.id)}" data-fixture-id="${fixtureId}" ${restIds.has(p.id)?"checked":""}> ${esc(p.name)} · UID ${esc(p.id)}</label>`).join("");
+  return card("감독 지정 · 선택한 경기만 적용",
+    note(`${plan.fixture.date} · ${plan.fixture.opponent}. 선발 고정은 남은 슬롯의 전역 배치에 우선합니다. 휴식 지정은 선발·벤치에서 모두 제외합니다. 브라우저 세션의 계획이며 실제 게임 설정을 바꾸지 않습니다.`)
+    +note("같은 커리어의 재수집·모드·포메이션 변경 시 지정을 유지합니다. 새 커리어·Bridge 변경·페이지 재로드 시 초기화됩니다. 고정은 미확인 의료·출전 자격을 확인된 것으로 만들지 않습니다.")
+    +`<div class="selection-grid">${lockFields}</div>`
+    +obsolete.map(([id,playerId])=>`<p>현재 포메이션에 없는 고정: ${esc(id)} · UID ${esc(playerId)} <button data-unlock-slot="${esc(id)}" data-fixture-id="${fixtureId}">이 슬롯 고정 해제</button></p>`).join("")
+    +`<details data-rest-controls ${restPanelOpen?"open":""}><summary>이 경기 휴식 지정 (${restIds.size}명)</summary><div class="selection-grid">${restFields}</div></details>`
+    +`<button data-clear-selection data-fixture-id="${fixtureId}">이 경기 지정 초기화</button>`);
 }
