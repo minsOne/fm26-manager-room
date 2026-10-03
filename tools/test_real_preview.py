@@ -111,6 +111,7 @@ def main():
         page.locator('#fixtureSelect').select_option('m2')
         assert page.locator('input[data-minute-cap-player="7"]').input_value()=='60'
         page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert page.locator('details[data-minute-controls]').evaluate('(panel)=>panel.open')
         assert page.locator('#sub-player-rdm').input_value()=='8'
         assert page.locator('#sub-minute-rdm').input_value()=='60'
         page.locator('input[data-minute-cap-player="7"]').fill('');page.locator('input[data-minute-cap-player="7"]').dispatch_event('change')

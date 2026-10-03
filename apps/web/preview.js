@@ -41,6 +41,10 @@ function startSession() {
 }
 function editSelection(fixtureId,edit){
   if(!current.snapshot?.fixtures.some(f=>f.id===fixtureId && f.date>=current.snapshot.gameDate)) return;
+  // Native details toggle events can still be queued when an edit replaces the DOM.
+  // Capture the visible panel state synchronously before removing those elements.
+  ui.restPanelOpen=document.querySelector('details[data-rest-controls]')?.open??ui.restPanelOpen;
+  ui.minutePanelOpen=document.querySelector('details[data-minute-controls]')?.open??ui.minutePanelOpen;
   ui.fixtureId=fixtureId;
   editFixtureSelection(ui.constraintsByFixture,fixtureId,edit);
   render();
