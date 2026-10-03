@@ -142,7 +142,7 @@ final class NativeParserRunner: @unchecked Sendable {
             }
             return url
         }
-        let executable = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+        let executable = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().standardizedFileURL
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         let candidates = [executable.deletingLastPathComponent().appendingPathComponent("fm26-manager-room-parser"),
                           cwd.appendingPathComponent("native/fm26-parser/target/release/fm26-manager-room-parser")]

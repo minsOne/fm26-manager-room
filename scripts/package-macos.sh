@@ -40,6 +40,10 @@ PREFIX="${FM26_MANAGER_ROOM_HOME:-$HOME/Library/Application Support/FM26ManagerR
 BIN="$PREFIX/bin"
 SHIM_DIR="${FM26_MANAGER_ROOM_SHIM_DIR:-$HOME/.local/bin}"
 
+if [[ -e "$SHIM_DIR/manager-room" && ! -L "$SHIM_DIR/manager-room" ]]; then
+  echo "Refusing to replace existing shim" >&2; exit 4
+fi
+if [[ -x "$BIN/manager-room" ]]; then "$HERE/bin/manager-room" stop; fi
 mkdir -p "$BIN" "$SHIM_DIR"
 chmod 700 "$PREFIX" "$BIN"
 install -m 755 "$HERE/bin/fm26-manager-room-parser" "$BIN/fm26-manager-room-parser"
@@ -52,7 +56,7 @@ codesign --verify "$BIN/manager-room"
 echo "Installed to: $BIN"
 echo "Next:"
 echo "  manager-room doctor"
-echo "  manager-room pin-save \"/path/to/My Career.fm\""
+echo "  manager-room select-save"
 echo "  manager-room doctor --deep"
 echo "  manager-room start"
 if [[ ":$PATH:" != *":$SHIM_DIR:"* ]]; then
@@ -73,6 +77,7 @@ if [[ -L "$SHIM_DIR/manager-room" ]]; then
   [[ "$TARGET" == "$PREFIX/bin/manager-room" ]] && rm -f "$SHIM_DIR/manager-room"
 fi
 
+if [[ -x "$PREFIX/bin/manager-room" ]]; then "$PREFIX/bin/manager-room" stop; fi
 rm -f "$PREFIX/bin/manager-room" "$PREFIX/bin/fm26-manager-room-parser"
 rmdir "$PREFIX/bin" 2>/dev/null || true
 
@@ -97,7 +102,7 @@ INSTALL
 
 THEN
   manager-room doctor
-  manager-room pin-save "/path/to/My Career.fm"
+  manager-room select-save
   manager-room doctor --deep
   manager-room start
 

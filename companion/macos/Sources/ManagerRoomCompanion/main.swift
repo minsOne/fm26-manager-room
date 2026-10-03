@@ -1,21 +1,38 @@
 import Foundation
 
 enum Command: String {
-    case serve, start, probe, parse
+    case serve, start, stop, probe, parse
     case snapshotPath = "snapshot-path"
+    case selectSave = "select-save"
     case pinSave = "pin-save"
     case unpinSave = "unpin-save"
     case selection, doctor
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
+if args.isEmpty || args.first == "--help" || args.first == "help" {
+    print("""
+    FM26 Manager Room — read-only macOS assistant
+    Usage: manager-room <command> [options]
+      select-save [path.fm]   Open a file picker or pin the supplied career
+      doctor [--deep] [--json] [--online]  Diagnose installation and selected save
+      start [--no-open]       Parse selected career, run in background, open browser
+      stop                   Stop only the managed Companion process
+      serve [--open-web]      Foreground service for development
+      pin-save <path.fm> | unpin-save | selection | parse <path.fm> | probe
+    Service options: --port 8765 --parser <path> --snapshot-file <path.json>
+    Selection precedence: --save > --save-dir > persisted pin > default directory
+    """)
+    exit(0)
+}
 guard let command = Command(rawValue: args.first ?? "serve") else {
     FileHandle.standardError.write(Data(
-        "Unknown command. Use start, serve, parse, probe, snapshot-path, pin-save, unpin-save, selection or doctor.\n".utf8
+        "Unknown command. Use --help for commands.\n".utf8
     ))
     exit(2)
 }
 
+do {
 let store = try selectedStore(args)
 let selectionStore = SaveSelectionStore.defaultStore()
 let state = CompanionState()
@@ -30,20 +47,31 @@ case .probe:
 case .snapshotPath:
     print(store.url.path)
 
-case .pinSave:
-    guard args.count >= 2, !args[1].hasPrefix("--") else {
+case .selectSave, .pinSave:
+    let path = args.count >= 2 && !args[1].hasPrefix("--") ? args[1] : nil
+    guard command == .selectSave || path != nil else {
         FileHandle.standardError.write(Data(
             "Usage: manager-room-companion pin-save /path/to/Career.fm\n".utf8
         ))
         exit(2)
     }
-    let selected = try selectionStore.pin(URL(fileURLWithPath: args[1]))
+    guard let save = path.map({ URL(fileURLWithPath: $0) }) ?? chooseCareerSave() else {
+        print("Selection cancelled. Previous career retained.")
+        exit(0)
+    }
+    let selected = try ServiceControl.installed.withLock {
+        try ServiceControl.installed.requireStopped()
+        return try selectionStore.pin(save)
+    }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     print(String(decoding: try encoder.encode(selected), as: UTF8.self))
 
 case .unpinSave:
-    try selectionStore.clear()
+    try ServiceControl.installed.withLock {
+        try ServiceControl.installed.requireStopped()
+        try selectionStore.clear()
+    }
     print("Pinned save cleared.")
 
 case .selection:
@@ -54,6 +82,15 @@ case .selection:
     } else {
         print("{}")
     }
+
+case .stop:
+    try ServiceControl.installed.stop()
+
+case .start:
+    if args.contains("--port") && (parsePort(args) ?? 0) == 0 {
+        throw CLIError(message: "--port must be an integer from 1 to 65535.")
+    }
+    try ServiceControl.installed.start(arguments: args, port: parsePort(args) ?? 8765)
 
 case .doctor:
     let explicitParser = option("--parser", in: args)
@@ -123,30 +160,60 @@ case .doctor:
         }
     }
 
+    if args.contains("--port") && (parsePort(args) ?? 0) == 0 {
+        throw CLIError(message: "--port must be an integer from 1 to 65535.")
+    }
+    let port = parsePort(args) ?? 8765
     let selectedExists = selected.map { FileManager.default.fileExists(atPath: $0.path) }
-    let healthy = parserURL != nil
-        && selectedExists != false
+    let saveReadable = selected.map { FileManager.default.isReadableFile(atPath: $0.path) } ?? false
+    let writable = LocalDiagnostics.snapshotWritable(store)
+    let api = LocalDiagnostics.health(port: port)
+    let portFree = LocalDiagnostics.portAvailable(port)
+    let version = ProcessInfo.processInfo.operatingSystemVersion
+    let platformOK = version.majorVersion >= 13
+    let online = args.contains("--online")
+    let webOK = online ? LocalDiagnostics.webReachable() : nil
+    let running = FMProcessProbe.probe().running
+    let installOnly = args.contains("--installation-only")
+    let installationHealthy = parserURL != nil && writable && platformOK
+    let healthy = installationHealthy && (installOnly || (selectedExists == true && saveReadable))
+        && (portFree || api?["status"] as? String == "ok")
+        && !(api?["lastParseError"] is String)
         && (!deep || deepResult.passed)
-
+    var checks: [DoctorCheck] = [
+        .init(name: "macOS", status: platformOK ? "OK" : "FAIL", detail: "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion); requires macOS 13+"),
+        .init(name: "Architecture", status: "OK", detail: LocalDiagnostics.architecture),
+        .init(name: "Rust parser", status: parserURL != nil ? "OK" : "FAIL", detail: parserURL?.path ?? "Re-run ./install.sh or supply --parser."),
+        .init(name: "Companion", status: "OK", detail: Bundle.main.executableURL?.path ?? CommandLine.arguments[0]),
+        .init(name: "FM save directory", status: FileManager.default.fileExists(atPath: defaultDirectory.path) ? "OK" : "INFO", detail: "Custom locations are supported via select-save."),
+        .init(name: "Pinned Save", status: selected != nil ? "OK" : (installOnly ? "INFO" : "FAIL"), detail: selected?.path ?? "Run manager-room select-save."),
+        .init(name: "Save Read", status: saveReadable ? "OK" : (installOnly && selected == nil ? "INFO" : "FAIL"), detail: saveReadable ? "Readable; original save is never modified." : "Re-select a readable .fm file. Check Terminal permissions in Privacy & Security."),
+        .init(name: "Snapshot Write", status: writable ? "OK" : "FAIL", detail: writable ? store.url.path : "Check permissions for \(store.url.deletingLastPathComponent().path)."),
+        .init(name: "Localhost port", status: portFree || api != nil ? "OK" : "FAIL", detail: portFree ? "\(port) available" : (api != nil ? "\(port) serving Manager Room" : "Port \(port) occupied; choose --port or stop the owning service.")),
+        .init(name: "Local API", status: api?["lastParseError"] is String ? "FAIL" : (api != nil ? "OK" : "INFO"), detail: api?["lastParseError"] as? String ?? (api != nil ? "Health endpoint responding." : "Not running; use manager-room start.")),
+        .init(name: "GitHub Pages", status: webOK == nil ? "INFO" : (webOK == true ? "OK" : "WARN"), detail: webOK == nil ? "Run doctor --online to check connectivity." : "Network probe only; browser permission/CORS must be verified in your browser."),
+        .init(name: "FM26 Running", status: "INFO", detail: running ? "Running; runtime bridge remains unavailable." : "Not running; saved careers can still be parsed."),
+        .init(name: "Parser test", status: deep ? (deepResult.passed ? "OK" : "FAIL") : "INFO", detail: deep ? (deepResult.error ?? "\(deepResult.players ?? 0) players; \(deepResult.durationMilliseconds ?? 0) ms (this machine)") : "Run doctor --deep to validate the pinned save privately.")
+    ]
+    if !notes.isEmpty { checks.append(.init(name: "Guidance", status: "INFO", detail: notes.joined(separator: " "))) }
     let report = DoctorReport(
-        platform: "macOS",
-        healthy: healthy,
-        parserAvailable: parserURL != nil,
-        parserPath: parserURL?.path,
-        snapshotPath: store.url.path,
-        snapshotExists: store.exists,
-        selectionId: selected?.id,
-        selectedSavePath: selected?.path,
-        selectedSaveExists: selectedExists,
+        platform: "macOS", healthy: healthy, installationHealthy: installationHealthy,
+        parserAvailable: parserURL != nil, parserPath: parserURL?.path,
+        snapshotPath: store.url.path, snapshotExists: store.exists,
+        selectionId: selected?.id, selectedSavePath: selected?.path, selectedSaveExists: selectedExists,
         defaultSaveDirectory: defaultDirectory.path,
         defaultSaveDirectoryExists: FileManager.default.fileExists(atPath: defaultDirectory.path),
-        webURL: "https://minsone.github.io/fm26-manager-room/",
-        deep: deepResult,
-        notes: notes
+        webURL: "https://minsone.github.io/fm26-manager-room/", deep: deepResult, notes: notes, checks: checks
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    print(String(decoding: try encoder.encode(report), as: UTF8.self))
+    if args.contains("--json") {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        print(String(decoding: try encoder.encode(report), as: UTF8.self))
+    } else {
+        print("Manager Room Doctor")
+        for check in checks { print("\(check.name.padding(toLength: 19, withPad: " ", startingAt: 0)) \(check.status.padding(toLength: 5, withPad: " ", startingAt: 0)) \(check.detail)") }
+        print(healthy ? (installOnly ? "INSTALLED — select-save before start" : "READY — browser connection and running-FM watcher still need real-Mac verification") : "NEEDS ATTENTION — follow the FAIL guidance above")
+    }
     if !healthy { exit(4) }
 
 case .parse:
@@ -164,19 +231,20 @@ case .parse:
     print("Parsed \(saveURL.lastPathComponent) in \(duration) ms")
     print(store.url.path)
 
-case .serve, .start:
+case .serve:
     if args.contains("--port") && (parsePort(args) ?? 0) == 0 {
         FileHandle.standardError.write(Data("--port must be an integer from 1 to 65535.\n".utf8))
         exit(2)
     }
 
     let port = parsePort(args) ?? 8765
-    let server = try LocalHTTPServer(port: port, store: store, companionState: state)
+    let server = try LocalHTTPServer(port: port, store: store, companionState: state,
+                                     instanceID: option("--service-instance", in: args))
     server.start()
 
-    let shouldOpenWeb = command == .start || args.contains("--open-web")
+    let shouldOpenWeb = args.contains("--open-web")
     if shouldOpenWeb {
-        openManagerRoomWeb()
+        openManagerRoomWeb(port: port)
     }
 
     let explicitParser = option("--parser", in: args)
@@ -263,6 +331,11 @@ case .serve, .start:
     }
 }
 
+} catch {
+    FileHandle.standardError.write(Data("Manager Room: \(error.localizedDescription)\n".utf8))
+    exit(4)
+}
+
 func selectedStore(_ args: [String]) throws -> SnapshotStore {
     guard args.contains("--snapshot-file") else { return SnapshotStore.defaultStore() }
     guard args.filter({ $0 == "--snapshot-file" }).count == 1,
@@ -296,9 +369,16 @@ func option(_ name: String, in args: [String]) -> String? {
 }
 
 
+struct DoctorCheck: Codable {
+    let name: String
+    let status: String
+    let detail: String
+}
+
 struct DoctorReport: Codable {
     let platform: String
     let healthy: Bool
+    let installationHealthy: Bool
     let parserAvailable: Bool
     let parserPath: String?
     let snapshotPath: String
@@ -311,6 +391,7 @@ struct DoctorReport: Codable {
     let webURL: String
     let deep: DoctorDeepResult
     let notes: [String]
+    let checks: [DoctorCheck]
 }
 
 struct DoctorDeepResult: Codable {
@@ -342,10 +423,10 @@ struct DoctorDeepResult: Codable {
 }
 
 
-func openManagerRoomWeb() {
+func openManagerRoomWeb(port: UInt16 = 8765) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = ["https://minsone.github.io/fm26-manager-room/"]
+    process.arguments = ["https://minsone.github.io/fm26-manager-room/?bridge=http%3A%2F%2F127.0.0.1%3A\(port)"]
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice

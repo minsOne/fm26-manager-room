@@ -60,10 +60,13 @@ jobs:
           ditto -x -k "$ZIP" "$RUNNER_TEMP/unpacked"
           ROOT="$(find "$RUNNER_TEMP/unpacked" -mindepth 1 -maxdepth 1 -type d -print -quit)"
           test -x "$ROOT/install.sh"
+          mkdir -p "$FM26_MANAGER_ROOM_HOME/bin"
+          printf '#!/bin/sh\nexit 2\n' > "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
+          chmod 755 "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
           "$ROOT/install.sh"
           test -L "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
           test -x "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
-          "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room" doctor > "$RUNNER_TEMP/package-doctor.json"
+          "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room" doctor --json --installation-only > "$RUNNER_TEMP/package-doctor.json"
           python3 - <<'PY'
           import json, os
           from pathlib import Path

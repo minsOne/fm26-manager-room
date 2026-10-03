@@ -23,6 +23,7 @@ export function statusHTML(state) {
   return `<strong>${esc(label ?? state.status)}</strong>${state.refreshing?" · 조회 중":""}${state.parser?.parsing?" · 파서 분석 중 (현재 표시는 이전 결과)":""}
     ${s ? `<div>게임 ${esc(s.gameDate)} · ${esc(s.saveName)} · ${esc(s.manager.club)} · ${esc(s.source)}</div>
     <div>캡처 시각 ${show(s.capturedAt)} · 최근 수신 ${show(state.receivedAt)} · 빌드 ${show(s.build)} · DB ${show(s.dbVersion)}</div>`:""}
+    ${state.parser?`<div>${state.status === "current" ? "Connected" : "Connection needs review"} · Pinned Save: ${show(state.parser.selectionMode === "pinned" ? state.parser.selectedSavePath?.split("/").pop() : null)} · Last Sync: ${show(state.parser.lastSuccessAt)}</div>`:""}
     ${state.error?`<div class="error">${esc(state.error)}</div>`:""}
     ${state.metadataWarning?`<div>${esc(state.metadataWarning)}</div>`:""}
     ${s && !state.parser?"<div>파서 상태 API 미제공: 가장 최근 게임 저장이 반영되었는지는 확인되지 않았습니다.</div>":""}

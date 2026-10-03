@@ -6,9 +6,11 @@ final class LocalHTTPServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "fm26.manager-room.http")
     private let store: SnapshotStore
     private let companionState: CompanionState
+    private let instanceID: String?
     private let policy: LocalRequestPolicy
 
-    init(port: UInt16, store: SnapshotStore, companionState: CompanionState) throws {
+    init(port: UInt16, store: SnapshotStore, companionState: CompanionState, instanceID: String? = nil) throws {
+        self.instanceID = instanceID
         guard port > 0, let endpointPort = NWEndpoint.Port(rawValue: port) else { throw ServerError.invalidPort }
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: endpointPort)
@@ -64,6 +66,7 @@ final class LocalHTTPServer: @unchecked Sendable {
             // Runtime probing hashes an executable; do not perform that expensive work on each health poll.
             let value: [String: Any] = [
                 "status": "ok", "platform": "macOS", "snapshotAvailable": store.exists,
+                "instanceId": instanceID.map { $0 as Any } ?? NSNull(),
                 "accessMode": "read-only-save-snapshot", "parsing": parser.parsing,
                 "lastParseDurationMs": parser.lastDurationMilliseconds.map { $0 as Any } ?? NSNull(),
                 "lastParseError": parser.lastError.map { $0 as Any } ?? NSNull()

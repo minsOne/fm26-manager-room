@@ -3,6 +3,8 @@ name: macOS Install CI
 on:
   pull_request:
     paths:
+      - "install.sh"
+      - "tools/test_macos_lifecycle.py"
       - "scripts/install-macos.sh"
       - "scripts/uninstall-macos.sh"
       - "companion/macos/**"
@@ -11,6 +13,8 @@ on:
   push:
     branches: ["main"]
     paths:
+      - "install.sh"
+      - "tools/test_macos_lifecycle.py"
       - "scripts/install-macos.sh"
       - "scripts/uninstall-macos.sh"
       - "companion/macos/**"
@@ -24,7 +28,7 @@ permissions:
 jobs:
   install:
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +36,12 @@ jobs:
         env:
           FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
           FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/manager-room-shim
-        run: bash scripts/install-macos.sh
+        run: |
+          # Upgrade a legacy installation whose CLI has no stop command.
+          mkdir -p "$FM26_MANAGER_ROOM_HOME/bin"
+          printf '#!/bin/sh\nexit 2\n' > "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
+          chmod 755 "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
+          ./install.sh
 
       - name: Verify installed binaries and diagnostics
         env:
@@ -44,7 +53,7 @@ jobs:
           test -x "$BIN/fm26-manager-room-parser"
           test -L "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
           test -x "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
-          "$BIN/manager-room" doctor > "$RUNNER_TEMP/doctor-before.json"
+          "$BIN/manager-room" doctor --json --installation-only > "$RUNNER_TEMP/doctor-before.json"
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -64,7 +73,7 @@ jobs:
           printf 'nonempty test save' > "$SAVE"
           "$BIN/manager-room" pin-save "$SAVE" > "$RUNNER_TEMP/pin.json"
           "$BIN/manager-room" selection > "$RUNNER_TEMP/selection.json"
-          "$BIN/manager-room" doctor > "$RUNNER_TEMP/doctor-pinned.json"
+          "$BIN/manager-room" doctor --json --installation-only > "$RUNNER_TEMP/doctor-pinned.json"
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -115,6 +124,40 @@ jobs:
           kill "$PID"
           wait "$PID" || true
           trap - EXIT
+
+      - name: Verify managed lifecycle with synthetic failures
+        run: python3 tools/test_macos_lifecycle.py --binary "$RUNNER_TEMP/manager-room-shim/manager-room"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Download public FM26 save for installed lifecycle
+        run: |
+          python -m pip install 'gdown==5.2.0'
+          mkdir -m 700 -p "$RUNNER_TEMP/install-real-save"
+          for attempt in 1 2 3; do
+            if python -m gdown 1UZlBHKpEae416lx8apbkug-pmZH7RMKd -O "$RUNNER_TEMP/install-real-save/public.fm"; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep 3
+          done
+          test -s "$RUNNER_TEMP/install-real-save/public.fm"
+
+      - name: Installed CLI to actual Rust parser, watcher and HTTP
+        run: |
+          python tools/test_macos_lifecycle.py --binary "$RUNNER_TEMP/manager-room-shim/manager-room" \
+            --save "$RUNNER_TEMP/install-real-save/public.fm"
+
+      - name: Remove public save
+        if: always()
+        run: |
+          python - <<'PYTHON'
+          import os
+          from pathlib import Path
+          (Path(os.environ["RUNNER_TEMP"]) / "install-real-save/public.fm").unlink(missing_ok=True)
+          PYTHON
 
       - name: Verify uninstall preserves selection unless purged
         env:
