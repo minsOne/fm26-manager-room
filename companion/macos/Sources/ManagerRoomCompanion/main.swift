@@ -18,6 +18,7 @@ guard let command = Command(rawValue: args.first ?? "serve") else {
 
 let store = try selectedStore(args)
 let selectionStore = SaveSelectionStore.defaultStore()
+let historyStore = DevelopmentHistoryStore.defaultStore()
 let state = CompanionState()
 
 switch command {
@@ -157,9 +158,16 @@ case .parse:
         exit(2)
     }
     let saveURL = URL(fileURLWithPath: args[1]).resolvingSymlinksInPath().standardizedFileURL
-    state.setSelection(id: nil, path: saveURL.path, mode: "explicit")
+    let persisted = selectionStore.load()
+    let selectionId = persisted?.path == saveURL.path ? persisted?.id : nil
+    state.setSelection(id: selectionId, path: saveURL.path, mode: "explicit")
     let parserURL = try NativeParserRunner.resolve(explicit: option("--parser", in: args))
-    let runner = NativeParserRunner(parserURL: parserURL, store: store, state: state)
+    let runner = NativeParserRunner(
+        parserURL: parserURL,
+        store: store,
+        state: state,
+        historyStore: historyStore
+    )
     let duration = try runner.parse(saveURL: saveURL)
     print("Parsed \(saveURL.lastPathComponent) in \(duration) ms")
     print(store.url.path)
@@ -171,7 +179,12 @@ case .serve:
     }
 
     let port = parsePort(args) ?? 8765
-    let server = try LocalHTTPServer(port: port, store: store, companionState: state)
+    let server = try LocalHTTPServer(
+        port: port,
+        store: store,
+        companionState: state,
+        historyStore: historyStore
+    )
     server.start()
 
     if args.contains("--open-web") {
@@ -221,7 +234,12 @@ case .serve:
     var watcher: SaveDirectoryWatcher?
     do {
         let parserURL = try NativeParserRunner.resolve(explicit: explicitParser)
-        let runner = NativeParserRunner(parserURL: parserURL, store: store, state: state)
+        let runner = NativeParserRunner(
+            parserURL: parserURL,
+            store: store,
+            state: state,
+            historyStore: historyStore
+        )
 
         if let explicitSave {
             runner.parseAsync(saveURL: explicitSave)
