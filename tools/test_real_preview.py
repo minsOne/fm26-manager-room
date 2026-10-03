@@ -73,7 +73,8 @@ def main():
         print("PASS refresh retains selected fixture")
         state["fail"]=True; page.locator("#refreshButton").click()
         page.get_by_text("이전 정상 데이터 유지",exact=True).wait_for()
-        assert "Young Player" in page.locator("#content").inner_text()
+        assert page.locator("#fixtureSelect").input_value()=="m2"
+        assert "Later FC" in page.locator("#content").inner_text()
         assert "데모" not in page.locator("#syncStatus").inner_text()
         print("PASS disconnect keeps last good snapshot with stale warning")
         state["fail"]=False;state["parserError"]="synthetic parser failure";page.locator("#refreshButton").click()
