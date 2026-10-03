@@ -3,6 +3,7 @@ import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 import { verifiedSquadDepth } from "./engine/realDepth.js";
 import { recruitmentReview } from "./engine/realRecruitment.js";
 import { matchdayReview, workloadReview } from "./engine/realMatchday.js";
+import { trainingReview } from "./engine/realTraining.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -112,8 +113,22 @@ export function renderRoom(view, state, ui) {
           +table(["선수","포지션","최적 역할","Role Fit","능력치 커버리지","해석"],rows));
       break;
     }
-    case "training": body=card("집중훈련 검토",note("현재 집중훈련과 FM26 역할별 훈련 목록의 확인이 필요합니다. 여기서는 PA와 CA를 대조할 뿐 성장량·적합한 집중훈련을 단정하지 않습니다.")
-      +table(["선수","CA","PA","PA − CA","현재 집중훈련"],players.map(p=>[playerLink(p),numeric(p.ca),numeric(p.pa),numeric(p.ca===null||p.pa===null?null:p.pa-p.ca),show(null)]))); break;
+    case "training": {
+      const reviews=trainingReview(s);
+      body=card("훈련 개발 검토 · 실제 세이브",
+        note("현재 개인훈련 focus와 훈련 부하가 검증되지 않아 특정 FM26 focus 변경을 지시하지 않습니다. 확인된 Role Fit·CA/PA·나이·능력치 gap만 검토합니다.")
+        +table(["선수","최적 역할","Role Fit","CA / PA","성장 여유","낮은 핵심 능력치","상태","행동"],reviews.map(r=>[
+          playerLink(r.player),
+          r.role?esc(r.role.role):show(null),
+          r.role?numeric(r.role.score):show(null),
+          `${numeric(r.player.ca)} / ${numeric(r.player.pa)}`,
+          numeric(r.headroom),
+          r.gaps.length?esc(r.gaps.slice(0,3).map(g=>`${g.attribute} ${g.value}`).join(" · ")):show(null),
+          esc(r.status),esc(r.action)
+        ])));
+      body+=card("적용 제한",note("‘핵심 능력치 개발 검토’는 코치가 확인할 후보를 뜻합니다. 현재 focus·훈련 부하·부상 위험이 확인되기 전에는 자동 적용하지 않습니다."));
+      break;
+    }
     case "development": body=card("성장 관측",table(["선수","나이","CA 변화","근거"],players.map(p=>{
       const g=growthReview(p,s); return [playerLink(p),numeric(p.age),numeric(g.delta),esc(g.message)];
     }))); break;
