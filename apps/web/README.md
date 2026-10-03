@@ -1,34 +1,33 @@
 # Manager Room Web
 
-Static, build-free ES-module frontend for the FM26 Manager Room.
+Static, build-free ES-module frontend for FM26 Manager Room.
 
-## Implemented screens
+## Real save UI
 
-- Manager Room / action center
-- Matchday lineup, bench optimizer and minute plan
-- Squad depth / position health / succession
-- Tactics formation + In/Out of Possession role editor
-- Training advisor
-- Development and loan planning
-- Medical workload board
-- Recruitment priorities / targets / upgrade finder / shadow squad
-- Transfer advisor
-- Contract risks
-- Economy / Saudi World Balance preview
-- Reports / confidence calibration / decision journal
-- AI Coach
-- Manager philosophy and macOS Bridge settings
-- Player detail modal with CA/PA, hidden attributes, role fits and training recommendation
+`index.html` reads the local macOS Companion (`http://127.0.0.1:8765` by
+default). Connection failures never substitute demo data. A failed import
+retains the previous snapshot with a stale warning; a new career requires
+explicit acceptance.
 
-## Data source
+Verified inputs support player observations, role-fit comparison, squad depth,
+recruitment gap review, guarded Matchday assignment, positional bench coverage
+and schedule-aware rotation review. Matchday offers Best XI, Balanced,
+Development and Protect Key Players modes for up to five fixtures.
 
-The UI first tries the local macOS companion at:
+Role Fit and workload-adjusted selection utility are separate. Planned starter
+reservations are explicitly hypothetical 90-minute blocks, not observed minutes,
+fatigue predictions or medical minute caps. Missing injury/eligibility/history
+inputs and unverified competition rules keep final decisions deferred.
 
-```
-http://127.0.0.1:8765/api/snapshot
-```
+See [rotation methodology and limits](../../docs/schedule-aware-rotation.md).
+Training, medical, development, finance and AI screens show available observations
+and limitations; their presence does not imply production-ready recommendations
+or external AI integration. Game writes remain disabled.
 
-If unavailable, the app falls back to `data/mockSnapshot.js`.
+## Demo
+
+`demo.html` uses `data/mockSnapshot.js` to illustrate the broader product goals.
+It never reads the real Bridge. Its recommendations and numbers are examples.
 
 ## Local preview
 
@@ -37,7 +36,8 @@ cd apps/web
 python3 -m http.server 8080
 ```
 
-Then open http://127.0.0.1:8080.
+Open http://127.0.0.1:8080 with the Companion running. Use `demo.html` explicitly
+when you want sample data.
 
 ## Test
 

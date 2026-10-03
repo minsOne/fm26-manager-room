@@ -153,6 +153,38 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                 if any(word in text for word in ['NaN', 'undefined', 'Infinity']):
                     raise RuntimeError('invalid_room_render')
             result['roomsVisited'] = 14
+            # Actual native snapshot -> normalized calendar -> unique review plans.
+            rotation = page.evaluate('''async (base) => {
+                const {normalizeRealSnapshot} = await import('./engine/realSnapshot.js');
+                const {rotationReview} = await import('./engine/realRotation.js');
+                const raw = await (await fetch(base + '/api/snapshot')).json();
+                const s = normalizeRealSnapshot(raw);
+                const original = JSON.stringify(s);
+                const plan = rotationReview(s, {mode:'balanced'});
+                if (!plan.plans.length || plan.plans.length > 5) throw new Error('rotation_calendar');
+                for (const p of plan.plans) {
+                    const ids = p.review.lineup.filter(r=>r.player).map(r=>r.player.id);
+                    if (new Set(ids).size !== ids.length) throw new Error('rotation_duplicate_player');
+                    if (p.readyForFinalDecision || p.medicalMinuteCap !== null) throw new Error('rotation_unknown_promoted');
+                    if (p.review.bench.players.some(r=>ids.includes(r.player.id))) throw new Error('rotation_bench_collision');
+                }
+                for (const row of plan.players) {
+                    if (row.observedMinutes !== s.players.find(p=>p.id===row.player.id).minutes) throw new Error('rotation_observed_minutes');
+                    if (row.plannedMinutes !== row.plannedStarts*90) throw new Error('rotation_reservation');
+                }
+                if (JSON.stringify(s)!==original) throw new Error('rotation_mutated_source');
+                const selectedId = plan.plans.at(-1).fixture.id;
+                if (rotationReview(s,{fixtureId:selectedId}).plans[0].fixture.id!==selectedId) throw new Error('rotation_selection');
+                return {plans:plan.plans.length, selectedId};
+            }''', base)
+            result['realRotationPlans'] = rotation['plans']
+            page.locator('nav [data-view="matchday"]').click()
+            page.locator('#fixtureSelect').select_option(rotation['selectedId'])
+            page.locator('#rotationModeSelect').select_option('protect')
+            if page.locator('#fixtureSelect').input_value() != rotation['selectedId'] or page.locator('#rotationModeSelect').input_value() != 'protect':
+                raise RuntimeError('rotation_controls_not_applied')
+            page.get_by_role('heading', name='향후 최대 5경기 로테이션 · 계획 시나리오', exact=True).wait_for()
+            result['realRotationSelectionChecked'] = True
             player = expected['players'][0]
             page.locator('nav [data-view="tactics"]').click()
             page.locator('#formationSelect').select_option('4-2-3-1')
@@ -173,6 +205,11 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             if page.locator('#formationSelect').input_value() != '4-2-3-1' or page.locator('#searchInput').input_value() != player['id'] or page.locator('nav [aria-current="page"]').get_attribute('data-view') != 'tactics' or page.locator('#selectedPlayer h2').first.inner_text() != player['name']:
                 raise RuntimeError('selection_lost_on_reimport')
             result['inPlaceReimportPreservesSelection'] = True
+            page.locator('nav [data-view="matchday"]').click()
+            if page.locator('#fixtureSelect').input_value() != rotation['selectedId'] or page.locator('#rotationModeSelect').input_value() != 'protect':
+                raise RuntimeError('rotation_state_lost_on_reimport')
+            result['rotationReimportPreservesSelection'] = True
+            page.locator('nav [data-view="tactics"]').click()
             # Corrupt only the private same file; the real parser must fail.
             rewrite_same_file(sample)
             wait_for(lambda: get('/api/parser').get('lastError'), 'invalid_import_not_reported')

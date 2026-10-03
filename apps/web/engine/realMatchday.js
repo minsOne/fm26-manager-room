@@ -23,7 +23,7 @@ export const benchCoveragePositions=["GK","CB","RB","LB","DM","CM","AM","RW","LW
  * Produces a globally optimized review lineup only from verified role-fit inputs.
  * It never claims final availability or a best XI when runtime-only medical/eligibility data is unknown.
  */
-export function matchdayReview(snapshot, formation="4-3-3") {
+export function matchdayReview(snapshot, formation="4-3-3", options={}) {
   const slots=(reviewFormations[formation]??reviewFormations["4-3-3"]).map(value=>({...value}));
   const unavailable=[];
   const bySlot=new Map();
@@ -47,11 +47,14 @@ export function matchdayReview(snapshot, formation="4-3-3") {
       if(!best || best.score===null) continue;
 
       const missing=criticalMissing(player);
+      const adjustment=options.adjustments?.get(player.id);
       rows.push({
         player,
         slot:current,
         role:best.role,
         score:best.score,
+        selectionScore:Math.max(1,Math.min(100,best.score+(adjustment?.delta??0))),
+        selectionEvidence:adjustment?.evidence??[],
         roleFit:best,
         missing,
         availabilityKnown:missing.length===0,
@@ -68,15 +71,21 @@ export function matchdayReview(snapshot, formation="4-3-3") {
 
   const lineup=slots.map(current=>assigned.get(current.id)??{
     slot:current,player:null,role:null,score:null,roleFit:null,
-    missing:["비교 가능한 역할 적합도 후보"],availabilityKnown:false,official:false
+    missing:["비교 가능한 역할 적합도 후보"],selectionScore:null,selectionEvidence:[],availabilityKnown:false,official:false
   });
   const missingSlots=lineup.filter(row=>!row.player).map(row=>row.slot);
   const selectedWithUnknowns=lineup.filter(row=>row.player && row.missing.length);
   const observedCritical=lineup.reduce((sum,row)=>
-    sum+(row.player ? 4-row.missing.length : 0),0);
-  const criticalDenominator=lineup.filter(row=>row.player).length*4;
+    sum+(row.player ? 5-row.missing.length : 0),0);
+  const criticalDenominator=lineup.filter(row=>row.player).length*5;
   const totalRoleFit=lineup.reduce((sum,row)=>sum+(row.score??0),0);
   const bench=benchReview(snapshot,lineup,9);
+  const decisionMissing=[
+    snapshot.buildVerified===true?null:"빌드 지원 확인",
+    options.stale?"최신 스냅샷":null,
+    ...(options.decisionMissing??[])
+  ].filter(Boolean);
+  bench.readyForFinalDecision=bench.readyForFinalDecision && decisionMissing.length===0;
 
   return {
     formation:reviewFormations[formation]?formation:"4-3-3",
@@ -88,13 +97,17 @@ export function matchdayReview(snapshot, formation="4-3-3") {
     selectedCount:lineup.filter(row=>row.player).length,
     uniquePlayers:new Set(lineup.filter(row=>row.player).map(row=>row.player.id)).size,
     totalRoleFit,
+    totalSelectionScore:lineup.reduce((sum,row)=>sum+(row.selectionScore??0),0),
     observedCritical,
     criticalDenominator,
-    readyForFinalDecision:missingSlots.length===0 && selectedWithUnknowns.length===0,
+    decisionMissing,
+    readyForFinalDecision:missingSlots.length===0 && selectedWithUnknowns.length===0 && decisionMissing.length===0,
     assignmentMethod:"global-maximum-weight-v1",
-    methodology:"manager-room-matchday-review-v2",
+    methodology:"manager-room-matchday-review-v3",
     official:false,
-    note:"확인된 Role Fit의 전체 합을 최대화한 검토용 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
+    note:options.adjustments
+      ?"Role Fit 원점수를 유지하고, 선택한 모드의 검토 점수 합을 최대화한 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
+      :"확인된 Role Fit의 전체 합을 최대화한 검토용 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
   };
 }
 
@@ -168,7 +181,7 @@ export function benchReview(snapshot, lineup, max=9, minimumFit=65) {
     selectedCount:chosen.length,
     allCoverageKnown:missingCoverage.length===0,
     selectedWithUnknowns,
-    readyForFinalDecision:missingCoverage.length===0 && selectedWithUnknowns.length===0,
+    readyForFinalDecision:missingCoverage.length===0 && selectedWithUnknowns.length===0 && snapshot.buildVerified===true,
     minimumFit,
     methodology:"manager-room-bench-coverage-v1",
     official:false,
@@ -180,14 +193,14 @@ export function workloadReview(snapshot) {
   const rows=[];
   for(const player of snapshot.players??[]){
     const evidence=[];
-    if(player.minutes!==null){
+    if(Number.isFinite(player.minutes)){
       evidence.push(`최근 14일 수록 출전 ${player.minutes}분${player.historyComplete?"":" 이상"}`);
     }
-    if(player.condition!==null) evidence.push(`컨디션 ${player.condition}`);
+    if(Number.isFinite(player.condition)) evidence.push(`컨디션 ${player.condition}`);
 
     const flags=[];
-    if(player.minutes!==null && player.minutes>=300) flags.push("출전량 높음");
-    if(player.condition!==null && player.condition<=85) flags.push("컨디션 확인 필요");
+    if(Number.isFinite(player.minutes) && player.minutes>=300) flags.push("출전량 높음");
+    if(Number.isFinite(player.condition) && player.condition<=85) flags.push("컨디션 확인 필요");
     if(!flags.length) continue;
 
     rows.push({
@@ -196,10 +209,10 @@ export function workloadReview(snapshot) {
       evidence,
       action:"감독 확인",
       missing:[
-        player.fatigue===null?"피로":null,
-        player.injuryRisk===null?"부상 위험":null,
-        player.availability?.injuryFree===null?"현재 부상 여부":null,
-        player.availability?.eligible===null?"출전 자격·징계·등록":null
+        !Number.isFinite(player.fatigue)?"피로":null,
+        !Number.isFinite(player.injuryRisk)?"부상 위험":null,
+        typeof player.availability?.injuryFree!=="boolean"?"현재 부상 여부":null,
+        typeof player.availability?.eligible!=="boolean"?"출전 자격·징계·등록":null
       ].filter(Boolean),
       official:false
     });
@@ -209,10 +222,11 @@ export function workloadReview(snapshot) {
 
 function criticalMissing(player){
   return [
-    player.availability?.injuryFree===null ? "현재 부상 여부" : null,
-    player.availability?.eligible===null ? "출전 자격·징계·등록" : null,
-    player.condition===null ? "컨디션" : null,
-    player.fatigue===null ? "피로" : null
+    typeof player.availability?.injuryFree!=="boolean" ? "현재 부상 여부" : null,
+    typeof player.availability?.eligible!=="boolean" ? "출전 자격·징계·등록" : null,
+    !Number.isFinite(player.condition) ? "컨디션" : null,
+    !Number.isFinite(player.fatigue) ? "피로" : null,
+    !Number.isFinite(player.injuryRisk) ? "부상 위험" : null
   ].filter(Boolean);
 }
 

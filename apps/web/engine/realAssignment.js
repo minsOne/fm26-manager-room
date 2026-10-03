@@ -29,10 +29,10 @@ export function maximumWeightAssignment(rowsBySlot) {
     for (const row of rowsBySlot.get(slotId)??[]) {
       const column=playerIndex.get(row.player.id);
       if (column===undefined) continue;
-      // Role Fit dominates every tie-breaker. CA is only secondary.
+      // An explicit review utility may include workload policy. Role Fit stays unchanged.
       const ca=Number.isFinite(row.player.ca)?Math.max(0,Math.min(200,row.player.ca)):0;
       const stableTie=Math.max(0,999-column);
-      const utility=row.score*1_000_000+ca*1_000+stableTie;
+      const utility=(row.selectionScore??row.score)*1_000_000+ca*1_000+stableTie;
       cost[rowIndex][column]=-utility;
       rowLookup[rowIndex].set(column,row);
     }

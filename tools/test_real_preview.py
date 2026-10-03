@@ -66,11 +66,26 @@ def main():
         print("PASS refresh retains tab, player, search and formation")
         page.locator('nav [data-view="matchday"]').click()
         page.locator("#fixtureSelect").select_option("m2")
+        page.locator("#rotationModeSelect").select_option("protect")
+        assert page.locator("#rotationModeSelect").input_value()=="protect"
+        plan_panel=page.locator("section.panel").filter(has=page.get_by_role("heading",name="향후 최대 5경기 로테이션 · 계획 시나리오",exact=True))
+        assert "Later FC" in plan_panel.inner_text() and "Next FC" not in plan_panel.inner_text()
+        print("PASS selected fixture immediately anchors the rendered rotation plan")
         state["snapshot"]["players"][0]["ca"]=128
         page.locator("#refreshButton").click()
         page.wait_for_function("document.querySelector('#fixtureSelect')?.value === 'm2' && !document.querySelector('#refreshButton').disabled")
         assert page.locator("#fixtureSelect").input_value()=="m2"
-        print("PASS refresh retains selected fixture")
+        assert page.locator("#rotationModeSelect").input_value()=="protect"
+        print("PASS refresh retains selected fixture and rotation mode")
+        state["snapshot"]["fixtures"]=state["snapshot"]["fixtures"][:1]
+        page.locator("#refreshButton").click()
+        page.wait_for_function("document.querySelector('#content').textContent.includes('선택한 경기가 최신 스냅샷')")
+        assert page.locator("#fixtureSelect").input_value()==""
+        assert page.get_by_role("heading",name="향후 최대 5경기 로테이션 · 계획 시나리오",exact=True).count()==0
+        state["snapshot"]["fixtures"]=copy.deepcopy(payload["fixtures"])
+        page.locator("#refreshButton").click()
+        page.wait_for_function("document.querySelector('#fixtureSelect')?.value === 'm2' && !document.querySelector('#refreshButton').disabled")
+        print("PASS missing selected fixture defers instead of silently switching")
         state["fail"]=True; page.locator("#refreshButton").click()
         page.get_by_text("이전 정상 데이터 유지",exact=True).wait_for()
         assert page.locator("#fixtureSelect").input_value()=="m2"
@@ -84,6 +99,7 @@ def main():
         page.locator("#refreshButton").click();page.get_by_text("다른 세이브 전환 보류",exact=True).wait_for()
         page.locator("[data-accept-career]").click()
         assert "Other career.fm" in page.locator("#syncStatus").inner_text()
+        assert page.locator("#rotationModeSelect").input_value()=="balanced"
         print("PASS new career needs explicit acceptance")
         state["snapshot"]=copy.deepcopy(state["snapshot"])
         state["snapshot"]["players"][0]["name"]='<img src=x onerror="window.PWNED=true">'

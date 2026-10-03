@@ -2,7 +2,7 @@ import { SnapshotSession, initialBridge, validateBridge } from "./engine/snapsho
 import { rooms, esc, statusHTML, renderRoom, playerDetail } from "./previewView.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
-const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",bridge};
+const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",bridge};
 let current = {snapshot:null,status:"empty",revision:0};
 let session, timer, generation=0, renderedKey="";
 const menu = document.getElementById("roomNavigation");
@@ -45,21 +45,22 @@ document.addEventListener("click",event=>{
   if(button.hasAttribute("data-close-player")) {ui.selectedId=null;render();}
   if(button.hasAttribute("data-refresh"))void session.refresh();
   if(button.hasAttribute("data-accept-career")) {
-    ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.query="";
+    ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
     document.getElementById("searchInput").value="";session.acceptPending();render();
   }
 });
 document.getElementById("searchInput").addEventListener("input",e=>{ui.query=e.target.value;render();});
 document.addEventListener("change",e=>{
-  if(e.target.id==="fixtureSelect")ui.fixtureId=e.target.value;
-  if(e.target.id==="formationSelect")ui.formation=e.target.value;
+  if(e.target.id==="fixtureSelect") {ui.fixtureId=e.target.value;render();}
+  if(e.target.id==="formationSelect") {ui.formation=e.target.value;render();}
+  if(e.target.id==="rotationModeSelect") {ui.rotationMode=e.target.value;render();}
 });
 document.addEventListener("submit",e=>{
   if(e.target.id!=="bridgeForm")return;e.preventDefault();
   try {
     ui.bridge=validateBridge(new FormData(e.target).get("bridge"));
     try {localStorage.setItem("managerRoom.bridge",ui.bridge);} catch {}
-    ui.selectedId=null;ui.fixtureId=null;ui.query="";ui.formation="4-3-3";
+    ui.selectedId=null;ui.fixtureId=null;ui.query="";ui.formation="4-3-3";ui.rotationMode="balanced";
     document.getElementById("searchInput").value="";ui.view="manager";startSession();
   } catch(error) {document.getElementById("syncStatus").textContent=error.message;}
 });
