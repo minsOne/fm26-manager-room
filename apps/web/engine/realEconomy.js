@@ -37,13 +37,13 @@ export function economyReview(snapshot) {
 
 export function saudiEconomyReview(snapshot) {
   const groups=economyReview(snapshot);
-  const group=groups.find(row=>row.nationId===133 && row.nationName==="Saudi Arabia");
+  const group=groups.find(row=>row.nationName==="Saudi Arabia");
   if(!group) {
     return {
       available:false,
       status:"자료 미확인",
       action:"Saudi Arabia 재정 그룹 확인 필요",
-      missing:["검증된 Saudi Arabia nation group"],
+      missing:["클럽 database Unique ID 앵커로 확인된 Saudi Arabia nation group"],
       official:false
     };
   }
