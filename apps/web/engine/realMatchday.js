@@ -1,4 +1,5 @@
 import { bestVerifiedRoles } from "./realRoleFit.js";
+import { maximumWeightAssignment } from "./realAssignment.js";
 
 export const reviewFormations = {
   "4-3-3":[
@@ -16,8 +17,10 @@ export const reviewFormations = {
   ]
 };
 
+export const benchCoveragePositions=["GK","CB","RB","LB","DM","CM","AM","RW","LW","ST"];
+
 /**
- * Produces a review lineup only from verified role-fit inputs.
+ * Produces a globally optimized review lineup only from verified role-fit inputs.
  * It never claims final availability or a best XI when runtime-only medical/eligibility data is unknown.
  */
 export function matchdayReview(snapshot, formation="4-3-3") {
@@ -55,25 +58,13 @@ export function matchdayReview(snapshot, formation="4-3-3") {
         official:false
       });
     }
-    rows.sort((a,b)=>b.score-a.score || (b.player.ca??-1)-(a.player.ca??-1) || a.player.name.localeCompare(b.player.name));
+    rows.sort((a,b)=>b.score-a.score || (b.player.ca??-1)-(a.player.ca??-1)
+      || String(a.player.id).localeCompare(String(b.player.id),undefined,{numeric:true}));
     bySlot.set(current.id,rows);
   }
 
-  // Fill the positions with fewer viable candidates first to reduce greedy assignment collisions.
-  const order=[...slots].sort((a,b)=>
-    (bySlot.get(a.id)?.length??0)-(bySlot.get(b.id)?.length??0)
-    || a.id.localeCompare(b.id)
-  );
-  const used=new Set();
-  const assigned=new Map();
-
-  for(const current of order){
-    const candidate=(bySlot.get(current.id)??[]).find(row=>!used.has(row.player.id));
-    if(candidate){
-      used.add(candidate.player.id);
-      assigned.set(current.id,candidate);
-    }
-  }
+  const optimized=maximumWeightAssignment(bySlot);
+  const assigned=new Map(optimized.map(({slotId,row})=>[slotId,row]).filter(([,row])=>row));
 
   const lineup=slots.map(current=>assigned.get(current.id)??{
     slot:current,player:null,role:null,score:null,roleFit:null,
@@ -84,21 +75,104 @@ export function matchdayReview(snapshot, formation="4-3-3") {
   const observedCritical=lineup.reduce((sum,row)=>
     sum+(row.player ? 4-row.missing.length : 0),0);
   const criticalDenominator=lineup.filter(row=>row.player).length*4;
+  const totalRoleFit=lineup.reduce((sum,row)=>sum+(row.score??0),0);
+  const bench=benchReview(snapshot,lineup,9);
 
   return {
     formation:reviewFormations[formation]?formation:"4-3-3",
     lineup,
+    bench,
     unavailable,
     missingSlots,
     selectedWithUnknowns,
     selectedCount:lineup.filter(row=>row.player).length,
     uniquePlayers:new Set(lineup.filter(row=>row.player).map(row=>row.player.id)).size,
+    totalRoleFit,
     observedCritical,
     criticalDenominator,
     readyForFinalDecision:missingSlots.length===0 && selectedWithUnknowns.length===0,
-    methodology:"manager-room-matchday-review-v1",
+    assignmentMethod:"global-maximum-weight-v1",
+    methodology:"manager-room-matchday-review-v2",
     official:false,
-    note:"역할 적합도 기준 검토용 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
+    note:"확인된 Role Fit의 전체 합을 최대화한 검토용 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
+  };
+}
+
+/**
+ * Builds a review bench from players outside the XI.
+ * Positional coverage is based only on verified role-fit scores >= minimumFit.
+ */
+export function benchReview(snapshot, lineup, max=9, minimumFit=65) {
+  const selectedIds=new Set((lineup??[]).filter(row=>row.player).map(row=>row.player.id));
+  const candidates=[];
+
+  for(const player of snapshot.players??[]){
+    if(selectedIds.has(player.id)) continue;
+    if(player.availability?.injuryFree===false || player.availability?.eligible===false) continue;
+
+    const coverage=[];
+    for(const position of benchCoveragePositions){
+      const best=bestVerifiedRoles(player,position,1)[0];
+      if(best?.score!==null && best?.score>=minimumFit){
+        coverage.push({position,score:best.score,role:best.role});
+      }
+    }
+    if(!coverage.length) continue;
+    coverage.sort((a,b)=>b.score-a.score || a.position.localeCompare(b.position));
+
+    candidates.push({
+      player,
+      coverage,
+      bestScore:coverage[0].score,
+      missing:criticalMissing(player),
+      official:false
+    });
+  }
+
+  const chosen=[];
+  const used=new Set();
+  const uncovered=new Set(benchCoveragePositions);
+
+  while(chosen.length<max){
+    let best=null;
+    for(const candidate of candidates){
+      if(used.has(candidate.player.id)) continue;
+      const newlyCovered=candidate.coverage.filter(row=>uncovered.has(row.position));
+      const hasGK=newlyCovered.some(row=>row.position==="GK");
+      const utility=newlyCovered.length*10_000
+        +(uncovered.has("GK")&&hasGK?50_000:0)
+        +candidate.bestScore*100
+        +Math.min(candidate.coverage.length,9)*10
+        +(candidate.player.ca??0);
+      if(!best || utility>best.utility
+        || (utility===best.utility
+          && String(candidate.player.id).localeCompare(String(best.candidate.player.id),undefined,{numeric:true})<0)){
+        best={candidate,newlyCovered,utility};
+      }
+    }
+    if(!best) break;
+
+    used.add(best.candidate.player.id);
+    chosen.push(best.candidate);
+    for(const row of best.candidate.coverage) uncovered.delete(row.position);
+  }
+
+  const coveredPositions=benchCoveragePositions.filter(position=>!uncovered.has(position));
+  const missingCoverage=benchCoveragePositions.filter(position=>uncovered.has(position));
+  const selectedWithUnknowns=chosen.filter(row=>row.missing.length);
+
+  return {
+    players:chosen,
+    coveredPositions,
+    missingCoverage,
+    selectedCount:chosen.length,
+    allCoverageKnown:missingCoverage.length===0,
+    selectedWithUnknowns,
+    readyForFinalDecision:missingCoverage.length===0 && selectedWithUnknowns.length===0,
+    minimumFit,
+    methodology:"manager-room-bench-coverage-v1",
+    official:false,
+    note:"선발과 중복되지 않는 후보 중 검증된 Role Fit으로 포지션 커버리지를 최대화합니다. 실제 벤치 등록 규정·부상·징계·피로 확인 전에는 확정 명단이 아닙니다."
   };
 }
 
