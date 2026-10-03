@@ -17,8 +17,9 @@
 Current read-only increment: [schedule-aware rotation review](schedule-aware-rotation.md)
 connects selected real fixtures, four review modes, unique per-match assignments
 and five-fixture planned workload. Fixture-specific starter locks/rest and explicit
-selection conflicts are implemented. Competition eligibility, minute limits,
-substitutions and live medical evidence remain required before complete Matchday readiness.
+selection conflicts, manager minute caps and single-slot substitution plans are implemented.
+Competition eligibility/substitution rules, dated workload history and live medical
+evidence remain required before complete Matchday readiness.
 
 ## Phase 2 — Development & market
 - Training advisor

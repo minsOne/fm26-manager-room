@@ -177,7 +177,12 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                 if (rotationReview(s,{fixtureId:selectedId}).plans[0].fixture.id!==selectedId) throw new Error('rotation_selection');
                 const {matchdayReview} = await import('./engine/realMatchday.js');
                 const baseReview = matchdayReview(s,'4-2-3-1');
-                const locked = baseReview.lineup.find(r=>r.player);
+                const {bestVerifiedRoles} = await import('./engine/realRoleFit.js');
+                const startingIds = new Set(baseReview.lineup.filter(r=>r.player).map(r=>r.player.id));
+                const replacementFor = row => s.players.find(p=>!startingIds.has(p.id)
+                    && p.availability?.injuryFree!==false && p.availability?.eligible!==false
+                    && bestVerifiedRoles(p,row.slot.position,1)[0]?.score!=null);
+                const locked = baseReview.lineup.find(r=>r.player && replacementFor(r));
                 if (!locked) throw new Error('no_real_lock_candidate');
                 const directives = new Map([[selectedId,{lockedStarters:{[locked.slot.id]:locked.player.id}}]]);
                 const constrained = rotationReview(s,{fixtureId:selectedId,formation:'4-2-3-1',constraintsByFixture:directives});
@@ -186,8 +191,17 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                 const conflict = rotationReview(s,{fixtureId:selectedId,formation:'4-2-3-1',constraintsByFixture:directives});
                 if (conflict.status!=='conflict' || conflict.plans.length!==1 || conflict.plans[0].review.selectedCount!==0) throw new Error('real_conflict_not_gated');
                 if (conflict.players.some(r=>r.plannedMinutes!==0)) throw new Error('real_conflict_reserved_minutes');
+                const replacement = replacementFor(locked);
+                directives.set(selectedId,{lockedStarters:{[locked.slot.id]:locked.player.id},minuteCaps:{[locked.player.id]:60},substitutions:{[locked.slot.id]:{minute:60,playerId:replacement.id}}});
+                const timed = rotationReview(s,{fixtureId:selectedId,formation:'4-2-3-1',constraintsByFixture:directives});
+                const timedReview = timed.plans[0].review;
+                const change = timedReview.minutePlan.changes.find(c=>c.slot.id===locked.slot.id);
+                if(timed.status!=='review' || !change || change.minute!==60 || change.incoming.id!==replacement.id) throw new Error('real_minute_plan');
+                if(timed.players.find(p=>p.player.id===locked.player.id).reservations[0].minutes!==60 || timed.players.find(p=>p.player.id===replacement.id).reservations[0].minutes!==30) throw new Error('real_minute_reservations');
+                if(!timedReview.bench.players.some(p=>p.player.id===replacement.id && p.plannedSubstitute)) throw new Error('real_sub_missing_bench');
+                if(timedReview.readyForFinalDecision || change.incoming.fatigue!==s.players.find(p=>p.id===replacement.id).fatigue) throw new Error('real_minutes_promoted_unknown');
                 if (JSON.stringify(s)!==original) throw new Error('directives_mutated_source');
-                return {plans:plan.plans.length, selectedId,lockSlot:locked.slot.id,lockPlayerId:locked.player.id};
+                return {plans:plan.plans.length, selectedId,lockSlot:locked.slot.id,lockPlayerId:locked.player.id,subPlayerId:replacement.id};
             }''', base)
             result['realRotationPlans'] = rotation['plans']
             page.locator('nav [data-view="matchday"]').click()
@@ -213,6 +227,18 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             if page.get_by_role('heading', name='선택 충돌 · 배치 보류', exact=True).count():
                 raise RuntimeError('real_conflict_not_resolved')
             result['realManagerConstraintsChecked'] = True
+            page.locator('details[data-minute-controls] summary').click()
+            cap=page.locator(f'input[data-minute-cap-player="{rotation["lockPlayerId"]}"]')
+            cap.fill('60');cap.dispatch_event('change')
+            page.locator(f'#sub-player-{rotation["lockSlot"]}').select_option(rotation['subPlayerId'])
+            minute=page.locator(f'#sub-minute-{rotation["lockSlot"]}')
+            minute.fill('60');minute.dispatch_event('change')
+            if page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).count() or page.get_by_role('heading',name='교체 계획 보류',exact=True).count():
+                raise RuntimeError('real_minute_ui_failed')
+            minute.fill('70');minute.dispatch_event('change')
+            page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).wait_for()
+            minute.fill('60');minute.dispatch_event('change')
+            result['realMinutePlansChecked'] = True
             page.locator('nav [data-view="tactics"]').click()
             good_bytes = destination.read_bytes()
             old_success = get('/api/parser')['lastSuccessAt']
@@ -234,6 +260,9 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             if page.locator(f'#lock-{rotation["lockSlot"]}').input_value() != rotation['lockPlayerId']:
                 raise RuntimeError('real_lock_lost_on_reimport')
             result['managerConstraintsReimportPreserved'] = True
+            if page.locator(f'input[data-minute-cap-player="{rotation["lockPlayerId"]}"]').input_value()!='60' or page.locator(f'#sub-minute-{rotation["lockSlot"]}').input_value()!='60' or page.locator(f'#sub-player-{rotation["lockSlot"]}').input_value()!=rotation['subPlayerId']:
+                raise RuntimeError('real_minutes_lost_on_reimport')
+            result['minutePlansReimportPreserved'] = True
             page.locator('nav [data-view="tactics"]').click()
             # Corrupt only the private same file; the real parser must fail.
             rewrite_same_file(sample)

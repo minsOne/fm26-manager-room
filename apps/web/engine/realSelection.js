@@ -57,7 +57,7 @@ export function selectionConstraints(snapshot, slots, candidates, input={}){
 /** Isolated per-fixture browser preferences; never attached to native snapshots. */
 export function editFixtureSelection(byFixture,fixtureId,edit){
   const previous=byFixture.get(fixtureId)??{lockedStarters:{},restIds:[]};
-  const next={lockedStarters:{...previous.lockedStarters},restIds:[...previous.restIds]};
+  const next={...previous,lockedStarters:{...previous.lockedStarters},restIds:[...previous.restIds]};
   if(edit.type==="clear") {byFixture.delete(fixtureId);return;}
   if(edit.type==="lock"){
     if(edit.playerId) Object.defineProperty(next.lockedStarters,edit.slotId,{value:edit.playerId,enumerable:true,configurable:true,writable:true});
@@ -67,6 +67,17 @@ export function editFixtureSelection(byFixture,fixtureId,edit){
     const ids=new Set(next.restIds);
     if(edit.rest) ids.add(edit.playerId);else ids.delete(edit.playerId);
     next.restIds=[...ids];
+  }
+  if(edit.type==="cap"){
+    next.minuteCaps={...previous.minuteCaps};
+    if(edit.minutes===null) delete next.minuteCaps[edit.playerId];
+    else Object.defineProperty(next.minuteCaps,edit.playerId,{value:edit.minutes,enumerable:true,configurable:true,writable:true});
+  }
+  if(edit.type==="sub"){
+    next.substitutions={...previous.substitutions};
+    const directive={...previous.substitutions?.[edit.slotId],[edit.field]:edit.value};
+    if(directive.minute==null && !directive.playerId) delete next.substitutions[edit.slotId];
+    else Object.defineProperty(next.substitutions,edit.slotId,{value:directive,enumerable:true,configurable:true,writable:true});
   }
   byFixture.set(fixtureId,next);
 }

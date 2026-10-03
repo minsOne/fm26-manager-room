@@ -88,6 +88,36 @@ def main():
         page.locator('#fixtureSelect').select_option('m2')
         assert page.locator('#lock-rdm').input_value()=='7'
         print("PASS hard lock/rest conflict is explicit, resolvable and isolated per fixture")
+        # Add a same-role synthetic backup only for minute-plan interaction coverage.
+        backup=copy.deepcopy(state["snapshot"]["players"][0]); backup["id"]="8"; backup["name"]="Backup Player"
+        state["snapshot"]["players"].append(backup)
+        page.locator('#refreshButton').click()
+        page.wait_for_function("document.querySelector('#sub-player-rdm option[value=\"8\"]') && !document.querySelector('#refreshButton').disabled")
+        page.locator('details[data-minute-controls] summary').click()
+        page.locator('input[data-minute-cap-player="7"]').fill('60')
+        page.locator('input[data-minute-cap-player="7"]').dispatch_event('change')
+        page.locator('#sub-player-rdm').select_option('8')
+        page.locator('#sub-minute-rdm').fill('60')
+        page.locator('#sub-minute-rdm').dispatch_event('change')
+        assert page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).count()==0
+        assert page.get_by_role('heading',name='교체 계획 보류',exact=True).count()==0
+        minute_panel=page.locator('section.panel').filter(has=page.get_by_role('heading',name='출전시간·교체 계획 · 90분 시나리오',exact=True))
+        assert 'Backup Player' in minute_panel.inner_text() and '30' in minute_panel.inner_text()
+        page.locator('#sub-minute-rdm').fill('70');page.locator('#sub-minute-rdm').dispatch_event('change')
+        page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).wait_for()
+        page.locator('#sub-minute-rdm').fill('60');page.locator('#sub-minute-rdm').dispatch_event('change')
+        page.locator('#fixtureSelect').select_option('m1')
+        assert page.locator('input[data-minute-cap-player="7"]').input_value()==''
+        page.locator('#fixtureSelect').select_option('m2')
+        assert page.locator('input[data-minute-cap-player="7"]').input_value()=='60'
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert page.locator('#sub-player-rdm').input_value()=='8'
+        assert page.locator('#sub-minute-rdm').input_value()=='60'
+        page.locator('input[data-minute-cap-player="7"]').fill('');page.locator('input[data-minute-cap-player="7"]').dispatch_event('change')
+        page.locator('#sub-player-rdm').select_option('')
+        page.locator('#sub-minute-rdm').fill('');page.locator('#sub-minute-rdm').dispatch_event('change')
+        state["snapshot"]["players"]=state["snapshot"]["players"][:1]
+        print("PASS minute cap/substitution split, cap conflict, fixture isolation and refresh retention")
         state["snapshot"]["players"][0]["ca"]=128
         page.locator("#refreshButton").click()
         page.wait_for_function("document.querySelector('#fixtureSelect')?.value === 'm2' && !document.querySelector('#refreshButton').disabled")
