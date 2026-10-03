@@ -6,14 +6,18 @@ final class LocalHTTPServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "fm26.manager-room.http")
     private let store: SnapshotStore
     private let companionState: CompanionState
+    private let historyStore: DevelopmentHistoryStore
     private let policy: LocalRequestPolicy
 
-    init(port: UInt16, store: SnapshotStore, companionState: CompanionState) throws {
+    init(port: UInt16, store: SnapshotStore, companionState: CompanionState,
+         historyStore: DevelopmentHistoryStore = .defaultStore()) throws {
         guard port > 0, let endpointPort = NWEndpoint.Port(rawValue: port) else { throw ServerError.invalidPort }
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: endpointPort)
         self.listener = try NWListener(using: parameters)
-        self.store = store; self.companionState = companionState
+        self.store = store
+        self.companionState = companionState
+        self.historyStore = historyStore
         self.policy = LocalRequestPolicy(port: port)
     }
     func start() {
@@ -77,6 +81,15 @@ final class LocalHTTPServer: @unchecked Sendable {
             send(body: (try? JSONEncoder().encode(FMProcessProbe.probe())) ?? Data("{}".utf8), request: request, on: connection)
         case "/api/snapshot":
             guard let data = try? store.read() else { reject("404 Not Found", request: request, on: connection); return }
+            send(body: data, request: request, on: connection)
+        case "/api/history":
+            guard
+                let selectionId = companionState.snapshot().selectionId,
+                let data = try? historyStore.read(selectionId: selectionId)
+            else {
+                reject("404 Not Found", request: request, on: connection)
+                return
+            }
             send(body: data, request: request, on: connection)
         default: reject("404 Not Found", request: request, on: connection)
         }
