@@ -20,7 +20,7 @@ python3 -m http.server 8080 --bind 127.0.0.1 --directory apps/web
 
 Open `http://127.0.0.1:8080/` on the same Mac. The default Companion output remains under Application Support/FM26ManagerRoom. `--snapshot-file /absolute/path/snapshot.json` selects an isolated store for testing; it does not create or touch the default store. Do not run tests against a personal snapshot store. All game access remains read-only.
 
-The current directory watcher selects the most recently changed `.fm` file in the watched directory. `--save` is the initial import, not a permanent file pin. Use a dedicated folder until backend career/file pinning is implemented. Browser acceptance protects against changed save-name/manager/club metadata but cannot disambiguate distinct careers with identical metadata.
+The current watcher follows an explicit `--save` or persisted `select-save`/`pin-save` choice and ignores neighboring careers. `--save-dir` explicitly opts into newest-file directory selection. Selection precedence is `--save` → `--save-dir` → persisted pin → default directory; managed `start` requires an explicit selection instead of silently falling back. The browser uses the persisted selection ID as its preferred career identity. Stop before changing a managed career. See [current installation commands](../README.md#macos-quick-start) and [real-Mac validation](macos-validation.md).
 
 ## Integration test
 
