@@ -36,7 +36,12 @@ jobs:
         env:
           FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
           FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/manager-room-shim
-        run: ./install.sh
+        run: |
+          # Upgrade a legacy installation whose CLI has no stop command.
+          mkdir -p "$FM26_MANAGER_ROOM_HOME/bin"
+          printf '#!/bin/sh\nexit 2\n' > "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
+          chmod 755 "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
+          ./install.sh
 
       - name: Verify installed binaries and diagnostics
         env:

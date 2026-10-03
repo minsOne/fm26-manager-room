@@ -49,7 +49,7 @@ if [[ -e "$SHIM_DIR/manager-room" && ! -L "$SHIM_DIR/manager-room" ]]; then
   echo "Refusing to replace an existing file: $SHIM_DIR/manager-room" >&2; exit 4
 fi
 if [[ -x "$BIN/manager-room" ]]; then
-  "$BIN/manager-room" stop
+  "$COMPANION_BUILD" stop
 fi
 mkdir -p "$BIN" "$SHIM_DIR"
 chmod 700 "$PREFIX" "$BIN"

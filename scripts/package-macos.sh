@@ -43,7 +43,7 @@ SHIM_DIR="${FM26_MANAGER_ROOM_SHIM_DIR:-$HOME/.local/bin}"
 if [[ -e "$SHIM_DIR/manager-room" && ! -L "$SHIM_DIR/manager-room" ]]; then
   echo "Refusing to replace existing shim" >&2; exit 4
 fi
-if [[ -x "$BIN/manager-room" ]]; then "$BIN/manager-room" stop; fi
+if [[ -x "$BIN/manager-room" ]]; then "$HERE/bin/manager-room" stop; fi
 mkdir -p "$BIN" "$SHIM_DIR"
 chmod 700 "$PREFIX" "$BIN"
 install -m 755 "$HERE/bin/fm26-manager-room-parser" "$BIN/fm26-manager-room-parser"
