@@ -1,6 +1,6 @@
 use crate::club::ClubIndex;
 use crate::contracts::CurrentContractCore;
-use crate::finance::FinanceLatest;
+use crate::finance::{FinanceLatest, NationFinanceSummary};
 use crate::fixture::FixtureRow;
 use crate::match_history::RecentMinutes;
 use crate::metadata::{GameDate, SummaryInfo};
@@ -42,6 +42,7 @@ pub struct QuickSnapshot {
     pub game_date: String,
     pub manager: QuickManager,
     pub club_finance: Option<QuickClubFinance>,
+    pub economy_groups: Vec<NationFinanceSummary>,
     pub fixtures: Vec<FixtureRow>,
     pub players: Vec<QuickPlayer>,
     pub coverage: QuickCoverage,
@@ -167,11 +168,12 @@ pub fn build(
         wage_payroll_weekly: row.wage_payroll_weekly,
         finance_rows: row.rows,
     });
+    let economy_groups = crate::finance::aggregate_by_nation(finances, clubs);
     QuickSnapshot {
         schema_version: 2, source: "rust-native", save_name, db_version,
         game_date: format_date(clock),
         manager: QuickManager { name: summary.manager_name.clone(), club: summary.club_name.clone(), club_uid: summary.club_uid },
-        club_finance, fixtures, players,
+        club_finance, economy_groups, fixtures, players,
         coverage: QuickCoverage {
             players: "native", attributes: "native", personality: "native",
             contracts: "native-chain-current", fixtures: "native-managed-upcoming",
