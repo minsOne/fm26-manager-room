@@ -52,6 +52,7 @@ jobs:
       - name: Verify package installation in isolated home
         env:
           FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/package-install
+          FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/package-shim
         run: |
           ZIP="$(find "$RUNNER_TEMP/dist" -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$ZIP"
@@ -60,7 +61,9 @@ jobs:
           ROOT="$(find "$RUNNER_TEMP/unpacked" -mindepth 1 -maxdepth 1 -type d -print -quit)"
           test -x "$ROOT/install.sh"
           "$ROOT/install.sh"
-          "$FM26_MANAGER_ROOM_HOME/bin/manager-room" doctor > "$RUNNER_TEMP/package-doctor.json"
+          test -L "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
+          test -x "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
+          "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room" doctor > "$RUNNER_TEMP/package-doctor.json"
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -70,6 +73,10 @@ jobs:
           PY
           codesign --verify "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
           codesign --verify "$FM26_MANAGER_ROOM_HOME/bin/fm26-manager-room-parser"
+          test -x "$ROOT/uninstall.sh"
+          "$ROOT/uninstall.sh"
+          test ! -e "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
+          test ! -e "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
 
       - name: Verify checksum
         run: |
