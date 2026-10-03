@@ -13,6 +13,8 @@ Verified inputs support player observations, role-fit comparison, squad depth,
 recruitment gap review, guarded Matchday assignment, positional bench coverage
 and schedule-aware rotation review. Matchday offers Best XI, Balanced,
 Development and Protect Key Players modes for up to five fixtures.
+Fixture-specific hard starter locks and rest directives constrain XI/bench selection.
+Conflicts require explicit resolution and defer subsequent rotation plans.
 
 Role Fit and workload-adjusted selection utility are separate. Planned starter
 reservations are explicitly hypothetical 90-minute blocks, not observed minutes,

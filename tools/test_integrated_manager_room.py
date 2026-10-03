@@ -175,7 +175,19 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                 if (JSON.stringify(s)!==original) throw new Error('rotation_mutated_source');
                 const selectedId = plan.plans.at(-1).fixture.id;
                 if (rotationReview(s,{fixtureId:selectedId}).plans[0].fixture.id!==selectedId) throw new Error('rotation_selection');
-                return {plans:plan.plans.length, selectedId};
+                const {matchdayReview} = await import('./engine/realMatchday.js');
+                const baseReview = matchdayReview(s,'4-2-3-1');
+                const locked = baseReview.lineup.find(r=>r.player);
+                if (!locked) throw new Error('no_real_lock_candidate');
+                const directives = new Map([[selectedId,{lockedStarters:{[locked.slot.id]:locked.player.id}}]]);
+                const constrained = rotationReview(s,{fixtureId:selectedId,formation:'4-2-3-1',constraintsByFixture:directives});
+                if (constrained.plans[0].review.lineup.find(r=>r.slot.id===locked.slot.id).player?.id!==locked.player.id) throw new Error('real_lock_ignored');
+                directives.set(selectedId,{lockedStarters:{[locked.slot.id]:locked.player.id},restIds:[locked.player.id]});
+                const conflict = rotationReview(s,{fixtureId:selectedId,formation:'4-2-3-1',constraintsByFixture:directives});
+                if (conflict.status!=='conflict' || conflict.plans.length!==1 || conflict.plans[0].review.selectedCount!==0) throw new Error('real_conflict_not_gated');
+                if (conflict.players.some(r=>r.plannedMinutes!==0)) throw new Error('real_conflict_reserved_minutes');
+                if (JSON.stringify(s)!==original) throw new Error('directives_mutated_source');
+                return {plans:plan.plans.length, selectedId,lockSlot:locked.slot.id,lockPlayerId:locked.player.id};
             }''', base)
             result['realRotationPlans'] = rotation['plans']
             page.locator('nav [data-view="matchday"]').click()
@@ -192,6 +204,16 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             page.locator('#searchInput').fill(player['id'])
             if page.locator('#selectedPlayer h2').first.inner_text() != player['name']:
                 raise RuntimeError('selected_player_name_mismatch')
+            page.locator('nav [data-view="matchday"]').click()
+            page.locator(f'#lock-{rotation["lockSlot"]}').select_option(rotation['lockPlayerId'])
+            page.locator('details[data-rest-controls] summary').click()
+            page.locator(f'input[data-rest-player="{rotation["lockPlayerId"]}"]').check()
+            page.get_by_role('heading', name='선택 충돌 · 배치 보류', exact=True).wait_for()
+            page.locator(f'input[data-rest-player="{rotation["lockPlayerId"]}"]').uncheck()
+            if page.get_by_role('heading', name='선택 충돌 · 배치 보류', exact=True).count():
+                raise RuntimeError('real_conflict_not_resolved')
+            result['realManagerConstraintsChecked'] = True
+            page.locator('nav [data-view="tactics"]').click()
             good_bytes = destination.read_bytes()
             old_success = get('/api/parser')['lastSuccessAt']
             # Real filesystem change: existing inode rewritten, not a mocked new snapshot.
@@ -209,6 +231,9 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             if page.locator('#fixtureSelect').input_value() != rotation['selectedId'] or page.locator('#rotationModeSelect').input_value() != 'protect':
                 raise RuntimeError('rotation_state_lost_on_reimport')
             result['rotationReimportPreservesSelection'] = True
+            if page.locator(f'#lock-{rotation["lockSlot"]}').input_value() != rotation['lockPlayerId']:
+                raise RuntimeError('real_lock_lost_on_reimport')
+            result['managerConstraintsReimportPreserved'] = True
             page.locator('nav [data-view="tactics"]').click()
             # Corrupt only the private same file; the real parser must fail.
             rewrite_same_file(sample)

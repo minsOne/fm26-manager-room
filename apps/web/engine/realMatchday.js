@@ -1,5 +1,6 @@
 import { bestVerifiedRoles } from "./realRoleFit.js";
 import { maximumWeightAssignment } from "./realAssignment.js";
+import { selectionConstraints } from "./realSelection.js";
 
 export const reviewFormations = {
   "4-3-3":[
@@ -66,12 +67,18 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
     bySlot.set(current.id,rows);
   }
 
-  const optimized=maximumWeightAssignment(bySlot);
-  const assigned=new Map(optimized.map(({slotId,row})=>[slotId,row]).filter(([,row])=>row));
+  const constraints=selectionConstraints(snapshot,slots,bySlot,options.constraints);
+  const fixedIds=new Set(constraints.lockedStarters.values());
+  const remaining=new Map([...bySlot].filter(([id])=>!constraints.lockedRows.has(id))
+    .map(([id,rows])=>[id,rows.filter(row=>!constraints.restIds.has(row.player.id) && !fixedIds.has(row.player.id))]));
+  const optimized=constraints.conflicts.length?[]:maximumWeightAssignment(remaining);
+  const assigned=constraints.conflicts.length?new Map():new Map([
+    ...constraints.lockedRows,...optimized.map(({slotId,row})=>[slotId,row]).filter(([,row])=>row)
+  ]);
 
   const lineup=slots.map(current=>assigned.get(current.id)??{
     slot:current,player:null,role:null,score:null,roleFit:null,
-    missing:["비교 가능한 역할 적합도 후보"],selectionScore:null,selectionEvidence:[],availabilityKnown:false,official:false
+    missing:[constraints.conflicts.length?"감독 지정 충돌 해결":"비교 가능한 역할 적합도 후보"],selectionScore:null,selectionEvidence:[],availabilityKnown:false,official:false
   });
   const missingSlots=lineup.filter(row=>!row.player).map(row=>row.slot);
   const selectedWithUnknowns=lineup.filter(row=>row.player && row.missing.length);
@@ -79,11 +86,12 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
     sum+(row.player ? 5-row.missing.length : 0),0);
   const criticalDenominator=lineup.filter(row=>row.player).length*5;
   const totalRoleFit=lineup.reduce((sum,row)=>sum+(row.score??0),0);
-  const bench=benchReview(snapshot,lineup,9);
+  const bench=benchReview(constraints.conflicts.length?{...snapshot,players:[]}:snapshot,lineup,9,65,constraints.restIds);
   const decisionMissing=[
     snapshot.buildVerified===true?null:"빌드 지원 확인",
     options.stale?"최신 스냅샷":null,
-    ...(options.decisionMissing??[])
+    ...(options.decisionMissing??[]),
+    constraints.conflicts.length?"감독 지정 충돌":null
   ].filter(Boolean);
   bench.readyForFinalDecision=bench.readyForFinalDecision && decisionMissing.length===0;
 
@@ -92,6 +100,10 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
     lineup,
     bench,
     unavailable,
+    resting:(snapshot.players??[]).filter(p=>constraints.restIds.has(p.id)),
+    selectionConflicts:constraints.conflicts,
+    status:constraints.conflicts.length?"conflict":"review",
+    constraints:{lockedStarters:Object.fromEntries(constraints.lockedStarters),restIds:[...constraints.restIds]},
     missingSlots,
     selectedWithUnknowns,
     selectedCount:lineup.filter(row=>row.player).length,
@@ -103,11 +115,11 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
     decisionMissing,
     readyForFinalDecision:missingSlots.length===0 && selectedWithUnknowns.length===0 && decisionMissing.length===0,
     assignmentMethod:"global-maximum-weight-v1",
-    methodology:"manager-room-matchday-review-v3",
+    methodology:"manager-room-matchday-review-v4",
     official:false,
     note:options.adjustments
-      ?"Role Fit 원점수를 유지하고, 선택한 모드의 검토 점수 합을 최대화한 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
-      :"확인된 Role Fit의 전체 합을 최대화한 검토용 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
+      ?"감독의 고정·휴식 조건에서 Role Fit 원점수를 유지하고, 선택한 모드의 검토 점수 합을 최대화한 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
+      :"감독의 고정·휴식 조건에서 확인된 Role Fit의 전체 합을 최대화한 검토용 배치입니다. 부상·징계·등록·컨디션·피로 확인 전에는 최종 선발이 아닙니다."
   };
 }
 
@@ -115,12 +127,12 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
  * Builds a review bench from players outside the XI.
  * Positional coverage is based only on verified role-fit scores >= minimumFit.
  */
-export function benchReview(snapshot, lineup, max=9, minimumFit=65) {
+export function benchReview(snapshot, lineup, max=9, minimumFit=65, restIds=new Set()) {
   const selectedIds=new Set((lineup??[]).filter(row=>row.player).map(row=>row.player.id));
   const candidates=[];
 
   for(const player of snapshot.players??[]){
-    if(selectedIds.has(player.id)) continue;
+    if(selectedIds.has(player.id) || restIds.has(player.id)) continue;
     if(player.availability?.injuryFree===false || player.availability?.eligible===false) continue;
 
     const coverage=[];

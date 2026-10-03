@@ -1,8 +1,9 @@
 import { SnapshotSession, initialBridge, validateBridge } from "./engine/snapshotSession.js";
 import { rooms, esc, statusHTML, renderRoom, playerDetail } from "./previewView.js";
+import { editFixtureSelection } from "./engine/realSelection.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
-const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",bridge};
+const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,bridge};
 let current = {snapshot:null,status:"empty",revision:0};
 let session, timer, generation=0, renderedKey="";
 const menu = document.getElementById("roomNavigation");
@@ -38,14 +39,24 @@ function startSession() {
   };
   void tick();
 }
+function editSelection(fixtureId,edit){
+  if(!current.snapshot?.fixtures.some(f=>f.id===fixtureId && f.date>=current.snapshot.gameDate)) return;
+  ui.fixtureId=fixtureId;
+  editFixtureSelection(ui.constraintsByFixture,fixtureId,edit);
+  render();
+}
 document.addEventListener("click",event=>{
   const button=event.target.closest("button"); if(!button)return;
   if(button.dataset.view && rooms[button.dataset.view]) {ui.view=button.dataset.view;render();}
   if(button.hasAttribute("data-player")) {ui.selectedId=button.dataset.player;render();}
   if(button.hasAttribute("data-close-player")) {ui.selectedId=null;render();}
   if(button.hasAttribute("data-refresh"))void session.refresh();
+  if(button.hasAttribute("data-clear-selection"))editSelection(button.dataset.fixtureId,{type:"clear"});
+  if(button.hasAttribute("data-unlock-slot"))editSelection(button.dataset.fixtureId,{type:"lock",slotId:button.dataset.unlockSlot,playerId:""});
   if(button.hasAttribute("data-accept-career")) {
     ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
+    ui.constraintsByFixture.clear();
+    ui.restPanelOpen=false;
     document.getElementById("searchInput").value="";session.acceptPending();render();
   }
 });
@@ -54,13 +65,20 @@ document.addEventListener("change",e=>{
   if(e.target.id==="fixtureSelect") {ui.fixtureId=e.target.value;render();}
   if(e.target.id==="formationSelect") {ui.formation=e.target.value;render();}
   if(e.target.id==="rotationModeSelect") {ui.rotationMode=e.target.value;render();}
+  if(e.target.hasAttribute("data-lock-slot"))editSelection(e.target.dataset.fixtureId,{type:"lock",slotId:e.target.dataset.lockSlot,playerId:e.target.value});
+  if(e.target.hasAttribute("data-rest-player"))editSelection(e.target.dataset.fixtureId,{type:"rest",playerId:e.target.dataset.restPlayer,rest:e.target.checked});
 });
+document.addEventListener("toggle",e=>{
+  if(e.target.isConnected && e.target.hasAttribute("data-rest-controls"))ui.restPanelOpen=e.target.open;
+},true);
 document.addEventListener("submit",e=>{
   if(e.target.id!=="bridgeForm")return;e.preventDefault();
   try {
     ui.bridge=validateBridge(new FormData(e.target).get("bridge"));
     try {localStorage.setItem("managerRoom.bridge",ui.bridge);} catch {}
     ui.selectedId=null;ui.fixtureId=null;ui.query="";ui.formation="4-3-3";ui.rotationMode="balanced";
+    ui.constraintsByFixture.clear();
+    ui.restPanelOpen=false;
     document.getElementById("searchInput").value="";ui.view="manager";startSession();
   } catch(error) {document.getElementById("syncStatus").textContent=error.message;}
 });
