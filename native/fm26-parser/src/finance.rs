@@ -128,6 +128,7 @@ pub struct NationClubFinance {
     pub transfer_budget_remaining: i32,
     pub wage_budget_weekly: u32,
     pub wage_payroll_weekly: u32,
+    pub reputation: Option<u16>,
     pub budget_capacity_proxy: u64,
 }
 
@@ -147,6 +148,9 @@ pub struct NationFinanceSummary {
     /// positive remaining transfer budget + annualized weekly wage budget.
     pub budget_capacity_proxy: u64,
     pub top4_capacity_share: u8,
+    pub reputation_coverage_clubs: usize,
+    pub average_reputation: Option<u16>,
+    pub sporting_power_proxy: Option<u8>,
     pub top_clubs: Vec<NationClubFinance>,
 }
 
@@ -163,6 +167,8 @@ pub fn aggregate_by_nation(
         transfer_remaining: i64,
         wage_budget: u64,
         wage_payroll: u64,
+        reputation_sum: u64,
+        reputation_count: usize,
     }
 
     let mut groups: BTreeMap<u32, Group> = BTreeMap::new();
@@ -177,6 +183,10 @@ pub fn aggregate_by_nation(
         group.transfer_remaining += row.transfer_budget_remaining as i64;
         group.wage_budget += row.wage_budget_weekly as u64;
         group.wage_payroll += row.wage_payroll_weekly as u64;
+        if let Some(reputation) = club.reputation {
+            group.reputation_sum += reputation as u64;
+            group.reputation_count += 1;
+        }
         group.clubs.push(NationClubFinance {
             club_uid: row.club_uid,
             club_name: row.club_name.clone(),
@@ -184,6 +194,7 @@ pub fn aggregate_by_nation(
             transfer_budget_remaining: row.transfer_budget_remaining,
             wage_budget_weekly: row.wage_budget_weekly,
             wage_payroll_weekly: row.wage_payroll_weekly,
+            reputation: club.reputation,
             budget_capacity_proxy: capacity,
         });
     }
@@ -211,6 +222,14 @@ pub fn aggregate_by_nation(
                 .min(100) as u8
         };
         let club_count = group.clubs.len();
+        let average_reputation = if group.reputation_count == 0 {
+            None
+        } else {
+            Some(((group.reputation_sum + (group.reputation_count as u64 / 2))
+                / group.reputation_count as u64).min(10_000) as u16)
+        };
+        let sporting_power_proxy = average_reputation
+            .map(|value| ((value as u32 + 50) / 100).min(100) as u8);
         let top_clubs = group.clubs.into_iter().take(5).collect::<Vec<_>>();
 
         result.push(NationFinanceSummary {
@@ -225,6 +244,9 @@ pub fn aggregate_by_nation(
             wage_payroll_weekly: group.wage_payroll,
             budget_capacity_proxy: total_capacity,
             top4_capacity_share: share,
+            reputation_coverage_clubs: group.reputation_count,
+            average_reputation,
+            sporting_power_proxy,
             top_clubs,
         });
     }
