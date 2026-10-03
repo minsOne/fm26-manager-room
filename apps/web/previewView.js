@@ -3,6 +3,7 @@ import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 import { verifiedSquadDepth } from "./engine/realDepth.js";
 import { recruitmentReview } from "./engine/realRecruitment.js";
 import { matchdayReview, workloadReview } from "./engine/realMatchday.js";
+import { rotationWindowReview } from "./engine/realRotation.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -93,6 +94,27 @@ export function renderRoom(view, state, ui) {
           esc(row.missing.join(" · ")||"핵심 항목 확인됨")
         ]),"검증 가능한 벤치 후보가 없습니다.")
         +note(`후보 ${review.bench.selectedCount}명 · 커버 ${review.bench.coveredPositions.join(" / ")||"없음"} · 미커버 ${review.bench.missingCoverage.join(" / ")||"없음"}. ${review.bench.readyForFinalDecision?"최종 확인 가능":"벤치 확정은 보류"}`));
+      const rotation=rotationWindowReview(s,ui.formation,4);
+      body+=card("향후 4경기 로테이션 · 검토 시나리오",
+        rotation.available
+          ? note(rotation.note)
+            +table(["경기","상대","배치","이전 경기 대비 변경","Role Fit 합","미확인 선수"],rotation.matches.map(match=>[
+              esc(match.fixture.date),
+              esc(match.fixture.opponent),
+              `${match.selectedCount}/11`,
+              numeric(match.changesFromPrevious),
+              numeric(match.totalRoleFit),
+              numeric(match.criticalUnknownPlayers)
+            ]))
+            +table(["선수","계획 선발","최근 14일 관측분","컨디션","추가 확인"],rotation.exposure.slice(0,15).map(row=>[
+              playerLink(row.player),
+              numeric(row.plannedStarts),
+              numeric(row.recentMinutes),
+              numeric(row.condition),
+              esc(row.missing.join(" · ")||"핵심 항목 확인됨")
+            ]),"계획 선발 후보가 없습니다.")
+            +note(`추가 검증 필요: ${rotation.missingEvidence.join(" · ")||"없음"}. ${rotation.readyForFinalDecision?"최종 확인 가능":"로테이션 확정은 보류"}`)
+          : note(rotation.reason));
       body+=card("부하 검토",workload.length
         ? table(["선수","신호","확인된 근거","미확인","행동"],workload.map(row=>[
             playerLink(row.player),esc(row.flags.join(" · ")),esc(row.evidence.join(" · ")),
