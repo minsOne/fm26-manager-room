@@ -1,6 +1,7 @@
 import { medicalReview, playingTimeReview, growthReview, number } from "./engine/realSnapshot.js";
 import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 import { verifiedSquadDepth } from "./engine/realDepth.js";
+import { recruitmentReview } from "./engine/realRecruitment.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -100,8 +101,19 @@ export function renderRoom(view, state, ui) {
       +table(["선수","컨디션","피로","부상 위험","관측 근거","기용 판단","미확인"],players.map(p=>{
         const r=medicalReview(p,s,stale); return [playerLink(p),numeric(p.condition),numeric(p.fatigue),numeric(p.injuryRisk),`${r.observedFields} / ${r.denominator}`,esc(r.action),esc(r.missing.join(" · "))];
       }))) +card("출전시간",table(["선수","최근 5개 통계 기록의 출전분","약속","불만 위험"],players.map(p=>[playerLink(p),numeric(p.appearances),show(p.agreed),esc(playingTimeReview(p).action)]))) ;break;
-    case "recruitment": body=card("수록 영입 후보",note(`검색 범위: ${s.candidateCoverage}. 이 목록을 전 세계 전체 선수로 간주하지 않습니다.`)
-      +table(fitHeaders,s.candidates.filter(p=>!ui.query||p.name.toLocaleLowerCase().includes(ui.query.toLocaleLowerCase())).map(playerRow),"영입 후보 인덱스가 수록되지 않았습니다. 후보가 없다는 뜻은 아닙니다."));break;
+    case "recruitment": {
+      const reviews=recruitmentReview(s);
+      body=card("포지션별 보강 검토",note("영입 필요성을 확정하는 기능이 아닙니다. 확인된 Role Fit 기반으로 현재 스쿼드의 주전·백업 적합도만 검토합니다.")
+        +table(["포지션","상태","주전 후보","2순위 후보","검토 행동","근거"],reviews.map(r=>[
+          esc(r.position),esc(r.status),
+          r.starter?playerLink(r.starter.player):show(null),
+          r.backup?playerLink(r.backup.player):show(null),
+          esc(r.action),esc(r.reason)
+        ])));
+      body+=card("수록 영입 후보",note(`검색 범위: ${s.candidateCoverage}. 이 목록을 전 세계 전체 선수로 간주하지 않습니다.`)
+        +table(fitHeaders,s.candidates.filter(p=>!ui.query||p.name.toLocaleLowerCase().includes(ui.query.toLocaleLowerCase())).map(playerRow),"영입 후보 인덱스가 수록되지 않았습니다. 후보가 없다는 뜻은 아닙니다."));
+      break;
+    }
     case "transfers": body=card("임대·방출 검토",note(`임대 오퍼 ${s.loanOffers.length}건 수록. 오퍼 수만으로 조건 적합성을 판단하지 않습니다. 시장 관심·시설·출전 약속 미확인 상태에서는 처분 권고를 보류합니다.`)
       +table(["선수","시장 관심","출전 약속","계약 종료"],players.map(p=>[playerLink(p),numeric(p.interest),show(p.agreed),show(p.contractEnd)])));break;
     case "contracts": body=card("계약 관측값",note("주급의 0 값은 파서 기본값일 수 있습니다. 통화·금액 유효성 확인 전에는 유로 표시나 비용 비교를 하지 않습니다.")
