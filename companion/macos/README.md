@@ -86,6 +86,42 @@ A pinned selection watches only that file. A newer neighboring `.fm` file is ign
 
 If no save has been pinned and no explicit `--save` or `--save-dir` is supplied, the compatibility fallback still follows the newest save in the default folder. Pinning is recommended.
 
+## Install on macOS
+
+From the repository root:
+
+```bash
+bash scripts/install-macos.sh
+```
+
+The installer builds both native components, ad-hoc signs them, installs them under
+`~/Library/Application Support/FM26ManagerRoom/bin`, and creates a
+`~/.local/bin/manager-room` shim.
+
+Then choose one career save and validate it:
+
+```bash
+manager-room pin-save "/path/to/Career.fm"
+manager-room doctor --deep
+```
+
+Start Manager Room:
+
+```bash
+manager-room start
+```
+
+`start` runs the local read-only service, watches only the pinned save, and opens the
+Manager Room web UI in the default browser.
+
+Uninstall binaries while keeping the selected-save and snapshot state:
+
+```bash
+bash scripts/uninstall-macos.sh
+```
+
+Add `--purge-data` only when you also want to remove Manager Room's local state.
+
 ## Development run
 
 From the repository root:
