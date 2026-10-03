@@ -234,7 +234,7 @@ pub fn aggregate_by_nation(
 
         result.push(NationFinanceSummary {
             nation_id,
-            nation_name: crate::nation::verified_name(nation_id).map(str::to_owned),
+            nation_name: crate::nation::inferred_name(nation_id, clubs).map(str::to_owned),
             clubs_with_finance: club_count,
             finance_rows: group.finance_rows,
             total_balance: group.total_balance,
