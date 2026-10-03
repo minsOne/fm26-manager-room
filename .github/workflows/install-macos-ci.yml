@@ -1,0 +1,95 @@
+name: macOS Clean Install CI
+
+on:
+  pull_request:
+    paths:
+      - "scripts/install-macos.sh"
+      - "companion/macos/**"
+      - "native/fm26-parser/**"
+      - ".github/workflows/install-macos-ci.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "scripts/install-macos.sh"
+      - "companion/macos/**"
+      - "native/fm26-parser/**"
+      - ".github/workflows/install-macos-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install into isolated user home
+        run: bash scripts/install-macos.sh
+
+      - name: Verify installed binaries and signatures
+        run: |
+          BIN="$FM26_MANAGER_ROOM_HOME/bin"
+          test -x "$BIN/manager-room"
+          test -x "$BIN/fm26-manager-room-parser"
+          codesign --verify --strict "$BIN/manager-room"
+          codesign --verify --strict "$BIN/fm26-manager-room-parser"
+
+      - name: Verify basic doctor resolves sibling parser
+        run: |
+          BIN="$FM26_MANAGER_ROOM_HOME/bin"
+          "$BIN/manager-room" doctor > "$RUNNER_TEMP/doctor.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data=json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("doctor.json").read_text())
+          assert data["healthy"] is True, data
+          assert data["parserAvailable"] is True, data
+          assert data["deep"]["requested"] is False, data
+          assert data["parserPath"].endswith("/bin/fm26-manager-room-parser"), data
+          PY
+
+      - name: Verify save pin persistence
+        run: |
+          BIN="$FM26_MANAGER_ROOM_HOME/bin"
+          SAVE="$RUNNER_TEMP/Test Career.fm"
+          printf 'not a real FM save, only selection-fixture bytes' > "$SAVE"
+          "$BIN/manager-room" pin-save "$SAVE" > "$RUNNER_TEMP/pin.json"
+          "$BIN/manager-room" selection > "$RUNNER_TEMP/selection.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])
+          pin=json.loads((root/"pin.json").read_text())
+          selection=json.loads((root/"selection.json").read_text())
+          assert pin["id"] == selection["id"], (pin, selection)
+          assert pin["path"] == selection["path"], (pin, selection)
+          assert Path(selection["path"]).name == "Test Career.fm", selection
+          PY
+
+      - name: Verify deep doctor actually invokes installed parser
+        run: |
+          BIN="$FM26_MANAGER_ROOM_HOME/bin"
+          if "$BIN/manager-room" doctor --deep > "$RUNNER_TEMP/deep-doctor.json"; then
+            echo "Expected invalid synthetic .fm to fail deep validation" >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data=json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("deep-doctor.json").read_text())
+          assert data["healthy"] is False, data
+          assert data["deep"]["requested"] is True, data
+          assert data["deep"]["passed"] is False, data
+          assert data["deep"]["error"], data
+          PY
+
+      - name: Verify uninstalling selection state is explicit
+        run: |
+          BIN="$FM26_MANAGER_ROOM_HOME/bin"
+          "$BIN/manager-room" unpin-save
+          test "$("$BIN/manager-room" selection)" = "{}"
