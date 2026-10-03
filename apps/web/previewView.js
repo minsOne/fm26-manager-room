@@ -1,4 +1,5 @@
 import { medicalReview, playingTimeReview, growthReview, number } from "./engine/realSnapshot.js";
+import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -54,9 +55,26 @@ export function renderRoom(view, state, ui) {
       body+=card("선발 검토",note("현재 부상·징계·대회 등록 및 벤치 규정의 검증이 끝나지 않아 자동 Best XI는 보류합니다.")
         +table(["선수","컨디션","수록 14일 출전","기용 판단"],players.map(p=>[playerLink(p),numeric(p.condition),p.minutes===null?show(null):`${numeric(p.minutes)}분${p.historyComplete?"":" 이상 (수록분)"}`,esc(medicalReview(p,s,stale).action)])));
       body+=card("일정",fixtureTable); break;
-    case "tactics": body=card("분석용 포메이션",`<label for="formationSelect">검토 포메이션</label><select id="formationSelect">${["4-3-3","4-2-3-1","3-4-2-1"].map(f=>`<option ${ui.formation===f?"selected":""}>${f}</option>`).join("")}</select>`
-      +note("이 선택은 브라우저의 검토 설정이며 실제 게임 전술을 읽거나 수정한 결과가 아닙니다. 동일 세이브가 갱신돼도 선택을 유지합니다."))
-      +card("포지션 자료",table(fitHeaders,players.map(playerRow))); break;
+    case "tactics": {
+      const rows = players.map(p=>{
+        const position = p.primaryPosition ?? p.positions[0] ?? null;
+        const best = position ? bestVerifiedRoles(p, position, 1)[0] : null;
+        return [
+          playerLink(p),
+          show(position),
+          best ? esc(best.role) : show(null),
+          best ? numeric(best.score) : show(null),
+          best ? `${Math.round(best.coverage*100)}%` : show(null),
+          best ? esc(best.label) : "판단 보류"
+        ];
+      });
+      body=card("분석용 포메이션",`<label for="formationSelect">검토 포메이션</label><select id="formationSelect">${["4-3-3","4-2-3-1","3-4-2-1"].map(f=>`<option ${ui.formation===f?"selected":""}>${f}</option>`).join("")}</select>`
+        +note("이 선택은 브라우저의 검토 설정이며 실제 게임 전술을 읽거나 수정한 결과가 아닙니다. 동일 세이브가 갱신돼도 선택을 유지합니다."))
+        +card("Role Fit · Manager Room 휴리스틱",
+          note("FM/SI 공식 역할 점수가 아닙니다. 확인된 1~20 능력치와 포지션 숙련도만 사용하며, 역할 핵심 능력치 커버리지가 80% 미만이면 점수를 만들지 않습니다.")
+          +table(["선수","포지션","최적 역할","Role Fit","능력치 커버리지","해석"],rows));
+      break;
+    }
     case "training": body=card("집중훈련 검토",note("현재 집중훈련과 FM26 역할별 훈련 목록의 확인이 필요합니다. 여기서는 PA와 CA를 대조할 뿐 성장량·적합한 집중훈련을 단정하지 않습니다.")
       +table(["선수","CA","PA","PA − CA","현재 집중훈련"],players.map(p=>[playerLink(p),numeric(p.ca),numeric(p.pa),numeric(p.ca===null||p.pa===null?null:p.pa-p.ca),show(null)]))); break;
     case "development": body=card("성장 관측",table(["선수","나이","CA 변화","근거"],players.map(p=>{
@@ -86,5 +104,21 @@ export function playerDetail(player, s) {
   return `<section class="panel" id="selectedPlayer"><div class="panel-title"><h2>${esc(player.name)}</h2><button data-close-player>닫기</button></div><p>UID ${esc(player.id)} · 게임 ${esc(s.gameDate)} · PA ${show(player.pa)}</p>`
     + note("파서가 제공한 관측값입니다. 미확인 값은 0으로 채우지 않았습니다. 세이브 빌드별 게임 화면 대조는 별도 검증입니다.")
     + `<div class="summary-grid">${card("일반 능력치",table(["항목","관측값"],Object.entries(player.attributes).map(([k,v])=>[esc(k),numeric(v)])))}
-      ${card("히든·성격",table(["항목","관측값"],Object.entries(player.hidden).map(([k,v])=>[esc(k),numeric(v)])))}</div></section>`;
+      ${card("히든·성격",table(["항목","관측값"],Object.entries(player.hidden).map(([k,v])=>[esc(k),numeric(v)])))}</div>`
+    + roleFitDetail(player)
+    + `</section>`;
+}
+
+
+function roleFitDetail(player) {
+  const position = player.primaryPosition ?? player.positions?.[0] ?? null;
+  if (!position) return card("Role Fit", note("확인된 주 포지션이 없어 역할 적합도를 계산하지 않습니다."));
+  const roles = bestVerifiedRoles(player, position, 4);
+  if (!roles.length) return card("Role Fit", note("역할 핵심 능력치 또는 포지션 숙련도 자료가 부족합니다."));
+  return card("Role Fit · Manager Room 휴리스틱",
+    note("FM/SI 공식 수치가 아닙니다. 확인된 능력치와 포지션 숙련도만 사용하는 비교용 휴리스틱입니다.")
+    + table(["역할","점수","능력치 점수","포지션","커버리지","해석"], roles.map(r=>[
+      esc(r.role), numeric(r.score), numeric(r.attributeScore), numeric(r.positionScore),
+      `${Math.round(r.coverage*100)}%`, esc(r.label)
+    ])));
 }
