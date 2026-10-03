@@ -5,6 +5,7 @@ import { SnapshotSession, validateBridge } from "../engine/snapshotSession.js";
 import { rooms, renderRoom, statusHTML, playerDetail } from "../previewView.js";
 import { verifiedRoleFit, bestVerifiedRoles } from "../engine/realRoleFit.js";
 import { verifiedDepth, verifiedSquadDepth } from "../engine/realDepth.js";
+import { recruitmentReview } from "../engine/realRecruitment.js";
 
 const raw = () => ({schemaVersion:2,source:"rust-native",saveName:"Career.fm",gameDate:"2037-07-01",dbVersion:"26.0.0",
   manager:{club:"Test Club",clubUid:45,name:"Manager"},players:[{id:"7",name:"Young Player",age:18,ca:125,pa:125,paKnown:false,
@@ -156,6 +157,39 @@ test("verified squad depth ignores players whose role inputs are incomplete",()=
   const s=normalizeRealSnapshot(x);
   assert.equal(verifiedDepth(s,"DM").knownPlayers,0);
   assert.equal(verifiedSquadDepth(s).length,10);
+});
+
+
+test("recruitment review keeps data shortage separate from a transfer recommendation",()=>{
+  const s=normalizeRealSnapshot(raw());
+  const rows=recruitmentReview(s);
+  assert.equal(rows.length,10);
+  assert.ok(rows.some(row=>row.status==="자료 부족"));
+  assert.ok(rows.filter(row=>row.status==="자료 부족").every(row=>row.priority===null));
+  assert.ok(rows.every(row=>!/(영입|구매|매수)/.test(row.action)));
+});
+
+test("recruitment review flags weak verified backup without claiming an external signing is required",()=>{
+  const x=raw();
+  const strong={
+    passing:16,vision:16,firstTouch:16,technique:16,decisions:16,
+    composure:16,dribbling:14,offTheBall:15,stamina:15,workRate:15,
+    positioning:15,anticipation:15,tackling:14,marking:13,strength:13
+  };
+  const weak={...strong,passing:10,vision:10,firstTouch:10,technique:10,decisions:10,composure:10,stamina:10,workRate:10,positioning:10};
+  Object.assign(x.players[0],{
+    primaryPosition:"CM",positions:["CM"],positionRatings:{MC:20},attributes:strong
+  });
+  x.players.push({
+    ...structuredClone(x.players[0]),id:"8",name:"Weak Backup",ca:95,
+    positionRatings:{MC:15},attributes:weak
+  });
+  const s=normalizeRealSnapshot(x);
+  const cm=recruitmentReview(s).find(row=>row.position==="CM");
+  assert.equal(cm.status,"백업 뎁스 검토");
+  assert.ok(cm.priority>0);
+  assert.match(cm.reason,/영입 필요성.*확정하지 않습니다/);
+  assert.equal(cm.official,false);
 });
 
 for(const url of ["https://evil.example","http://127.0.0.1.evil.example:8765","http://u:p@localhost:8765","http://localhost:8765/path","file:///tmp/x","http://localhost:8765/?x=1","http://localhost:8765/#x"])
