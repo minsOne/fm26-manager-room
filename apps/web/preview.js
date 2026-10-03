@@ -1,8 +1,7 @@
-import { SnapshotSession, DEFAULT_BRIDGE, validateBridge } from "./engine/snapshotSession.js";
+import { SnapshotSession, initialBridge, validateBridge } from "./engine/snapshotSession.js";
 import { rooms, esc, statusHTML, renderRoom, playerDetail } from "./previewView.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
-let bridge = DEFAULT_BRIDGE;
-try { bridge = validateBridge(readStorage("managerRoom.bridge") ?? bridge); } catch {}
+const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
 const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",bridge};
 let current = {snapshot:null,status:"empty",revision:0};
 let session, timer, generation=0, renderedKey="";

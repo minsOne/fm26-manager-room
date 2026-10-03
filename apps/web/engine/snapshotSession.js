@@ -10,6 +10,15 @@ export function validateBridge(value) {
   }
   return u.origin;
 }
+// A launch URL may select a loopback port; never accept a remote bridge from URL/storage.
+export function initialBridge(search = "", saved = null) {
+  const requested = new URLSearchParams(search).get("bridge");
+  for (const value of [requested, saved, DEFAULT_BRIDGE]) {
+    if (value === null) continue;
+    try { return validateBridge(value); } catch {}
+  }
+  return DEFAULT_BRIDGE;
+}
 async function limitedText(response, maxBytes) {
   const length = Number(response.headers.get("content-length"));
   if (length > maxBytes) throw new Error("응답이 크기 제한을 초과했습니다.");

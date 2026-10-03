@@ -41,7 +41,8 @@ struct SaveSelectionStore: Sendable {
     func pin(_ saveURL: URL) throws -> SavedSaveSelection {
         let save = saveURL.resolvingSymlinksInPath().standardizedFileURL
         let attrs = try FileManager.default.attributesOfItem(atPath: save.path)
-        guard save.pathExtension.lowercased() == "fm",
+        guard FileManager.default.isReadableFile(atPath: save.path),
+              save.pathExtension.lowercased() == "fm",
               attrs[.type] as? FileAttributeType == .typeRegular,
               (attrs[.size] as? NSNumber)?.uint64Value ?? 0 > 0 else {
             throw SaveSelectionError.invalidSave(save.path)

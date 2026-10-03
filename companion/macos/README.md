@@ -4,65 +4,68 @@ The macOS Companion is the local, read-only bridge between FM26 save files and M
 
 ## Recommended install
 
-From the repository root:
+From the repository root, on macOS 13+ with Rust and Swift 6+:
 
 ```bash
-bash scripts/install-macos.sh
+./install.sh
+export PATH="$HOME/.local/bin:$PATH"
+manager-room select-save
+manager-room start
 ```
 
-The installer builds the native Rust parser and Swift Companion, installs both under:
+Binaries are built natively (Apple Silicon preferred), ad-hoc signed and installed
+in `~/Library/Application Support/FM26ManagerRoom/bin`. A shim is created under
+`~/.local/bin`. The installer rejects Rosetta builds on Apple Silicon and explains
+missing tools. Use `"$HOME/.local/bin/manager-room"` if PATH is not configured.
 
-```text
-~/Library/Application Support/FM26ManagerRoom/bin
-```
-
-and ad-hoc signs the locally built binaries.
-
-Run diagnostics:
+`select-save` opens a native file picker. `select-save "/path/to/Career.fm"` and
+`pin-save "/path/to/Career.fm"` are noninteractive equivalents. The choice is
+persisted and invalid selections/cancellation leave it intact. Stop the managed
+service before changing/clearing the choice.
 
 ```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" doctor
+manager-room selection
+manager-room doctor
+manager-room doctor --deep --online
+manager-room stop
+manager-room unpin-save
 ```
 
-After pinning a real save, run the full parser validation without replacing your current snapshot:
+`doctor` prints actionable checks for OS, architecture, binaries, the selected
+save, snapshot permissions, port and local API. `--json` produces a machine-readable
+report; a failed required check exits 4. `--installation-only` allows an installation
+check before selecting a career. `--deep` privately stages and validates the career
+without replacing the live snapshot. `--online` adds a bounded GitHub Pages network
+probe; browser local-network permission and CORS still require browser verification.
+Runtime/FM status is informational; it does not enable runtime reads or writes.
+
+`start` launches a background Companion, waits for its first successful parse and
+verified HTTP identity, then opens the web UI. The browser URL carries the chosen
+loopback port. `--no-open` skips the browser. `stop` verifies PID, process birth and
+instance identity before sending SIGTERM; stale state never authorizes killing an
+unrelated process. Start/stop/selection mutations use an exclusive lock.
+Duplicate starts reuse a healthy managed service; stop before changing its options.
 
 ```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" doctor --deep
+manager-room start --port 18765
+manager-room doctor --port 18765
+manager-room stop
+manager-room serve --open-web  # foreground development alternative
 ```
 
-`doctor --deep` stages a private copy, runs the installed Rust parser, validates the result, and reports player/fixture counts and parse time.
-
-Pin the career save you actually want Manager Room to follow:
+State: `selection.json`, `snapshot.json`, `service.json`; log: `companion.log` under
+the application home. Logs rotate between launches above 5 MiB. A startup parse
+failure stops the new service and retains the previous snapshot. `start` requires
+an explicit or pinned save (or an explicit save directory); it does not silently
+choose a different career. `serve` retains the legacy directory fallback.
 
 ```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" \
-  pin-save "/path/to/My Career.fm"
+bash scripts/uninstall-macos.sh              # stop, remove binaries, preserve state
+bash scripts/uninstall-macos.sh --purge-data # also remove local state
 ```
 
-Inspect or clear the selection:
-
-```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" selection
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" unpin-save
-```
-
-Start the local service and open Manager Room in your default browser:
-
-```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" serve --open-web
-```
-
-Or start without opening a browser:
-
-```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" serve
-```
-
-Web UI:
-
-```text
-https://minsone.github.io/fm26-manager-room/
-```
+See [real-Mac validation](../../docs/macos-validation.md) before treating CI results
+as evidence of your own running-FM and browser environment.
 
 ## Production flow
 
@@ -85,42 +88,6 @@ A pinned selection watches only that file. A newer neighboring `.fm` file is ign
 ```
 
 If no save has been pinned and no explicit `--save` or `--save-dir` is supplied, the compatibility fallback still follows the newest save in the default folder. Pinning is recommended.
-
-## Install on macOS
-
-From the repository root:
-
-```bash
-bash scripts/install-macos.sh
-```
-
-The installer builds both native components, ad-hoc signs them, installs them under
-`~/Library/Application Support/FM26ManagerRoom/bin`, and creates a
-`~/.local/bin/manager-room` shim.
-
-Then choose one career save and validate it:
-
-```bash
-manager-room pin-save "/path/to/Career.fm"
-manager-room doctor --deep
-```
-
-Start Manager Room:
-
-```bash
-manager-room start
-```
-
-`start` runs the local read-only service, watches only the pinned save, and opens the
-Manager Room web UI in the default browser.
-
-Uninstall binaries while keeping the selected-save and snapshot state:
-
-```bash
-bash scripts/uninstall-macos.sh
-```
-
-Add `--purge-data` only when you also want to remove Manager Room's local state.
 
 ## Development run
 

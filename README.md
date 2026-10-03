@@ -22,38 +22,51 @@ The parser and Companion are tested against a public FM26 save on Linux/macOS CI
 
 ## macOS quick start
 
-Requirements: Rust/Cargo and a Swift toolchain/Xcode command-line tools.
+Requirements: macOS 13+, native Apple Silicon (Intel also supported), Rust/Cargo,
+and Swift 6+/Xcode command-line tools. If missing, install Xcode tools with
+`xcode-select --install` and Rust from https://rustup.rs. Reopen Terminal afterwards.
 
 ```bash
 git clone https://github.com/minsOne/fm26-manager-room.git
 cd fm26-manager-room
-bash scripts/install-macos.sh
+./install.sh
+export PATH="$HOME/.local/bin:$PATH"
+manager-room select-save
+manager-room start
 ```
 
-Diagnose the local installation:
+`select-save` opens the macOS file chooser and pins one career. You can also use
+`manager-room select-save "/path/to/Career.fm"` for a noninteractive selection.
+Cancelling or choosing an invalid file preserves the previous selection.
+
+`start` parses that career, verifies the local API, runs the Companion in the
+background, and opens https://minsone.github.io/fm26-manager-room/ in your browser.
+The launch URL selects the correct loopback port, even with older saved web settings.
+Closing Terminal does not stop the managed service.
 
 ```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" doctor
+manager-room doctor                  # actionable installation/save/port/API checks
+manager-room doctor --deep --online  # private real parser test and Pages network probe
+manager-room stop                    # stop only the managed service
 ```
 
-Pin the exact save you want to follow:
+After installation, add `export PATH="$HOME/.local/bin:$PATH"` to your `~/.zshrc`
+if you want `manager-room` available in new terminal sessions. Without changing
+PATH, use `"$HOME/.local/bin/manager-room"` for each command.
 
-```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" \
-  pin-save "/path/to/My Career.fm"
-```
+Stop before selecting another career; then `select-save` and `start` again.
+Use `serve` for a foreground development service and `start --no-open` for a
+headless launch. `--port 18765` supports an occupied default port; supply the
+same port to `doctor`. See [macOS Companion](companion/macos/README.md).
 
-Start the local read-only service:
+The watcher ignores newer neighboring saves and detects in-place updates to the
+pinned file. Failed parsing preserves the last valid snapshot and displays the error.
+No game writes are enabled.
 
-```bash
-"$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" serve
-```
-
-Open the UI:
-
-https://minsone.github.io/fm26-manager-room/
-
-The pinned watcher ignores newer neighboring saves but detects in-place updates to the selected save.
+The macOS install CI tests the installed commands with both synthetic failures and
+an actual public FM26 save. CI does **not** establish installed Safari permissions,
+running-FM autosave behavior, latency, CPU, memory or battery cost on your Mac.
+Follow [the real-Mac verification checklist](docs/macos-validation.md) once after installation.
 
 ## Implemented read-only data path
 

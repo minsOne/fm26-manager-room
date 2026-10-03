@@ -34,6 +34,8 @@ if [[ -L "$SHIM" ]]; then
   fi
 fi
 
+if [[ -x "$TARGET" ]]; then "$TARGET" stop; fi
+
 rm -f "$BIN/manager-room" "$BIN/fm26-manager-room-parser"
 rmdir "$BIN" 2>/dev/null || true
 
