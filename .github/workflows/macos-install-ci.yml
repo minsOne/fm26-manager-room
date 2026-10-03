@@ -121,7 +121,7 @@ jobs:
           trap - EXIT
 
       - name: Verify managed lifecycle with synthetic failures
-        run: python3 tools/test_macos_lifecycle.py --binary "$RUNNER_TEMP/manager-room-home/bin/manager-room"
+        run: python3 tools/test_macos_lifecycle.py --binary "$RUNNER_TEMP/manager-room-shim/manager-room"
 
       - uses: actions/setup-python@v5
         with:
@@ -142,7 +142,7 @@ jobs:
 
       - name: Installed CLI to actual Rust parser, watcher and HTTP
         run: |
-          python tools/test_macos_lifecycle.py --binary "$RUNNER_TEMP/manager-room-home/bin/manager-room" \
+          python tools/test_macos_lifecycle.py --binary "$RUNNER_TEMP/manager-room-shim/manager-room" \
             --save "$RUNNER_TEMP/install-real-save/public.fm"
 
       - name: Remove public save

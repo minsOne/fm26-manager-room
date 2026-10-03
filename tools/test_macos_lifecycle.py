@@ -37,7 +37,7 @@ def main():
     ap.add_argument("--binary", required=True)
     ap.add_argument("--save")
     args = ap.parse_args()
-    binary = str(Path(args.binary).resolve())
+    binary = str(Path(args.binary).absolute())
     with tempfile.TemporaryDirectory(prefix="mr-lifecycle-") as temporary:
         root = Path(temporary)
         home = root / "Application Support 한글"

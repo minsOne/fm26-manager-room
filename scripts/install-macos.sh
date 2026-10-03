@@ -40,7 +40,7 @@ PARSER_BUILD="$ROOT/native/fm26-parser/target/release/fm26-manager-room-parser"
 COMPANION_BUILD="$ROOT/companion/macos/.build/release/manager-room-companion"
 
 echo "Building Rust parser..."
-cargo build --locked --release --manifest-path "$ROOT/native/fm26-parser/Cargo.toml"
+cargo build --release --manifest-path "$ROOT/native/fm26-parser/Cargo.toml"
 
 echo "Building macOS companion..."
 swift build --package-path "$ROOT/companion/macos" -c release
