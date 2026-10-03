@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { normalizeRealSnapshot, validDate, medicalReview, playingTimeReview, growthReview } from "../engine/realSnapshot.js";
 import { SnapshotSession, validateBridge } from "../engine/snapshotSession.js";
 import { rooms, renderRoom, statusHTML, playerDetail } from "../previewView.js";
+import { verifiedRoleFit, bestVerifiedRoles } from "../engine/realRoleFit.js";
 
 const raw = () => ({schemaVersion:2,source:"rust-native",saveName:"Career.fm",gameDate:"2037-07-01",dbVersion:"26.0.0",
   manager:{club:"Test Club",clubUid:45,name:"Manager"},players:[{id:"7",name:"Young Player",age:18,ca:125,pa:125,paKnown:false,
@@ -36,6 +37,73 @@ test("stale fully populated data cannot permit a start",()=>{const x=raw();x.kno
 test("five appearances are not five team games",()=>{const x=raw();Object.assign(x.players[0].playingTime,{recentMinutesKnown:true,minutesLast5:450});const p=normalizeRealSnapshot(x).players[0];assert.equal(p.appearances,450);assert.equal(playingTimeReview(p).risk,null);assert.match(playingTimeReview(p).reason,/팀의 최근 5경기/);});
 test("single snapshot is not stagnation",()=>{const s=normalizeRealSnapshot(raw());assert.equal(growthReview(s.players[0],s).delta,null);});
 test("growth requires comparable save lineage and dates",()=>{const x=raw();x.saveId="career-1";x.players[0].snapshots=[{date:"2037-06-01",ca:120,lineage:"other"},{date:"2037-07-01",ca:125,lineage:"career-1"}];let s=normalizeRealSnapshot(x);assert.equal(growthReview(s.players[0],s).delta,null);x.players[0].snapshots[0].lineage="career-1";s=normalizeRealSnapshot(x);assert.equal(growthReview(s.players[0],s).delta,5);});
+
+test("real role fit uses only verified attributes and position ratings",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    primaryPosition:"CM",
+    positions:["CM","DM"],
+    positionRatings:{MC:20,DM:16},
+    attributes:{
+      passing:16,vision:17,firstTouch:16,technique:16,decisions:15,
+      composure:15,dribbling:14,offTheBall:14,stamina:15,workRate:15,
+      positioning:14,anticipation:14,tackling:12,marking:11,strength:12
+    }
+  });
+  const p=normalizeRealSnapshot(x).players[0];
+  const fit=verifiedRoleFit(p,"CM","Advanced Playmaker");
+  assert.equal(fit.official,false);
+  assert.equal(fit.coverage,1);
+  assert.equal(fit.position.raw,20);
+  assert.equal(fit.position.source,"positionRatings");
+  assert.ok(fit.score>=60&&fit.score<=100,fit);
+  assert.ok(fit.strongest.length>0);
+});
+
+test("real role fit refuses incomplete core attributes",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    primaryPosition:"CM",positions:["CM"],positionRatings:{MC:20},
+    attributes:{passing:16,vision:17}
+  });
+  const p=normalizeRealSnapshot(x).players[0];
+  const fit=verifiedRoleFit(p,"CM","Advanced Playmaker");
+  assert.equal(fit.score,null);
+  assert.ok(fit.coverage<0.8);
+  assert.match(fit.reason,/충분히 확인/);
+});
+
+test("real role fit refuses unknown position familiarity",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    primaryPosition:"CM",positionsKnown:false,positions:["CM"],positionRatings:{MC:20},
+    attributes:{
+      passing:16,vision:17,firstTouch:16,technique:16,decisions:15,
+      composure:15,dribbling:14,offTheBall:14
+    }
+  });
+  const p=normalizeRealSnapshot(x).players[0];
+  const fit=verifiedRoleFit(p,"CM","Advanced Playmaker");
+  assert.equal(fit.score,null);
+  assert.match(fit.reason,/포지션 숙련도/);
+});
+
+test("best verified roles stay within the requested position family",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    primaryPosition:"ST",positions:["ST"],positionRatings:{STC:20},
+    attributes:{
+      finishing:16,offTheBall:16,pace:16,acceleration:16,composure:15,
+      anticipation:15,firstTouch:15,technique:15,workRate:14,stamina:14,
+      teamwork:14,strength:14
+    }
+  });
+  const p=normalizeRealSnapshot(x).players[0];
+  const roles=bestVerifiedRoles(p,"ST",10);
+  assert.deepEqual(roles.map(r=>r.role).sort(),["Advanced Forward","Pressing Forward"].sort());
+  assert.ok(roles.every(r=>r.score!==null));
+});
+
 for(const url of ["https://evil.example","http://127.0.0.1.evil.example:8765","http://u:p@localhost:8765","http://localhost:8765/path","file:///tmp/x","http://localhost:8765/?x=1","http://localhost:8765/#x"])
   test(`reject external/ambiguous endpoint ${url}`,()=>assert.throws(()=>validateBridge(url)));
 test("accept loopback endpoint only",()=>assert.equal(validateBridge("http://127.0.0.1:8765/"),"http://127.0.0.1:8765"));

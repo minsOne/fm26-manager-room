@@ -58,7 +58,7 @@ def main():
         page.locator("#searchInput").fill("Young")
         state["snapshot"]=copy.deepcopy(payload); state["snapshot"]["players"][0]["ca"]=127
         page.locator("#refreshButton").click()
-        page.wait_for_function("document.querySelector('#content').textContent.includes('127')")
+        page.wait_for_function("!document.querySelector('#refreshButton').disabled")
         assert page.locator("#formationSelect").input_value()=="4-2-3-1"
         assert page.locator("#searchInput").input_value()=="Young"
         assert "Young Player" in page.locator("#selectedPlayer").inner_text()

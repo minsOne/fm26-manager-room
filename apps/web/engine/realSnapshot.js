@@ -54,14 +54,20 @@ function normalizePlayers(rows, gameDate) {
     if (p.personalityKnown === false) for (const key of PERSONALITY) delete hidden[key];
     const wageFlags = [p.wageKnown, contract.wageKnown, contract.weeklyWageKnown];
     const wageKnown = !wageFlags.includes(false) && wageFlags.includes(true);
+    const positionsKnown = p.positionsKnown !== false;
+    const attributesKnown = p.attributesKnown !== false;
+    const primaryPosition = positionsKnown && POSITIONS.has(p.primaryPosition)
+      ? p.primaryPosition
+      : null;
     return {
       id: uid, name: text(p.name) ?? `선수 ${uid}`, age: p.ageKnown === false ? null : integer(p.age, 14, 100), ca, pa,
+      primaryPosition, positionsKnown, attributesKnown,
       birthDate: p.ageKnown !== false && p.birthDateKnown !== false && validDate(p.birthDate) ? p.birthDate : null,
       paRangeCode: p.paKnown !== true ? integer(p.paRangeCode, -10, -1) : null,
-      positions: p.positionsKnown === false ? [] : array(p, "positions").filter(v => POSITIONS.has(v)),
-      positionRatings: p.positionsKnown === false ? {} : cleanStats(p.positionRatings),
+      positions: positionsKnown ? array(p, "positions").filter(v => POSITIONS.has(v)) : [],
+      positionRatings: positionsKnown ? cleanStats(p.positionRatings) : {},
       leftFoot: knownNumber(p, "leftFoot", 1, 20), rightFoot: knownNumber(p, "rightFoot", 1, 20),
-      attributes: cleanStats(p.attributesKnown === false ? {} : p.attributes), hidden, history,
+      attributes: cleanStats(attributesKnown ? p.attributes : {}), hidden, history,
       condition: knownNumber(fitness, "condition", 0, 100),
       sharpness: knownNumber(fitness, "matchSharpness", 0, 100),
       fatigue: knownNumber(fitness, "fatigue", 0, 100, true),
