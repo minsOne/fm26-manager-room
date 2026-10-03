@@ -1,7 +1,7 @@
 import Foundation
 
 enum Command: String {
-    case serve, probe, parse
+    case serve, start, probe, parse
     case snapshotPath = "snapshot-path"
     case pinSave = "pin-save"
     case unpinSave = "unpin-save"
@@ -11,7 +11,7 @@ enum Command: String {
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = Command(rawValue: args.first ?? "serve") else {
     FileHandle.standardError.write(Data(
-        "Unknown command. Use serve, parse, probe, snapshot-path, pin-save, unpin-save, selection or doctor.\n".utf8
+        "Unknown command. Use start, serve, parse, probe, snapshot-path, pin-save, unpin-save, selection or doctor.\n".utf8
     ))
     exit(2)
 }
@@ -164,7 +164,7 @@ case .parse:
     print("Parsed \(saveURL.lastPathComponent) in \(duration) ms")
     print(store.url.path)
 
-case .serve:
+case .serve, .start:
     if args.contains("--port") && (parsePort(args) ?? 0) == 0 {
         FileHandle.standardError.write(Data("--port must be an integer from 1 to 65535.\n".utf8))
         exit(2)
@@ -174,7 +174,8 @@ case .serve:
     let server = try LocalHTTPServer(port: port, store: store, companionState: state)
     server.start()
 
-    if args.contains("--open-web") {
+    let shouldOpenWeb = command == .start || args.contains("--open-web")
+    if shouldOpenWeb {
         openManagerRoomWeb()
     }
 
@@ -253,7 +254,7 @@ case .serve:
     if let selectedSave { print("Selected save: \(selectedSave.path)") }
     else { print("Watched directory: \(directory.path)") }
     print("Mode: native save parser + read-only localhost API; FM runtime writes are disabled.")
-    if args.contains("--open-web") {
+    if shouldOpenWeb {
         print("Opening Manager Room in the default browser.")
     }
 
