@@ -1,4 +1,5 @@
 import { normalizeRealSnapshot } from "./realSnapshot.js";
+import { applyDevelopmentHistory } from "./developmentHistory.js";
 
 export const DEFAULT_BRIDGE = "http://127.0.0.1:8765";
 export function validateBridge(value) {
@@ -65,11 +66,13 @@ export class SnapshotSession {
       // Read status as well: /api/snapshot may still serve the old valid file after a parser failure.
       const results = await Promise.allSettled([
         this.request("/api/snapshot", this.maxBytes),
-        this.request("/api/parser", 65536, true).then(v=>({body:v}), e=>({error:e.message}))
+        this.request("/api/parser", 65536, true).then(v=>({body:v}), e=>({error:e.message})),
+        this.request("/api/history", this.maxBytes, true).then(v=>({body:v}), e=>({error:e.message}))
       ]);
       if (results[0].status === "rejected") throw results[0].reason;
       const body = results[0].value;
       const metadata = results[1].status === "fulfilled" ? results[1].value : {error:"파서 상태 조회 실패"};
+      const historyMetadata = results[2].status === "fulfilled" ? results[2].value : {error:"성장 기록 조회 실패"};
       const snapshot = normalizeRealSnapshot(JSON.parse(body));
       let parser = null, warning = metadata.error ?? null;
       try {
@@ -85,7 +88,18 @@ export class SnapshotSession {
         ? parser.selectionId.trim() : null;
       if (selectionId) {
         snapshot.selectionId = selectionId;
+        snapshot.lineageId = selectionId;
         snapshot.careerKey = JSON.stringify([selectionId, snapshot.manager.clubUid]);
+
+        if (historyMetadata.body) {
+          try {
+            applyDevelopmentHistory(snapshot, JSON.parse(historyMetadata.body), selectionId);
+          } catch {
+            warning = warning ?? "성장 기록 응답을 확인할 수 없습니다.";
+          }
+        } else if (historyMetadata.error) {
+          warning = warning ?? historyMetadata.error;
+        }
       }
 
       const previous = this.state.snapshot;
