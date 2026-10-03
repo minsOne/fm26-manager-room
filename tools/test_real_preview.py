@@ -68,12 +68,13 @@ def main():
         page.locator("#fixtureSelect").select_option("m2")
         state["snapshot"]["players"][0]["ca"]=128
         page.locator("#refreshButton").click()
-        page.wait_for_function("document.querySelector('#content').textContent.includes('Young Player') && !document.querySelector('#refreshButton').disabled")
+        page.wait_for_function("document.querySelector('#fixtureSelect')?.value === 'm2' && !document.querySelector('#refreshButton').disabled")
         assert page.locator("#fixtureSelect").input_value()=="m2"
         print("PASS refresh retains selected fixture")
         state["fail"]=True; page.locator("#refreshButton").click()
         page.get_by_text("이전 정상 데이터 유지",exact=True).wait_for()
-        assert "Young Player" in page.locator("#content").inner_text()
+        assert page.locator("#fixtureSelect").input_value()=="m2"
+        assert "Later FC" in page.locator("#content").inner_text()
         assert "데모" not in page.locator("#syncStatus").inner_text()
         print("PASS disconnect keeps last good snapshot with stale warning")
         state["fail"]=False;state["parserError"]="synthetic parser failure";page.locator("#refreshButton").click()
@@ -86,6 +87,7 @@ def main():
         print("PASS new career needs explicit acceptance")
         state["snapshot"]=copy.deepcopy(state["snapshot"])
         state["snapshot"]["players"][0]["name"]='<img src=x onerror="window.PWNED=true">'
+        page.locator('nav [data-view="squad"]').click()
         page.locator("#refreshButton").click()
         page.wait_for_function("document.querySelector('#content').textContent.includes('<img')")
         assert page.locator("#content img").count()==0

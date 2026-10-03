@@ -6,6 +6,7 @@ import { rooms, renderRoom, statusHTML, playerDetail } from "../previewView.js";
 import { verifiedRoleFit, bestVerifiedRoles } from "../engine/realRoleFit.js";
 import { verifiedDepth, verifiedSquadDepth } from "../engine/realDepth.js";
 import { recruitmentReview } from "../engine/realRecruitment.js";
+import { matchdayReview, workloadReview } from "../engine/realMatchday.js";
 
 const raw = () => ({schemaVersion:2,source:"rust-native",saveName:"Career.fm",gameDate:"2037-07-01",dbVersion:"26.0.0",
   manager:{club:"Test Club",clubUid:45,name:"Manager"},players:[{id:"7",name:"Young Player",age:18,ca:125,pa:125,paKnown:false,
@@ -189,6 +190,87 @@ test("recruitment review flags weak verified backup without claiming an external
   assert.ok(cm.priority>0);
   assert.match(cm.reason,/영입 필요성.*확정하지 않습니다/);
   assert.equal(cm.official,false);
+});
+
+test("guarded matchday assigns 11 unique review candidates without claiming a final XI",()=>{
+  const x=raw();
+  const attrs={
+    passing:15,vision:15,firstTouch:15,technique:15,decisions:15,composure:15,
+    dribbling:15,offTheBall:15,stamina:15,workRate:15,positioning:15,anticipation:15,
+    tackling:15,marking:15,strength:15,pace:15,acceleration:15,finishing:15,
+    teamwork:15,crossing:15,reflexes:15,handling:15,aerialReach:15,oneOnOnes:15,kicking:15
+  };
+  const specs=[
+    ["1","GK",{GK:20}],["2","RB",{DR:20}],["3","CB",{DC:20}],["4","CB",{DC:18}],
+    ["5","LB",{DL:20}],["6","DM",{DM:20}],["7","CM",{MC:20}],["8","CM",{MC:18}],
+    ["9","RW",{AMR:20}],["10","LW",{AML:20}],["11","ST",{STC:20}]
+  ];
+  x.players=specs.map(([id,pos,ratings],index)=>({
+    ...structuredClone(x.players[0]),id,name:`P${id}`,age:22+index%3,ca:140-index,
+    primaryPosition:pos,positions:[pos],positionRatings:ratings,attributes:{...attrs},
+    fitness:{condition:95,conditionKnown:true,fatigue:0,fatigueKnown:false,injuryRisk:0,injuryRiskKnown:false},
+    eligibilityKnown:false
+  }));
+  const s=normalizeRealSnapshot(x);
+  const review=matchdayReview(s,"4-3-3");
+  assert.equal(review.selectedCount,11);
+  assert.equal(review.uniquePlayers,11);
+  assert.equal(review.lineup.length,11);
+  assert.equal(review.missingSlots.length,0);
+  assert.equal(review.readyForFinalDecision,false);
+  assert.ok(review.selectedWithUnknowns.length>0);
+  assert.equal(review.official,false);
+});
+
+test("guarded matchday excludes a player only when unavailability is actually known",()=>{
+  const x=raw();
+  const attrs={
+    finishing:18,offTheBall:18,pace:17,acceleration:17,composure:17,
+    anticipation:17,firstTouch:17,technique:17,workRate:15,stamina:15,teamwork:15,strength:15
+  };
+  Object.assign(x.players[0],{
+    id:"7",name:"Known Injured",primaryPosition:"ST",positions:["ST"],positionRatings:{STC:20},attributes:attrs,
+    fitness:{condition:99,conditionKnown:true,fatigue:0,fatigueKnown:false,injuryRisk:0,injuryRiskKnown:false,injuryFreeKnown:true,injuryFree:false},
+    eligibilityKnown:true,eligible:true
+  });
+  x.players.push({
+    ...structuredClone(x.players[0]),id:"8",name:"Available Review",ca:110,
+    positionRatings:{STC:16},
+    fitness:{condition:92,conditionKnown:true,fatigue:0,fatigueKnown:false,injuryRisk:0,injuryRiskKnown:false,injuryFreeKnown:true,injuryFree:true},
+    eligibilityKnown:true,eligible:true
+  });
+  const s=normalizeRealSnapshot(x);
+  const review=matchdayReview(s,"4-3-3");
+  const st=review.lineup.find(row=>row.slot.position==="ST");
+  assert.equal(st.player.id,"8");
+  assert.ok(review.unavailable.some(row=>row.player.id==="7"));
+  assert.equal(review.readyForFinalDecision,false); // fatigue is still unknown
+});
+
+test("guarded matchday leaves a slot empty when role inputs are insufficient",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    primaryPosition:"GK",positions:["GK"],positionRatings:{GK:20},attributes:{reflexes:15}
+  });
+  const s=normalizeRealSnapshot(x);
+  const review=matchdayReview(s,"4-3-3");
+  assert.ok(review.missingSlots.length>0);
+  assert.ok(review.lineup.some(row=>row.player===null));
+  assert.equal(review.readyForFinalDecision,false);
+});
+
+test("workload review surfaces observed minutes without converting missing fatigue into a rest instruction",()=>{
+  const x=raw();
+  Object.assign(x.players[0].playingTime,{recentMinutesKnown:true,recentMinutes:360});
+  Object.assign(x.players[0].fitness,{conditionKnown:true,condition:82,fatigueKnown:false,injuryRiskKnown:false});
+  const s=normalizeRealSnapshot(x);
+  const rows=workloadReview(s);
+  assert.equal(rows.length,1);
+  assert.ok(rows[0].flags.includes("출전량 높음"));
+  assert.ok(rows[0].flags.includes("컨디션 확인 필요"));
+  assert.equal(rows[0].action,"감독 확인");
+  assert.ok(rows[0].missing.includes("피로"));
+  assert.doesNotMatch(rows[0].action,/휴식|선발 제외/);
 });
 
 for(const url of ["https://evil.example","http://127.0.0.1.evil.example:8765","http://u:p@localhost:8765","http://localhost:8765/path","file:///tmp/x","http://localhost:8765/?x=1","http://localhost:8765/#x"])
