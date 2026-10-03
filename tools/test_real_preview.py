@@ -87,6 +87,7 @@ def main():
         print("PASS new career needs explicit acceptance")
         state["snapshot"]=copy.deepcopy(state["snapshot"])
         state["snapshot"]["players"][0]["name"]='<img src=x onerror="window.PWNED=true">'
+        page.locator('nav [data-view="squad"]').click()
         page.locator("#refreshButton").click()
         page.wait_for_function("document.querySelector('#content').textContent.includes('<img')")
         assert page.locator("#content img").count()==0
