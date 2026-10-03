@@ -38,23 +38,53 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PREFIX="${FM26_MANAGER_ROOM_HOME:-$HOME/Library/Application Support/FM26ManagerRoom}"
 BIN="$PREFIX/bin"
+SHIM_DIR="${FM26_MANAGER_ROOM_SHIM_DIR:-$HOME/.local/bin}"
 
-mkdir -p "$BIN"
+mkdir -p "$BIN" "$SHIM_DIR"
 chmod 700 "$PREFIX" "$BIN"
 install -m 755 "$HERE/bin/fm26-manager-room-parser" "$BIN/fm26-manager-room-parser"
 install -m 755 "$HERE/bin/manager-room" "$BIN/manager-room"
+ln -sfn "$BIN/manager-room" "$SHIM_DIR/manager-room"
 
 codesign --verify "$BIN/fm26-manager-room-parser"
 codesign --verify "$BIN/manager-room"
 
 echo "Installed to: $BIN"
 echo "Next:"
-echo "  \"$BIN/manager-room\" doctor"
-echo "  \"$BIN/manager-room\" pin-save \"/path/to/My Career.fm\""
-echo "  \"$BIN/manager-room\" serve"
-echo "  open https://minsone.github.io/fm26-manager-room/"
+echo "  manager-room doctor"
+echo "  manager-room pin-save \"/path/to/My Career.fm\""
+echo "  manager-room doctor --deep"
+echo "  manager-room start"
+if [[ ":$PATH:" != *":$SHIM_DIR:"* ]]; then
+  echo "Add to PATH: export PATH=\"$SHIM_DIR:\$PATH\""
+fi
 INSTALL
 chmod 755 "$STAGE/install.sh"
+
+cat > "$STAGE/uninstall.sh" <<'UNINSTALL'
+#!/bin/bash
+set -euo pipefail
+PREFIX="${FM26_MANAGER_ROOM_HOME:-$HOME/Library/Application Support/FM26ManagerRoom}"
+SHIM_DIR="${FM26_MANAGER_ROOM_SHIM_DIR:-$HOME/.local/bin}"
+PURGE="${1:-}"
+
+if [[ -L "$SHIM_DIR/manager-room" ]]; then
+  TARGET="$(readlink "$SHIM_DIR/manager-room" || true)"
+  [[ "$TARGET" == "$PREFIX/bin/manager-room" ]] && rm -f "$SHIM_DIR/manager-room"
+fi
+
+rm -f "$PREFIX/bin/manager-room" "$PREFIX/bin/fm26-manager-room-parser"
+rmdir "$PREFIX/bin" 2>/dev/null || true
+
+if [[ "$PURGE" == "--purge-data" ]]; then
+  case "$PREFIX" in ""|"/"|"$HOME") echo "Refusing unsafe purge path" >&2; exit 3;; esac
+  rm -rf "$PREFIX"
+  echo "Removed binaries and local Manager Room state."
+else
+  echo "Removed binaries; preserved local Manager Room state."
+fi
+UNINSTALL
+chmod 755 "$STAGE/uninstall.sh"
 
 cat > "$STAGE/README.txt" <<EOF
 FM26 Manager Room $VERSION — macOS $ARCH
@@ -66,9 +96,17 @@ INSTALL
   ./install.sh
 
 THEN
-  "$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" doctor
-  "$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" pin-save "/path/to/My Career.fm"
-  "$HOME/Library/Application Support/FM26ManagerRoom/bin/manager-room" serve
+  manager-room doctor
+  manager-room pin-save "/path/to/My Career.fm"
+  manager-room doctor --deep
+  manager-room start
+
+If ~/.local/bin is not in PATH, add:
+  export PATH="$HOME/.local/bin:$PATH"
+
+UNINSTALL
+  ./uninstall.sh
+  ./uninstall.sh --purge-data
 
 OPEN
   https://minsone.github.io/fm26-manager-room/

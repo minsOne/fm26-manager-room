@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "scripts/install-macos.sh"
+      - "scripts/uninstall-macos.sh"
+      - "scripts/uninstall-macos.sh"
       - "companion/macos/**"
       - "native/fm26-parser/**"
       - ".github/workflows/macos-install-ci.yml"
@@ -29,15 +31,19 @@ jobs:
       - name: Install from source into isolated application home
         env:
           FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+          FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/manager-room-shim
         run: bash scripts/install-macos.sh
 
       - name: Verify installed binaries and diagnostics
         env:
           FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+          FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/manager-room-shim
         run: |
           BIN="$FM26_MANAGER_ROOM_HOME/bin"
           test -x "$BIN/manager-room"
           test -x "$BIN/fm26-manager-room-parser"
+          test -L "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
+          test -x "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
           "$BIN/manager-room" doctor > "$RUNNER_TEMP/doctor-before.json"
           python3 - <<'PY'
           import json, os
@@ -79,3 +85,46 @@ jobs:
         run: |
           codesign --verify "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
           codesign --verify "$FM26_MANAGER_ROOM_HOME/bin/fm26-manager-room-parser"
+
+      - name: Verify installed loopback service
+        env:
+          FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+          FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/manager-room-shim
+        run: |
+          "$FM26_MANAGER_ROOM_HOME/bin/manager-room" serve             --parser "$FM26_MANAGER_ROOM_HOME/bin/fm26-manager-room-parser"             --save-dir "$RUNNER_TEMP" --no-watch --port 18765             > "$RUNNER_TEMP/install-service.log" 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import json, time, urllib.request
+          url="http://127.0.0.1:18765/api/health"
+          for _ in range(80):
+              try:
+                  with urllib.request.urlopen(url, timeout=1) as response:
+                      data=json.load(response)
+                  assert data["status"] == "ok"
+                  assert data["platform"] == "macOS"
+                  break
+              except Exception:
+                  time.sleep(.1)
+          else:
+              raise SystemExit("installed service did not become healthy")
+          PY
+          kill "$PID"
+          wait "$PID" || true
+          trap - EXIT
+
+      - name: Verify uninstall preserves selection unless purged
+        env:
+          FM26_MANAGER_ROOM_HOME: ${{ runner.temp }}/manager-room-home
+          FM26_MANAGER_ROOM_SHIM_DIR: ${{ runner.temp }}/manager-room-shim
+        run: |
+          SAVE="$RUNNER_TEMP/Uninstall Test Career.fm"
+          printf 'nonempty uninstall fixture' > "$SAVE"
+          "$FM26_MANAGER_ROOM_HOME/bin/manager-room" pin-save "$SAVE" > /dev/null
+          test -f "$FM26_MANAGER_ROOM_HOME/selection.json"
+          bash scripts/uninstall-macos.sh
+          test ! -e "$FM26_MANAGER_ROOM_HOME/bin/manager-room"
+          test ! -e "$FM26_MANAGER_ROOM_SHIM_DIR/manager-room"
+          test -f "$FM26_MANAGER_ROOM_HOME/selection.json"
+          bash scripts/uninstall-macos.sh --purge-data
+          test ! -e "$FM26_MANAGER_ROOM_HOME"
