@@ -5,6 +5,19 @@ const POSITION_CODES = {
   DM:["DM"], CM:["MC"], AM:["AMC"], LW:["ML","AML"], RW:["MR","AMR"], ST:["STC"]
 };
 
+const ROLE_OPTIONS = {
+  GK:["Goalkeeper","Sweeper Keeper"],
+  CB:["Central Defender","Ball Playing Defender"],
+  LB:["Full Back","Wing Back"],
+  RB:["Full Back","Wing Back"],
+  DM:["Holding Midfielder","Deep Lying Playmaker","Central Midfielder"],
+  CM:["Central Midfielder","Deep Lying Playmaker","Advanced Playmaker"],
+  AM:["Advanced Playmaker","Central Midfielder","Inside Forward"],
+  LW:["Winger","Inside Forward","Advanced Playmaker"],
+  RW:["Winger","Inside Forward","Advanced Playmaker"],
+  ST:["Advanced Forward","Pressing Forward"]
+};
+
 export function verifiedRoleFit(player, position, role) {
   const definition = roleDefinitions[role];
   if (!definition) return unavailable("지원하지 않는 역할입니다.");
@@ -73,7 +86,8 @@ export function verifiedRoleFit(player, position, role) {
 }
 
 export function bestVerifiedRoles(player, position, limit=4) {
-  return Object.keys(roleDefinitions)
+  const roles = ROLE_OPTIONS[position] ?? [];
+  return roles
     .map(role=>({role,...verifiedRoleFit(player,position,role)}))
     .filter(row=>row.score !== null)
     .sort((a,b)=>b.score-a.score)
