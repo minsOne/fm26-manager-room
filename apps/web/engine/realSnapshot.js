@@ -163,7 +163,8 @@ export function playingTimeReview(player) {
   return { action: "출전 약속 대조 필요", risk: null, reason: `팀 최근 5경기 ${player.minutesLast5Team}분 / ${player.agreed}. 실제 불만 상태는 미확인입니다.` };
 }
 export function growthReview(player, snapshot) {
-  const rows = player.history.filter(h => snapshot.saveId && h.lineage === snapshot.saveId);
+  const lineage = snapshot.lineageId ?? snapshot.saveId;
+  const rows = player.history.filter(h => lineage && h.lineage === lineage);
   const dated = [...new Map(rows.map(h => [h.date,h])).values()].sort((a,b)=>a.date.localeCompare(b.date));
   if (dated.length < 2) return { delta: null, message: "동일 세이브의 비교 가능한 성장 기록이 부족합니다." };
   const first = dated[0], last = dated.at(-1);
