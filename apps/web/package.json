@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check app.js && node --check engine/analysis.js && node --check engine/matchday.js && node --check engine/training.js && node --check engine/recruitment.js && node --check engine/economy.js && node --check engine/realRoleFit.js"
+    "check": "node --check app.js && node --check engine/analysis.js && node --check engine/matchday.js && node --check engine/training.js && node --check engine/recruitment.js && node --check engine/economy.js && node --check engine/realRoleFit.js && node --check engine/developmentHistory.js"
   }
 }
