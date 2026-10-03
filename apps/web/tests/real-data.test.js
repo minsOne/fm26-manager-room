@@ -4,6 +4,7 @@ import { normalizeRealSnapshot, validDate, medicalReview, playingTimeReview, gro
 import { SnapshotSession, validateBridge } from "../engine/snapshotSession.js";
 import { rooms, renderRoom, statusHTML, playerDetail } from "../previewView.js";
 import { verifiedRoleFit, bestVerifiedRoles } from "../engine/realRoleFit.js";
+import { verifiedDepth, verifiedSquadDepth } from "../engine/realDepth.js";
 
 const raw = () => ({schemaVersion:2,source:"rust-native",saveName:"Career.fm",gameDate:"2037-07-01",dbVersion:"26.0.0",
   manager:{club:"Test Club",clubUid:45,name:"Manager"},players:[{id:"7",name:"Young Player",age:18,ca:125,pa:125,paKnown:false,
@@ -102,6 +103,59 @@ test("best verified roles stay within the requested position family",()=>{
   const roles=bestVerifiedRoles(p,"ST",10);
   assert.deepEqual(roles.map(r=>r.role).sort(),["Advanced Forward","Pressing Forward"].sort());
   assert.ok(roles.every(r=>r.score!==null));
+});
+
+
+test("verified squad depth ranks two comparable players without inventing missing candidates",()=>{
+  const x=raw();
+  const attributes={
+    passing:16,vision:16,firstTouch:16,technique:15,decisions:15,
+    composure:15,dribbling:13,offTheBall:14,stamina:15,workRate:15,
+    positioning:15,anticipation:14,tackling:13,marking:12,strength:12
+  };
+  Object.assign(x.players[0],{
+    primaryPosition:"CM",positions:["CM"],positionRatings:{MC:20},attributes
+  });
+  x.players.push({
+    ...structuredClone(x.players[0]),id:"8",name:"Backup Midfielder",ca:118,
+    positionRatings:{MC:17},
+    attributes:{...attributes,passing:14,vision:14,decisions:14}
+  });
+  const s=normalizeRealSnapshot(x);
+  const depth=verifiedDepth(s,"CM");
+  assert.equal(depth.knownPlayers,2);
+  assert.equal(depth.starter.player.id,"7");
+  assert.equal(depth.backup.player.id,"8");
+  assert.notEqual(depth.state,"자료 부족");
+  assert.equal(depth.official,false);
+});
+
+test("verified squad depth reports data shortage instead of fake weakness",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    primaryPosition:"ST",positions:["ST"],positionRatings:{STC:20},
+    attributes:{
+      finishing:16,offTheBall:16,pace:16,acceleration:16,composure:15,
+      anticipation:15,firstTouch:15,technique:15,workRate:14,stamina:14,
+      teamwork:14,strength:14
+    }
+  });
+  const s=normalizeRealSnapshot(x);
+  const depth=verifiedDepth(s,"ST");
+  assert.equal(depth.knownPlayers,1);
+  assert.equal(depth.state,"자료 부족");
+  assert.equal(depth.backup,null);
+});
+
+test("verified squad depth ignores players whose role inputs are incomplete",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    primaryPosition:"DM",positions:["DM"],positionRatings:{DM:20},
+    attributes:{passing:16}
+  });
+  const s=normalizeRealSnapshot(x);
+  assert.equal(verifiedDepth(s,"DM").knownPlayers,0);
+  assert.equal(verifiedSquadDepth(s).length,10);
 });
 
 for(const url of ["https://evil.example","http://127.0.0.1.evil.example:8765","http://u:p@localhost:8765","http://localhost:8765/path","file:///tmp/x","http://localhost:8765/?x=1","http://localhost:8765/#x"])

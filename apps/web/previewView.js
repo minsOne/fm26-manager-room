@@ -1,5 +1,6 @@
 import { medicalReview, playingTimeReview, growthReview, number } from "./engine/realSnapshot.js";
 import { bestVerifiedRoles } from "./engine/realRoleFit.js";
+import { verifiedSquadDepth } from "./engine/realDepth.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
@@ -50,7 +51,22 @@ export function renderRoom(view, state, ui) {
         + (!s.buildVerified?note("이 스냅샷에 정확한 FM 빌드 지원 확인이 없습니다. 관측값을 게임 화면과 대조해야 합니다."):""));
       body += card("향후 일정",fixtureTable); break;
     }
-    case "squad": body=card("선수단 관측값",table(fitHeaders,players.map(playerRow))); break;
+    case "squad": {
+      const depth = verifiedSquadDepth(s);
+      body = card("포지션 뎁스 · Manager Room 휴리스틱",
+        note("FM/SI 공식 스쿼드 등급이 아닙니다. 확인된 역할 능력치와 포지션 숙련도만 사용하며, 비교 가능한 선수가 부족하면 결론을 내리지 않습니다.")
+        + table(["포지션","최상위 후보","Role Fit","2순위 후보","Role Fit","비교 가능 인원","상태"], depth.map(row=>[
+          esc(row.position),
+          row.starter?playerLink(row.starter.player):show(null),
+          row.starter?numeric(row.starter.score):show(null),
+          row.backup?playerLink(row.backup.player):show(null),
+          row.backup?numeric(row.backup.score):show(null),
+          numeric(row.knownPlayers),
+          esc(row.state)
+        ])));
+      body += card("선수단 관측값",table(fitHeaders,players.map(playerRow)));
+      break;
+    }
     case "matchday": body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${upcoming.map(f=>`<option value="${esc(f.id)}" ${ui.fixtureId===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
       body+=card("선발 검토",note("현재 부상·징계·대회 등록 및 벤치 규정의 검증이 끝나지 않아 자동 Best XI는 보류합니다.")
         +table(["선수","컨디션","수록 14일 출전","기용 판단"],players.map(p=>[playerLink(p),numeric(p.condition),p.minutes===null?show(null):`${numeric(p.minutes)}분${p.historyComplete?"":" 이상 (수록분)"}`,esc(medicalReview(p,s,stale).action)])));
