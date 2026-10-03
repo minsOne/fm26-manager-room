@@ -5,6 +5,7 @@ on:
       - "native/fm26-parser/**"
       - "companion/macos/**"
       - "tools/verify_snapshot_fields.py"
+      - "tools/verify_saudi_nation_mapping.py"
       - "tools/test_native_companion_pipeline.py"
       - "tools/tests/test_snapshot_field_audit.py"
       - ".github/workflows/snapshot-field-parity.yml"
@@ -54,6 +55,9 @@ jobs:
       - name: Compare every managed UID and named field
         run: |
           python tools/verify_snapshot_fields.py --save "$RUNNER_TEMP/field-parity/public.fm" --snapshot "$RUNNER_TEMP/field-parity/snapshot.json" --report "$RUNNER_TEMP/field-parity/named-field-report.json"
+      - name: Verify Saudi nation mapping and finance aggregation
+        run: |
+          python tools/verify_saudi_nation_mapping.py --save "$RUNNER_TEMP/field-parity/public.fm" --snapshot "$RUNNER_TEMP/field-parity/snapshot.json" --report "$RUNNER_TEMP/field-parity/saudi-economy-report.json"
       - name: Build macOS companion
         if: runner.os == 'macOS'
         run: swift build --package-path companion/macos -c release
@@ -70,6 +74,7 @@ jobs:
           name: field-parity-${{ matrix.os }}
           path: |
             ${{ runner.temp }}/field-parity/named-field-report.json
+            ${{ runner.temp }}/field-parity/saudi-economy-report.json
             ${{ runner.temp }}/field-parity/mac-pipeline-report.json
           if-no-files-found: warn
           retention-days: 7

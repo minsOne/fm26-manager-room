@@ -1,6 +1,7 @@
 use crate::club::ClubIndex;
 use memchr::memchr;
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 const ROW_BYTES: usize = 49;
 const TAG: u8 = 0x01;
@@ -116,3 +117,148 @@ fn read_row(b:&[u8],a:usize)->Option<Row>{
 fn ru(b:&[u8],o:usize)->Option<u32>{Some(u32::from_le_bytes(b.get(o..o+4)?.try_into().ok()?))}
 fn ri(b:&[u8],o:usize)->Option<i32>{Some(i32::from_le_bytes(b.get(o..o+4)?.try_into().ok()?))}
 fn read_u32(b:&[u8],o:usize)->Option<u32>{ru(b,o)}
+
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NationClubFinance {
+    pub club_uid: u32,
+    pub club_name: String,
+    pub balance: i32,
+    pub transfer_budget_remaining: i32,
+    pub wage_budget_weekly: u32,
+    pub wage_payroll_weekly: u32,
+    pub reputation: Option<u16>,
+    pub budget_capacity_proxy: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NationFinanceSummary {
+    pub nation_id: u32,
+    pub nation_name: Option<String>,
+    pub clubs_with_finance: usize,
+    pub finance_rows: u64,
+    pub total_balance: i64,
+    pub transfer_budget_allocated: i64,
+    pub transfer_budget_remaining: i64,
+    pub wage_budget_weekly: u64,
+    pub wage_payroll_weekly: u64,
+    /// A comparison proxy, not an FM/SI field:
+    /// positive remaining transfer budget + annualized weekly wage budget.
+    pub budget_capacity_proxy: u64,
+    pub top4_capacity_share: u8,
+    pub reputation_coverage_clubs: usize,
+    pub average_reputation: Option<u16>,
+    pub sporting_power_proxy: Option<u8>,
+    pub top_clubs: Vec<NationClubFinance>,
+}
+
+pub fn aggregate_by_nation(
+    finances: &[FinanceLatest],
+    clubs: &ClubIndex,
+) -> Vec<NationFinanceSummary> {
+    #[derive(Default)]
+    struct Group {
+        clubs: Vec<NationClubFinance>,
+        finance_rows: u64,
+        total_balance: i64,
+        transfer_allocated: i64,
+        transfer_remaining: i64,
+        wage_budget: u64,
+        wage_payroll: u64,
+        reputation_sum: u64,
+        reputation_count: usize,
+    }
+
+    let mut groups: BTreeMap<u32, Group> = BTreeMap::new();
+
+    for row in finances {
+        let Some(club) = clubs.club(row.club_uid) else { continue; };
+        let capacity = budget_capacity_proxy(row);
+        let group = groups.entry(club.nation_id).or_default();
+        group.finance_rows += row.rows as u64;
+        group.total_balance += row.balance as i64;
+        group.transfer_allocated += row.transfer_budget_allocated as i64;
+        group.transfer_remaining += row.transfer_budget_remaining as i64;
+        group.wage_budget += row.wage_budget_weekly as u64;
+        group.wage_payroll += row.wage_payroll_weekly as u64;
+        if let Some(reputation) = club.reputation {
+            group.reputation_sum += reputation as u64;
+            group.reputation_count += 1;
+        }
+        group.clubs.push(NationClubFinance {
+            club_uid: row.club_uid,
+            club_name: row.club_name.clone(),
+            balance: row.balance,
+            transfer_budget_remaining: row.transfer_budget_remaining,
+            wage_budget_weekly: row.wage_budget_weekly,
+            wage_payroll_weekly: row.wage_payroll_weekly,
+            reputation: club.reputation,
+            budget_capacity_proxy: capacity,
+        });
+    }
+
+    let mut result = Vec::with_capacity(groups.len());
+    for (nation_id, mut group) in groups {
+        group.clubs.sort_by(|a,b|
+            b.budget_capacity_proxy.cmp(&a.budget_capacity_proxy)
+                .then_with(|| a.club_name.cmp(&b.club_name))
+                .then_with(|| a.club_uid.cmp(&b.club_uid))
+        );
+        let total_capacity = group.clubs
+            .iter()
+            .map(|club| club.budget_capacity_proxy)
+            .sum::<u64>();
+        let top4 = group.clubs
+            .iter()
+            .take(4)
+            .map(|club| club.budget_capacity_proxy)
+            .sum::<u64>();
+        let share = if total_capacity == 0 {
+            0
+        } else {
+            ((top4.saturating_mul(100) + total_capacity / 2) / total_capacity)
+                .min(100) as u8
+        };
+        let club_count = group.clubs.len();
+        let average_reputation = if group.reputation_count == 0 {
+            None
+        } else {
+            Some(((group.reputation_sum + (group.reputation_count as u64 / 2))
+                / group.reputation_count as u64).min(10_000) as u16)
+        };
+        let sporting_power_proxy = average_reputation
+            .map(|value| ((value as u32 + 50) / 100).min(100) as u8);
+        let top_clubs = group.clubs.into_iter().take(5).collect::<Vec<_>>();
+
+        result.push(NationFinanceSummary {
+            nation_id,
+            nation_name: crate::nation::inferred_name(nation_id, clubs).map(str::to_owned),
+            clubs_with_finance: club_count,
+            finance_rows: group.finance_rows,
+            total_balance: group.total_balance,
+            transfer_budget_allocated: group.transfer_allocated,
+            transfer_budget_remaining: group.transfer_remaining,
+            wage_budget_weekly: group.wage_budget,
+            wage_payroll_weekly: group.wage_payroll,
+            budget_capacity_proxy: total_capacity,
+            top4_capacity_share: share,
+            reputation_coverage_clubs: group.reputation_count,
+            average_reputation,
+            sporting_power_proxy,
+            top_clubs,
+        });
+    }
+
+    result.sort_by(|a,b|
+        b.budget_capacity_proxy.cmp(&a.budget_capacity_proxy)
+            .then_with(|| a.nation_id.cmp(&b.nation_id))
+    );
+    result
+}
+
+fn budget_capacity_proxy(row: &FinanceLatest) -> u64 {
+    let transfer = u64::try_from(row.transfer_budget_remaining.max(0)).unwrap_or(0);
+    transfer.saturating_add((row.wage_budget_weekly as u64).saturating_mul(52))
+}
