@@ -79,46 +79,47 @@ case .doctor:
 
     var deepResult = DoctorDeepResult.notRequested
     if deep {
-        guard let parserURL else {
+        if let parserURL, let selected {
+            let selectedURL = URL(fileURLWithPath: selected.path)
+            if FileManager.default.fileExists(atPath: selectedURL.path) {
+                let root = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("manager-room-doctor-\(UUID().uuidString)", isDirectory: true)
+                do {
+                    try FileManager.default.createDirectory(
+                        at: root,
+                        withIntermediateDirectories: false,
+                        attributes: [.posixPermissions: 0o700]
+                    )
+                    defer { try? FileManager.default.removeItem(at: root) }
+
+                    let temporaryStore = SnapshotStore(url: root.appendingPathComponent("snapshot.json"))
+                    let temporaryState = CompanionState()
+                    let runner = NativeParserRunner(
+                        parserURL: parserURL,
+                        store: temporaryStore,
+                        state: temporaryState,
+                        timeoutSeconds: 120
+                    )
+                    let duration = try runner.parse(saveURL: selectedURL)
+                    let data = try temporaryStore.read()
+                    let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    let players = (object?["players"] as? [[String: Any]])?.count ?? 0
+                    let fixtures = (object?["fixtures"] as? [[String: Any]])?.count ?? 0
+                    deepResult = .passed(
+                        durationMilliseconds: duration,
+                        players: players,
+                        fixtures: fixtures
+                    )
+                } catch {
+                    deepResult = .failed(error.localizedDescription)
+                }
+            } else {
+                deepResult = .failed("Pinned save does not exist.")
+            }
+        } else if parserURL == nil {
             deepResult = .failed("Native parser is unavailable.")
-            breakDoctor(&deepResult)
-        }
-        guard let selected else {
+        } else {
             deepResult = .failed("No pinned save is available for deep validation.")
-            breakDoctor(&deepResult)
-        }
-        let selectedURL = URL(fileURLWithPath: selected.path)
-        guard FileManager.default.fileExists(atPath: selectedURL.path) else {
-            deepResult = .failed("Pinned save does not exist.")
-            breakDoctor(&deepResult)
-        }
-
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("manager-room-doctor-\(UUID().uuidString)", isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(
-                at: root,
-                withIntermediateDirectories: false,
-                attributes: [.posixPermissions: 0o700]
-            )
-            defer { try? FileManager.default.removeItem(at: root) }
-
-            let temporaryStore = SnapshotStore(url: root.appendingPathComponent("snapshot.json"))
-            let temporaryState = CompanionState()
-            let runner = NativeParserRunner(
-                parserURL: parserURL,
-                store: temporaryStore,
-                state: temporaryState,
-                timeoutSeconds: 120
-            )
-            let duration = try runner.parse(saveURL: selectedURL)
-            let data = try temporaryStore.read()
-            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let players = (object?["players"] as? [[String: Any]])?.count ?? 0
-            let fixtures = (object?["fixtures"] as? [[String: Any]])?.count ?? 0
-            deepResult = .passed(durationMilliseconds: duration, players: players, fixtures: fixtures)
-        } catch {
-            deepResult = .failed(error.localizedDescription)
         }
     }
 
@@ -339,9 +340,6 @@ struct DoctorDeepResult: Codable {
     }
 }
 
-func breakDoctor(_ result: inout DoctorDeepResult) {
-    // Marker helper used to keep doctor failure paths explicit without throwing.
-}
 
 func openManagerRoomWeb() {
     let process = Process()
