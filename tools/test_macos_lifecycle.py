@@ -54,6 +54,10 @@ def main():
         def api(path):
             with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=2) as response:
                 return json.load(response)
+        def stopped():
+            with socket.socket() as s:
+                s.settimeout(.2)
+                return s.connect_ex(("127.0.0.1", port)) != 0
         def selected():
             return json.loads(cli("selection"))
         parser_args = []
@@ -133,6 +137,7 @@ def main():
             assert api("/api/snapshot")["players"]
             cli("doctor", "--json", *common, *parser_args, ok=False)
             cli("stop")
+            eventually(stopped)
             assert not (home / "service.json").exists()
             cli("start", "--no-open", *common, *parser_args, ok=False)
             assert not (home / "service.json").exists()
