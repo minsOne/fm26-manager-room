@@ -6,6 +6,7 @@ import { rooms, renderRoom, statusHTML, playerDetail } from "../previewView.js";
 import { verifiedRoleFit, bestVerifiedRoles } from "../engine/realRoleFit.js";
 import { verifiedDepth, verifiedSquadDepth } from "../engine/realDepth.js";
 import { recruitmentReview } from "../engine/realRecruitment.js";
+import { trainingReview, trainingReviewForPlayer } from "../engine/realTraining.js";
 
 const raw = () => ({schemaVersion:2,source:"rust-native",saveName:"Career.fm",gameDate:"2037-07-01",dbVersion:"26.0.0",
   manager:{club:"Test Club",clubUid:45,name:"Manager"},players:[{id:"7",name:"Young Player",age:18,ca:125,pa:125,paKnown:false,
@@ -189,6 +190,70 @@ test("recruitment review flags weak verified backup without claiming an external
   assert.ok(cm.priority>0);
   assert.match(cm.reason,/영입 필요성.*확정하지 않습니다/);
   assert.equal(cm.official,false);
+});
+
+test("training review keeps unknown PA as data shortage rather than a focus recommendation",()=>{
+  const s=normalizeRealSnapshot(raw());
+  const row=trainingReview(s)[0];
+  assert.equal(row.headroom,null);
+  assert.equal(row.action,"추가 데이터 확인");
+  assert.equal(row.priority,null);
+  assert.equal(row.canRecommendFocus,false);
+});
+
+test("training review surfaces verified role gaps for a young player without naming an FM focus",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    age:19,ageKnown:true,ca:120,pa:180,paKnown:true,
+    primaryPosition:"CM",positions:["CM"],positionRatings:{MC:20},
+    attributes:{
+      passing:16,vision:11,firstTouch:15,technique:16,decisions:12,
+      composure:14,dribbling:13,offTheBall:12,stamina:15,workRate:15,
+      positioning:13,anticipation:13,tackling:12,marking:11,strength:11
+    }
+  });
+  const p=normalizeRealSnapshot(x).players[0];
+  const row=trainingReviewForPlayer(p);
+  assert.equal(row.status,"개발 항목 검토");
+  assert.equal(row.action,"핵심 능력치 개발 검토");
+  assert.equal(row.headroom,60);
+  assert.ok(row.gaps.some(g=>g.attribute==="vision"));
+  assert.ok(row.priority>0);
+  assert.equal(row.canRecommendFocus,false);
+  assert.ok(row.missing.includes("현재 개인훈련 focus"));
+});
+
+test("training review avoids aggressive development conclusion with tiny CA PA headroom",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    age:24,ageKnown:true,ca:160,pa:164,paKnown:true,
+    primaryPosition:"CM",positions:["CM"],positionRatings:{MC:20},
+    attributes:{
+      passing:12,vision:12,firstTouch:12,technique:12,decisions:12,
+      composure:12,dribbling:12,offTheBall:12,stamina:12,workRate:12,
+      positioning:12,anticipation:12,tackling:12,marking:12,strength:12
+    }
+  });
+  const p=normalizeRealSnapshot(x).players[0];
+  const row=trainingReviewForPlayer(p);
+  assert.equal(row.status,"성장 여유 제한");
+  assert.equal(row.action,"집중훈련 변경 보류");
+  assert.equal(row.priority,0);
+  assert.equal(row.canRecommendFocus,false);
+});
+
+test("training review refuses to infer development gaps from incomplete role inputs",()=>{
+  const x=raw();
+  Object.assign(x.players[0],{
+    age:19,ageKnown:true,ca:110,pa:180,paKnown:true,
+    primaryPosition:"ST",positions:["ST"],positionRatings:{STC:20},
+    attributes:{finishing:15}
+  });
+  const p=normalizeRealSnapshot(x).players[0];
+  const row=trainingReviewForPlayer(p);
+  assert.equal(row.status,"자료 부족");
+  assert.equal(row.priority,null);
+  assert.equal(row.canRecommendFocus,false);
 });
 
 for(const url of ["https://evil.example","http://127.0.0.1.evil.example:8765","http://u:p@localhost:8765","http://localhost:8765/path","file:///tmp/x","http://localhost:8765/?x=1","http://localhost:8765/#x"])
