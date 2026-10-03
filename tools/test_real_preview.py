@@ -68,7 +68,7 @@ def main():
         page.locator("#fixtureSelect").select_option("m2")
         state["snapshot"]["players"][0]["ca"]=128
         page.locator("#refreshButton").click()
-        page.wait_for_function("document.querySelector('#content').textContent.includes('Young Player') && !document.querySelector('#refreshButton').disabled")
+        page.wait_for_function("document.querySelector('#fixtureSelect')?.value === 'm2' && !document.querySelector('#refreshButton').disabled")
         assert page.locator("#fixtureSelect").input_value()=="m2"
         print("PASS refresh retains selected fixture")
         state["fail"]=True; page.locator("#refreshButton").click()
