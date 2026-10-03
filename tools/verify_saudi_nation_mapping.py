@@ -12,7 +12,6 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-SAUDI_NATION_ID = 133
 ANCHOR_UNIQUE_IDS = {102852, 102862}  # Al-Hilal, Al-Nassr FM database Unique IDs.
 
 
@@ -120,7 +119,6 @@ def main() -> int:
         "passed": False,
         "scope": "nation_finance_reference_equivalence",
         "groundTruth": "reference_equivalence_only",
-        "saudiNationId": SAUDI_NATION_ID,
     }
 
     try:
@@ -150,12 +148,25 @@ def main() -> int:
             if club.unique_id in ANCHOR_UNIQUE_IDS
         }
         anchor_nations = sorted({int(club.nation_id) for club in anchors.values()})
-        if anchors and any(club.nation_id != SAUDI_NATION_ID for club in anchors.values()):
-            raise ValueError("reference_saudi_anchor_nation_mismatch")
+        inferred_saudi_id = None
+        if len(anchors) == len(ANCHOR_UNIQUE_IDS):
+            if len(anchor_nations) != 1:
+                raise ValueError("reference_saudi_anchor_nation_mismatch")
+            inferred_saudi_id = anchor_nations[0]
 
-        saudi = actual.get(SAUDI_NATION_ID)
-        if saudi is not None and saudi.get("nationName") != "Saudi Arabia":
-            raise ValueError("snapshot_saudi_label_missing")
+        labeled = [row for row in actual.values() if row.get("nationName") == "Saudi Arabia"]
+        if inferred_saudi_id is None:
+            if labeled:
+                raise ValueError("snapshot_saudi_label_without_anchor_evidence")
+            saudi = None
+        else:
+            if len(labeled) > 1:
+                raise ValueError("snapshot_multiple_saudi_labels")
+            saudi = actual.get(inferred_saudi_id)
+            if saudi is not None and saudi.get("nationName") != "Saudi Arabia":
+                raise ValueError("snapshot_saudi_label_missing")
+            if saudi is None and labeled:
+                raise ValueError("snapshot_saudi_label_wrong_nation")
 
         report.update(
             passed=True,
@@ -163,6 +174,7 @@ def main() -> int:
             financeClubs=sum(group["clubsWithFinance"] for group in expected.values()),
             anchorClubsFound=len(anchors),
             anchorNationIds=anchor_nations,
+            inferredSaudiNationId=inferred_saudi_id,
             saudiFinanceAvailable=saudi is not None,
             saudiFinanceClubs=0 if saudi is None else saudi["clubsWithFinance"],
         )
