@@ -210,12 +210,13 @@ pub fn aggregate_by_nation(
             ((top4.saturating_mul(100) + total_capacity / 2) / total_capacity)
                 .min(100) as u8
         };
+        let club_count = group.clubs.len();
         let top_clubs = group.clubs.into_iter().take(5).collect::<Vec<_>>();
 
         result.push(NationFinanceSummary {
             nation_id,
             nation_name: crate::nation::verified_name(nation_id).map(str::to_owned),
-            clubs_with_finance: top_clubs.len().max(0), // overwritten below
+            clubs_with_finance: club_count
             finance_rows: group.finance_rows,
             total_balance: group.total_balance,
             transfer_budget_allocated: group.transfer_allocated,
@@ -226,10 +227,6 @@ pub fn aggregate_by_nation(
             top4_capacity_share: share,
             top_clubs,
         });
-        if let Some(last) = result.last_mut() {
-            // Preserve the full group count even though only five club details are published.
-            last.clubs_with_finance = groups_count_placeholder(last, total_capacity);
-        }
     }
 
     result.sort_by(|a,b|
@@ -242,10 +239,4 @@ pub fn aggregate_by_nation(
 fn budget_capacity_proxy(row: &FinanceLatest) -> u64 {
     let transfer = u64::try_from(row.transfer_budget_remaining.max(0)).unwrap_or(0);
     transfer.saturating_add((row.wage_budget_weekly as u64).saturating_mul(52))
-}
-
-// This helper is replaced by the exact count before publication; kept isolated
-// so the proxy formula never gets confused with coverage.
-fn groups_count_placeholder(summary: &NationFinanceSummary, _capacity: u64) -> usize {
-    summary.top_clubs.len()
 }
