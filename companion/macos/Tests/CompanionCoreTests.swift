@@ -308,6 +308,88 @@ func request(_ origin: String? = nil, host: String = "127.0.0.1:8765", method: S
                     try eventually { (try? Data(contentsOf: counter).count) == 2 }
                 }
             }),
+            ("development history isolates careers and replaces same game date", {
+                try withDirectory { dir in
+                    let history = DevelopmentHistoryStore(
+                        directoryURL: dir.appendingPathComponent("history", isDirectory: true),
+                        maxPoints: 3
+                    )
+
+                    var first = payload()
+                    first["gameDate"] = "2037-07-01"
+                    var firstPlayers = first["players"] as! [[String: Any]]
+                    firstPlayers[0]["ca"] = 120
+                    firstPlayers[0]["pa"] = 180
+                    firstPlayers[0]["paKnown"] = true
+                    firstPlayers[0]["value"] = 1_000_000
+                    firstPlayers[0]["valueKnown"] = true
+                    firstPlayers[0]["attributes"] = ["passing": 13, "strength": 9]
+                    first["players"] = firstPlayers
+                    try history.record(snapshot: json(first), selectionId: "career-a",
+                        now: Date(timeIntervalSince1970: 1))
+
+                    var replacement = first
+                    replacement["gameDate"] = "2037-07-01"
+                    var replacementPlayers = replacement["players"] as! [[String: Any]]
+                    replacementPlayers[0]["ca"] = 121
+                    replacement["players"] = replacementPlayers
+                    try history.record(snapshot: json(replacement), selectionId: "career-a",
+                        now: Date(timeIntervalSince1970: 2))
+
+                    var secondDate = replacement
+                    secondDate["gameDate"] = "2037-08-01"
+                    var secondPlayers = secondDate["players"] as! [[String: Any]]
+                    secondPlayers[0]["ca"] = 124
+                    secondDate["players"] = secondPlayers
+                    try history.record(snapshot: json(secondDate), selectionId: "career-a",
+                        now: Date(timeIntervalSince1970: 3))
+
+                    try history.record(snapshot: json(first), selectionId: "career-b",
+                        now: Date(timeIntervalSince1970: 4))
+
+                    let a = try history.load(selectionId: "career-a")
+                    let b = try history.load(selectionId: "career-b")
+                    try check(a?.points.count == 2)
+                    try check(a?.points[0].players[0].ca == 121)
+                    try check(a?.points[1].players[0].ca == 124)
+                    try check(a?.points[0].players[0].attributes["passing"] == 13)
+                    try check(b?.points.count == 1)
+                    try check(b?.points[0].players[0].ca == 120)
+                }
+            }),
+            ("parser records history only when a pinned selection id exists", {
+                try withDirectory { dir in
+                    let original = try save(dir)
+                    var p = payload()
+                    p["gameDate"] = "2037-07-01"
+                    let binary = try parser(dir, body:
+                        "printf '%s' " + quote(String(decoding: try json(p), as: UTF8.self)))
+                    let history = DevelopmentHistoryStore(
+                        directoryURL: dir.appendingPathComponent("history", isDirectory: true)
+                    )
+                    let state = CompanionState()
+                    state.setSelection(id: "pin-123", path: original.path, mode: "pinned")
+                    let runner = NativeParserRunner(
+                        parserURL: binary,
+                        store: SnapshotStore(url: dir.appendingPathComponent("snapshot.json")),
+                        state: state,
+                        historyStore: history
+                    )
+                    _ = try runner.parse(saveURL: original)
+                    let stored = try history.load(selectionId: "pin-123")
+                    try check(stored?.points.count == 1)
+
+                    let unpinnedState = CompanionState()
+                    let unpinned = NativeParserRunner(
+                        parserURL: binary,
+                        store: SnapshotStore(url: dir.appendingPathComponent("snapshot-2.json")),
+                        state: unpinnedState,
+                        historyStore: history
+                    )
+                    _ = try unpinned.parse(saveURL: original)
+                    try check((try history.load(selectionId: "pin-123"))?.points.count == 1)
+                }
+            }),
             ("missing watch directory is never created", {
                 try withDirectory { dir in
                     let missing = dir.appendingPathComponent("not-created")
