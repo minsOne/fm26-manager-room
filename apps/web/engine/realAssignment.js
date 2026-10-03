@@ -32,7 +32,8 @@ export function maximumWeightAssignment(rowsBySlot) {
       // Role Fit dominates every tie-breaker. CA is only secondary.
       const ca=Number.isFinite(row.player.ca)?Math.max(0,Math.min(200,row.player.ca)):0;
       const stableTie=Math.max(0,999-column);
-      const utility=row.score*1_000_000+ca*1_000+stableTie;
+      const assignmentScore=Number.isFinite(row.assignmentScore)?row.assignmentScore:row.score;
+      const utility=assignmentScore*1_000_000+ca*1_000+stableTie;
       cost[rowIndex][column]=-utility;
       rowLookup[rowIndex].set(column,row);
     }
