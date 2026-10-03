@@ -60,6 +60,7 @@ pub struct ClubCore {
     pub record_end: usize,
     pub club_index: u32,
     pub uid: u32,
+    pub unique_id: Option<u32>,
     pub nation_id: u32,
     pub fa_nation_id: u32,
     pub city_id: Option<u32>,
@@ -176,18 +177,27 @@ impl ClubIndex {
             .collect();
 
         let statuses = read_statuses(game_db, &records);
+        // Match the reference reader's database Unique ID interpretation:
+        // the next accepted club object header carries the current club's DB Unique ID.
+        let unique_ids = records
+            .iter()
+            .enumerate()
+            .map(|(position, _)| records.get(position + 1).map(|next| next.uid))
+            .collect::<Vec<_>>();
 
         let clubs: Vec<ClubCore> = records
             .into_iter()
             .zip(team_lists)
             .zip(record_ends)
-            .map(|((record, teams), record_end)| {
+            .zip(unique_ids)
+            .map(|(((record, teams), record_end), unique_id)| {
                 let status = statuses.get(&record.uid).copied().unwrap_or_default();
                 ClubCore {
                 record_start: record.record_start,
                 record_end,
                 club_index: record.club_index,
                 uid: record.uid,
+                unique_id,
                 nation_id: record.nation_id,
                 fa_nation_id: record.fa_nation_id,
                 city_id: record.city_id,
