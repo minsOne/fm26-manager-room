@@ -11,7 +11,7 @@ const bytes=s=>new TextEncoder().encode(s).byteLength;
 /** Bounded, browser-local observations; never inferred match or training outcomes. */
 export class CareerArchive {
   constructor({storage=null,namespace='',maxBytes=3*1024*1024,maxDates=60,maxSegments=8}={}){
-    this.storage=storage;this.key=KEY+':'+namespace;this.maxBytes=maxBytes;this.maxDates=maxDates;this.maxSegments=maxSegments;
+    this.storage=storage;this.restoreStorage=storage;this.key=KEY+':'+namespace;this.maxBytes=maxBytes;this.maxDates=maxDates;this.maxSegments=maxSegments;
     this.data={version:1,segments:[]};this.warning=storage?null:'브라우저 저장소 사용 불가: 기록은 현재 세션에만 유지됩니다.';
     try{
       const text=storage?.getItem(this.key);
@@ -61,7 +61,28 @@ export class CareerArchive {
     catch{this.warning='브라우저 저장 공간 부족 또는 접근 실패: 이번 기록은 현재 세션에만 유지됩니다.';}
     return this.decorate(snapshot,segment);
   }
-  view(snapshot){return this.decorate(snapshot,this.segment(snapshot));}
+  exportText(){return JSON.stringify({kind:"fm26-manager-room-observations",version:1,archive:this.data});}
+  inspectImport(text){
+    if(typeof text!=="string"||bytes(text)>this.maxBytes+65536)throw Error("기록 파일 크기 제한을 초과했습니다.");
+    let packet;try{packet=JSON.parse(text);}catch{throw Error("기록 파일 JSON이 올바르지 않습니다.");}
+    if(packet?.kind!=="fm26-manager-room-observations"||packet.version!==1
+      ||!validArchive(packet.archive,this.maxDates,this.maxSegments)
+      ||bytes(JSON.stringify(packet.archive))>this.maxBytes)throw Error("지원하지 않거나 손상된 기록 파일입니다. 기존 기록은 유지합니다.");
+    return {data:packet.archive,segments:packet.archive.segments.length,
+      dates:packet.archive.segments.reduce((n,s)=>n+s.records.length,0)};
+  }
+  importText(text){
+    const inspected=this.inspectImport(text),serialized=JSON.stringify(inspected.data);
+    // Persist before swapping memory: a failed restore must not destroy the current archive.
+    const target=this.restoreStorage;
+    if(!target)throw Error("영구 저장소를 사용할 수 없어 가져오기를 중단했습니다. 기존 기록은 유지합니다.");
+    try{target.setItem(this.key,serialized);}catch{throw Error("가져온 기록을 저장하지 못했습니다. 기존 기록은 유지합니다.");}
+    this.storage=target;this.data=structuredClone(inspected.data);this.warning=null;return inspected;
+  }
+  view(snapshot){
+    const reason=this.boundary(snapshot);
+    return this.decorate(snapshot,reason?null:this.segment(snapshot),reason);
+  }
   saveDecision(snapshot,plan){
     if(!plan || plan.review.status!=="review" || !plan.review.selectedCount)return this.view(snapshot);
     const segment=this.segment(snapshot);

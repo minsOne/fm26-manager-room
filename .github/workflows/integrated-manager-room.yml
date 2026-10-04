@@ -62,6 +62,8 @@ jobs:
         run: |
           native/fm26-parser/target/release/fm26-manager-room-parser snapshot "$RUNNER_TEMP/integrated-mr/public.fm" > "$RUNNER_TEMP/integrated-mr/snapshot.json"
           python tools/verify_snapshot_fields.py --save "$RUNNER_TEMP/integrated-mr/public.fm" --snapshot "$RUNNER_TEMP/integrated-mr/snapshot.json" --report "$RUNNER_TEMP/integrated-mr/fields-report.json"
+      - name: Audit external candidate pagination against independent reference
+        run: python tools/verify_candidate_pages.py --save "$RUNNER_TEMP/integrated-mr/public.fm" --parser native/fm26-parser/target/release/fm26-manager-room-parser --report "$RUNNER_TEMP/integrated-mr/candidates-report.json"
       - name: Real filesystem and HTTP to Chromium and WebKit
         run: |
           python tools/test_integrated_manager_room.py --save "$RUNNER_TEMP/integrated-mr/public.fm" --native-snapshot "$RUNNER_TEMP/integrated-mr/snapshot.json" --parser native/fm26-parser/target/release/fm26-manager-room-parser --companion companion/macos/.build/release/manager-room-companion --report "$RUNNER_TEMP/integrated-mr/browser-report.json"
@@ -73,6 +75,7 @@ jobs:
         with:
           name: integrated-manager-room-sanitized
           path: |
+            ${{ runner.temp }}/integrated-mr/candidates-report.json
             ${{ runner.temp }}/integrated-mr/fields-report.json
             ${{ runner.temp }}/integrated-mr/browser-report.json
           if-no-files-found: warn

@@ -230,6 +230,15 @@ def main():
         page.locator('[data-new-observations]').click()
         assert '현재 구간 1일' in page.locator('#content').inner_text()
         print('PASS durable dated history, reload, same-file rollback and explicit new observations')
+        with page.expect_download() as download_info:
+            page.locator('[data-export-archive]').click()
+        archive_path=download_info.value.path()
+        page.locator('#archiveImportFile').set_input_files(archive_path)
+        page.wait_for_function("!document.querySelector('[data-confirm-archive]').disabled")
+        page.locator('[data-confirm-archive]').click()
+        assert '기록 가져오기 완료' in page.locator('#archiveImportStatus').inner_text()
+        print('PASS archive export, validated replacement and import UI')
+
         page.locator('nav [data-view="manager"]').click()
         if args.screenshot_dir:
             args.screenshot_dir.mkdir(parents=True,exist_ok=True)

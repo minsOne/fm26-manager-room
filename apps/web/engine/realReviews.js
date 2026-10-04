@@ -41,6 +41,6 @@ export function evidenceBriefing(snapshot){
     {topic:'의료·자격',evidence:`부상 여부 미확인 ${missing('injuryFree')}명 / 출전 자격 미확인 ${missing('eligible')}명`,action:'FM 경기 준비·의료 화면에서 확인'},
     {topic:'성장 관측',evidence:`서로 다른 날짜 비교 가능 ${report.comparable} / ${report.total}명`,action:'게임 날짜가 진행된 저장을 수집; CA 변화는 훈련 효과의 증명이 아님'},
     {topic:'계약',evidence:`종료일 확인 ${snapshot.players.filter(p=>p.contractEnd).length} / ${snapshot.players.length}명`,action:'임대·방출 판단 전 시장 관심·오퍼·출전 약속 확인'},
-    {topic:'외부 AI',evidence:'미연결; 이 브리핑은 로컬 계산',action:'외부 전송·게임 수정 없음'}
+    {topic:'외부 AI',evidence:'CLI에서 명시적 요청 가능; 이 브리핑은 로컬 계산',action:'외부 전송·게임 수정 없음'}
   ];
 }

@@ -48,8 +48,7 @@ not full match histories or a complete growth timeline.
 Corrupt or oversized saved archives are not overwritten: the app warns and uses
 session memory. Storage access/quota failures are visible and never hide the live
 snapshot. Private browsing, clearing site data, changing origins and different
-browsers/devices affect availability. No cloud sync or portable history import is
-claimed. Parser failures/in-progress imports or missing parser status do not add
+browsers/devices affect availability. Versioned export/restore is available in Settings; see external-candidates-and-coach.md. No automatic cloud sync is claimed. Parser failures/in-progress imports or missing parser status do not add
 observations. A supported parser mapping change must increment the archive format
 or provide independently validated migration; database version is not proof of
 field semantics.

@@ -13,6 +13,9 @@ that its full recommendation engine is enabled.
   fixture bench/substitution limits and explicit conflict handling.
 - Browser-persisted career observations; explicit same-path new-game UUID;
   rollback/version split gates; CA/attribute change views and reports.
+- Native query/pagination across decoded external players and validated web page import.
+- OpenAI Responses CLI with explicit send, private preview and user-supplied model/key.
+- Versioned observation export/restore with validation and durable replacement.
 - Local review-plan journal with subjective feedback (not verified outcomes).
 - Evidence-only role training review, supplied external-candidate comparison and
   local Coach briefing. These are not full automatic training/transfer/AI systems.
@@ -27,8 +30,8 @@ that its full recommendation engine is enabled.
 | Complete appearances | Retained records can omit old, friendly, international and youth matches | Multiple dated saves and the actual game match lists/minute displays |
 | Wider parser/build coverage | A public fixture/reference agreement is not universal game truth | Independent save/build matrix and field-by-field game-screen comparisons |
 | Full training/development advice | Focus catalogue, current training and longitudinal outcomes not verified | FM26 training catalogue/current assignments, medical inputs and outcome observations |
-| Full-world recruitment / loan / sales | Candidate reader coverage, offers, facilities, interest and registration incomplete | Verified full-world candidate index and offer/contract/eligibility fields |
-| Model-backed AI Coach | No external provider endpoint, credentials or model selection configured | A configured provider plus explicit product-level data sharing controls and evaluation |
+| Recruitment / loan / sales validation | External search/pagination and UI import are implemented; offers, facilities, interest and registration remain incomplete | Broader candidate/build audit and verified offer/contract/eligibility fields |
+| AI activation/evaluation | Native OpenAI connection, preview and explicit send are implemented; no live project/model configured here | User API key and available model on the Mac; live response evaluation. Browser chat is a separate UI enhancement |
 | Recommendation calibration | No validated recommendation/outcome labels | Persisted decisions and independently defined outcomes; sample coverage before probabilities |
 | World Balance metrics | Current budgets are not actual spending or inflation | Nation/league mappings and longitudinal transfer/wage transactions with currency/unit verification |
 | Game writer / rollback | No validated writable profiles; current product remains read-only | Build-specific field semantics, preview/read-back/rollback tests and per-write user approval |
@@ -40,10 +43,11 @@ the missing sources. Work can resume on each gate as its evidence becomes availa
 
 ## Further product work
 
-- Optional portable, user-controlled observation export/import and multi-device
-  persistence; the delivered archive is bounded and browser-local.
+- Automatic multi-device sync/identity reconciliation; portable export/restore is implemented.
 - Independently verified outcome capture before calibration; current journals
   contain drafts and subjective feedback, not actual match outcomes.
 - Joint multi-fixture optimization, chaining substitutions and supported special
   rules after their constraints are validated; current planner is sequential.
 - Versioned migration policy when verified parser attribute semantics change.
+
+Implementation and operational setup for these latest paths: [external candidates and Coach](external-candidates-and-coach.md). Remaining game-data validation is still not replaced by a model response or a manual import.

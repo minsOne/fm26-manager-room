@@ -126,3 +126,18 @@ test('review journal preserves draft evidence, feedback and career isolation aft
   assert.equal(a.saveDecision(next,{...plan,review:{...plan.review,status:'conflict'}}).decisionJournal.length,0);
   assert.doesNotMatch(renderRoom('reports',{snapshot:reloaded,status:'current'},{}),/NaN|undefined/);
 });
+
+test('portable archive round trip replaces only after validation and a durable write',()=>{
+  const a=new CareerArchive({storage:memory()});a.capture(snap());a.capture(snap('2037-07-02',125));
+  const exported=a.exportText();const storage=memory(),b=new CareerArchive({storage});b.capture(snap());
+  assert.equal(b.inspectImport(exported).dates,2);b.importText(exported);
+  assert.equal(b.view(snap('2037-07-02')).observationArchive.dates,2);
+  const before=b.exportText();assert.throws(()=>b.importText('{}'));assert.equal(b.exportText(),before);
+  storage.setItem=()=>{throw Error('quota');};assert.throws(()=>b.importText(exported));assert.equal(b.exportText(),before);
+});
+test('archive import preserves foreign IDs and can explicitly recover corrupted storage',()=>{
+  const storage=memory(),a=new CareerArchive({storage});a.capture(snap());const exported=a.exportText();storage.setItem(a.key,'corrupt');
+  const b=new CareerArchive({storage});b.importText(exported);assert.equal(b.view(snap()).observationArchive.dates,1);
+  const foreign=snap();foreign.saveId='new-career';assert.equal(b.view(foreign).observationArchive.dates,0);
+  assert.throws(()=>b.importText(exported.replace('"version":1','"version":99')));
+});

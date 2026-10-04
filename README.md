@@ -132,6 +132,14 @@ version guard → preview → explicit approval → apply → read-back verifica
 
 No such game writer is enabled in the current integrated build.
 
+## Candidates, AI and portable observations
+
+Use `manager-room candidates --query "" --offset 0 > candidates.json` to export a
+100-player page for the Recruitment tab. `manager-room coach --player UID
+--question "..." --model MODEL` previews a one-player AI request locally; only
+`--send` uses your locally configured `OPENAI_API_KEY`. Settings can export and
+restore bounded career observations. See [usage and privacy boundaries](docs/external-candidates-and-coach.md).
+
 ## Current remaining work
 
 See [the consolidated tracker](docs/remaining-work.md) for implemented features,

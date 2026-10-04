@@ -33,10 +33,13 @@ final class NativeParserRunner: @unchecked Sendable {
     private let timeoutSeconds: Double
     private let outputLimit: UInt64
     private let errorLimit: UInt64
+    private let candidateQuery: String?
+    private let candidateOffset: Int
 
     init(parserURL: URL, store: SnapshotStore, state: CompanionState,
          timeoutSeconds: Double = 120, outputLimit: UInt64 = 64 * 1024 * 1024,
-         errorLimit: UInt64 = 8 * 1024 * 1024) {
+         errorLimit: UInt64 = 8 * 1024 * 1024, candidateQuery: String? = nil, candidateOffset: Int = 0) {
+        self.candidateQuery = candidateQuery; self.candidateOffset = candidateOffset
         self.parserURL = parserURL; self.store = store; self.state = state
         self.timeoutSeconds = max(0.05, timeoutSeconds)
         self.outputLimit = outputLimit; self.errorLimit = errorLimit
@@ -84,7 +87,10 @@ final class NativeParserRunner: @unchecked Sendable {
             defer { try? out.close(); try? err.close() }
             let process = Process()
             process.executableURL = parserURL
-            process.arguments = ["snapshot", staged.path]
+            process.arguments = candidateQuery.map { ["candidates", staged.path, $0, String(candidateOffset)] } ?? ["snapshot", staged.path]
+            var environment = ProcessInfo.processInfo.environment
+            environment.removeValue(forKey: "OPENAI_API_KEY")
+            process.environment = environment
             process.standardInput = FileHandle.nullDevice
             // Files, not sequentially drained pipes: stderr cannot block stdout consumption.
             process.standardOutput = out

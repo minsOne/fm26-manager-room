@@ -167,6 +167,15 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                 if any(word in text for word in ['NaN', 'undefined', 'Infinity']):
                     raise RuntimeError('invalid_room_render')
             result['roomsVisited'] = 14
+            candidate_bytes=subprocess.check_output([str(args.companion),'candidates','--parser',str(args.parser),'--offset','0'],env=career_env,timeout=120)
+            candidate_page=root/kind/'candidate-page.json';candidate_page.write_bytes(candidate_bytes)
+            page.locator('nav [data-view="recruitment"]').click()
+            page.locator('#candidateImportFile').set_input_files(candidate_page)
+            page.wait_for_function("document.querySelector('#content').textContent.includes('가져온 후보 페이지')")
+            imported=json.loads(candidate_bytes)
+            if len(imported.get('externalCandidates',[]))!=100:raise RuntimeError('candidate_page_incomplete')
+            result['realCandidatePageImported'] = True
+
             # Actual native snapshot -> normalized calendar -> unique review plans.
             rotation = page.evaluate('''async (base) => {
                 const {normalizeRealSnapshot} = await import('./engine/realSnapshot.js');
