@@ -147,3 +147,69 @@ test("a verified substitute below coverage threshold remains on the reserved ben
   const b=r.bench.players.find(b=>b.player.id==="31");
   assert.equal(b.plannedSubstitute,true);assert.ok(b.bestScore<65);assert.deepEqual(b.coverage,[]);
 });
+
+for(const [label,rules,code] of [
+  ['zero substitutions',{substitutionLimit:0},'match-substitution-limit'],
+  ['zero bench',{benchLimit:0},'match-bench-limit'],
+  ['negative',{benchLimit:-1},'invalid-match-rule'],
+  ['fraction',{substitutionLimit:1.5},'invalid-match-rule'],
+  ['string',{benchLimit:'5'},'invalid-match-rule'],
+  ['over bound',{substitutionLimit:12},'invalid-match-rule'],
+  ['malformed',[],'invalid-match-rule']
+]) test(`manual rule conflict stops this and later reservations: ${label}`,()=>{
+  const s=snapshot(),original=structuredClone(s);
+  const r=rotationReview(s,{mode:'best-xi',constraintsByFixture:new Map([['2',{
+    lockedStarters:{st:'11'},minuteCaps:{'11':60},matchRules:rules
+  }]])});
+  assert.equal(r.status,'conflict');assert.equal(r.plans.length,2);
+  assert.ok(r.conflicts.some(c=>c.code===code));
+  assert.equal(r.plans[1].review.selectedCount,0);assert.equal(r.plans[1].review.bench.selectedCount,0);
+  assert.ok(r.players.flatMap(p=>p.reservations).every(a=>a.fixtureId==='1'));
+  assert.equal(r.players.reduce((n,p)=>n+p.plannedMinutes,0),990);assert.deepEqual(s,original);
+});
+
+test('manual bench limit keeps planned incoming player and does not certify eligibility',()=>{
+  const r=review(snapshot(),{lockedStarters:{st:'11'},minuteCaps:{'11':60},matchRules:{benchLimit:1,substitutionLimit:1}});
+  assert.equal(r.status,'review');assert.equal(r.bench.selectedCount,1);
+  assert.equal(r.bench.players[0].player.id,'31');assert.equal(r.minutePlan.changes.length,1);
+  assert.equal(r.matchRules.verified,false);assert.equal(r.matchRules.source,'manager-entry');
+  assert.ok(r.decisionMissing.includes('선수별 대회 등록·출전 자격'));
+  assert.ok(r.decisionMissing.includes('교체 횟수·하프타임·연장·특별 교체 규정'));
+  assert.equal(r.readyForFinalDecision,false);
+});
+
+test('manual zero, missing and limits beyond review capacity are distinct',()=>{
+  const zero=review(snapshot(),{matchRules:{benchLimit:0,substitutionLimit:0}});
+  assert.equal(zero.status,'review');assert.equal(zero.bench.selectedCount,0);
+  assert.equal(zero.matchRules.values.benchLimit,0);
+  const absent=review(snapshot(),{});
+  assert.equal(absent.matchRules.values.benchLimit,null);assert.equal(absent.bench.selectedCount,9);
+  assert.equal(review(snapshot(),{matchRules:{benchLimit:23}}).bench.selectedCount,9);
+});
+
+test('multiple simultaneous changes count as players, not one substitution window',()=>{
+  const r=review(snapshot(),{lockedStarters:{rcb:'3',lcb:'4'},minuteCaps:{'3':60,'4':60},matchRules:{substitutionLimit:1}});
+  assert.ok(r.selectionConflicts.some(c=>c.code==='match-substitution-limit'));
+  assert.equal(r.minutePlan.appearances.length,0);
+});
+
+test('rule edits are immutable, fixture isolated, removable and reset with all directives',()=>{
+  const m=new Map();editFixtureSelection(m,'1',{type:'rule',field:'benchLimit',value:0});
+  const before=m.get('1');
+  editFixtureSelection(m,'1',{type:'rule',field:'substitutionLimit',value:5});
+  assert.deepEqual(before.matchRules,{benchLimit:0});
+  editFixtureSelection(m,'2',{type:'rule',field:'benchLimit',value:7});
+  editFixtureSelection(m,'1',{type:'rest',playerId:'11',rest:true});
+  assert.equal(m.get('1').matchRules.substitutionLimit,5);
+  editFixtureSelection(m,'1',{type:'rule',field:'benchLimit',value:null});
+  assert.equal(m.get('1').matchRules.benchLimit,undefined);assert.equal(m.get('2').matchRules.benchLimit,7);
+  editFixtureSelection(m,'1',{type:'clear'});assert.equal(m.has('1'),false);assert.equal(m.has('2'),true);
+});
+
+test('rule controls distinguish manual evidence and zero from unknown',()=>{
+  const html=renderRoom('matchday',{snapshot:snapshot(),status:'current'},{fixtureId:'1',constraintsByFixture:new Map([['1',{matchRules:{benchLimit:0}}]])});
+  assert.match(html,/감독 수동 입력/);assert.match(html,/data-match-rule="benchLimit"[^>]*value="0"/);
+  assert.match(html,/data-match-rule="substitutionLimit"[^>]*value=""/);
+  assert.match(html,/교체 횟수·하프타임·연장·특별 교체/);
+  assert.doesNotMatch(html,/NaN|undefined/);
+});

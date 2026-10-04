@@ -263,6 +263,14 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).wait_for()
             minute.fill('60');minute.dispatch_event('change')
             result['realMinutePlansChecked'] = True
+            for field in ('benchLimit','substitutionLimit'):
+                rule=page.locator(f'input[data-match-rule="{field}"]')
+                rule.fill('0');rule.dispatch_event('change')
+                page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).wait_for()
+                rule.fill('1');rule.dispatch_event('change')
+                if page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).count():
+                    raise RuntimeError('manual_rule_conflict_not_resolved')
+            result['manualRuleLimitsChecked'] = True
             page.locator('nav [data-view="tactics"]').click()
             good_bytes = destination.read_bytes()
             old_success = get('/api/parser')['lastSuccessAt']
@@ -287,6 +295,9 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             if page.locator(f'input[data-minute-cap-player="{rotation["lockPlayerId"]}"]').input_value()!='60' or page.locator(f'#sub-minute-{rotation["lockSlot"]}').input_value()!='60' or page.locator(f'#sub-player-{rotation["lockSlot"]}').input_value()!=rotation['subPlayerId']:
                 raise RuntimeError('real_minutes_lost_on_reimport')
             result['minutePlansReimportPreserved'] = True
+            if any(page.locator(f'input[data-match-rule="{field}"]').input_value()!='1' for field in ('benchLimit','substitutionLimit')):
+                raise RuntimeError('manual_rules_lost_on_reimport')
+            result['manualRulesReimportPreserved'] = True
             page.locator('nav [data-view="tactics"]').click()
             # Corrupt only the private same file; the real parser must fail.
             rewrite_same_file(sample)

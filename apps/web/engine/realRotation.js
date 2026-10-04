@@ -1,4 +1,5 @@
 import { matchdayReview } from "./realMatchday.js";
+import { matchRuleLimits } from "./realMatchRules.js";
 import { validDate, historyWindow } from "./realHistory.js";
 
 export const rotationModes = {
@@ -49,8 +50,9 @@ export function rotationReview(snapshot, options={}) {
       adjustments.set(player.id,selectionAdjustment(player,mode,{congested,currentEvidence,window,
         plannedMinutes:recentPlans.reduce((sum,row)=>sum+row.minutes,0),importance:fixture.importance}));
     }
+    const constraints=options.constraintsByFixture?.get(fixture.id);
     const missing=[
-      "대회별 등록·벤치·교체 규정",
+      ...matchRuleLimits(constraints?.matchRules).missing,
       fixture.date>snapshot.gameDate?"경기 당일 체력·부상·출전 자격 재확인":null,
       fixture.importance==null?"경기 중요도":null,
       upcoming.some(f=>f.id!==fixture.id && f.date===fixture.date)?"동일 날짜 일정의 시간·대상팀 확인":null,
@@ -60,7 +62,6 @@ export function rotationReview(snapshot, options={}) {
       observedWorkloads.some(({window:w})=>w.sameDayRecords>0)?"경기 당일 수록 기록의 시간 순서":null,
       observedWorkloads.some(({window:w})=>w.status==="review" && !w.minutesVerified)?"출전분 해석의 게임 화면 대조":null
     ].filter(Boolean);
-    const constraints=options.constraintsByFixture?.get(fixture.id);
     const review=matchdayReview(snapshot,options.formation,{adjustments,stale:options.stale,decisionMissing:missing,constraints});
     const previousPlan=plans.at(-1);
     const previousIds=new Set(previousPlan?.review.lineup.filter(row=>row.player).map(row=>row.player.id)??[]);

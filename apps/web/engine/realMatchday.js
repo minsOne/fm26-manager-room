@@ -1,6 +1,7 @@
 import { bestVerifiedRoles } from "./realRoleFit.js";
 import { maximumWeightAssignment } from "./realAssignment.js";
 import { minuteDirectives, minutePlan } from "./realMinutePlan.js";
+import { matchRuleLimits, checkMatchRulePlan } from "./realMatchRules.js";
 import { selectionConstraints } from "./realSelection.js";
 
 export const reviewFormations = {
@@ -70,7 +71,8 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
 
   const constraints=selectionConstraints(snapshot,slots,bySlot,options.constraints);
   const directives=minuteDirectives(snapshot,slots,bySlot,options.constraints);
-  constraints.conflicts.push(...directives.conflicts);
+  const matchRules=matchRuleLimits(options.constraints?.matchRules);
+  constraints.conflicts.push(...directives.conflicts,...matchRules.conflicts);
   const excludedIds=new Set([...constraints.restIds,...directives.excludedIds]);
   const fixedIds=new Set([...constraints.lockedStarters.values(),...directives.incomingIds]);
   const remaining=new Map([...bySlot].filter(([id])=>!constraints.lockedRows.has(id))
@@ -87,7 +89,7 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
   const minutes=constraints.conflicts.length
     ?{conflicts:[],pending:[],changes:[],appearances:[],reservedRows:[],status:"conflict",medicalMinuteCap:null}
     :minutePlan(lineup,bySlot,directives,excludedIds);
-  constraints.conflicts.push(...minutes.conflicts);
+  constraints.conflicts.push(...minutes.conflicts,...checkMatchRulePlan(matchRules,minutes));
   if(constraints.conflicts.length) {
     lineup=lineup.map(row=>({slot:row.slot,player:null,role:null,score:null,roleFit:null,missing:["감독 지정 충돌 해결"],selectionScore:null,selectionEvidence:[],availabilityKnown:false,official:false}));
     minutes.changes=[];minutes.appearances=[];minutes.reservedRows=[];minutes.status="conflict";
@@ -98,15 +100,16 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
     sum+(row.player ? 5-row.missing.length : 0),0);
   const criticalDenominator=lineup.filter(row=>row.player).length*5;
   const totalRoleFit=lineup.reduce((sum,row)=>sum+(row.score??0),0);
-  const bench=benchReview(constraints.conflicts.length?{...snapshot,players:[]}:snapshot,lineup,9,65,excludedIds,minutes.reservedRows);
-  const decisionMissing=[
+  const bench=benchReview(constraints.conflicts.length?{...snapshot,players:[]}:snapshot,lineup,matchRules.reviewBenchLimit,65,excludedIds,minutes.reservedRows);
+  const decisionMissing=[...new Set([
     snapshot.buildVerified===true?null:"빌드 지원 확인",
     options.stale?"최신 스냅샷":null,
     ...(options.decisionMissing??[]),
+    ...(options.constraints?.matchRules!=null?matchRules.missing:[]),
     constraints.conflicts.length?"감독 지정 충돌":null,
     minutes.pending.length?"교체 후보·출전시간 계획":null,
     minutes.changes.some(c=>criticalMissing(c.incoming).length)?"교체 선수 의료·출전 자격":null
-  ].filter(Boolean);
+  ].filter(Boolean))];
   bench.readyForFinalDecision=bench.readyForFinalDecision && decisionMissing.length===0;
 
   return {
@@ -118,6 +121,7 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
     selectionConflicts:constraints.conflicts,
     status:constraints.conflicts.length?"conflict":minutes.status,
     minutePlan:minutes,
+    matchRules,
     constraints:{lockedStarters:Object.fromEntries(constraints.lockedStarters),restIds:[...constraints.restIds],minuteCaps:Object.fromEntries(directives.caps),substitutions:Object.fromEntries(directives.substitutions)},
     missingSlots,
     selectedWithUnknowns,
