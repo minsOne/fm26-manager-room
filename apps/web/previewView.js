@@ -265,9 +265,13 @@ function selectionControls(snapshot,plan,restPanelOpen,minutePanelOpen){
       ${d.playerId && !playerIds.has(d.playerId)?`<option selected value="${esc(d.playerId)}">UID ${esc(d.playerId)} · 현재 미수록</option>`:""}
       ${players.map(p=>`<option value="${esc(p.id)}" ${d.playerId===p.id?"selected":""}>${esc(p.name)} · UID ${esc(p.id)}</option>`).join("")}</select></label>`;
   }).join("");
+  const ruleFields=[["benchLimit","벤치 등록 한도",23],["substitutionLimit","교체 선수 한도",11]].map(([key,label,max])=>`<label class="selection-field">${label} (명)<input type="number" min="0" max="${max}" step="1" placeholder="미확인" data-match-rule="${key}" data-fixture-id="${fixtureId}" value="${review.matchRules.values[key]??""}"></label>`).join("");
   return card("감독 지정 · 선택한 경기만 적용",
     note(`${plan.fixture.date} · ${plan.fixture.opponent}. 선발 고정은 남은 슬롯의 전역 배치에 우선합니다. 휴식 지정은 선발·벤치에서 모두 제외합니다. 브라우저 세션의 계획이며 실제 게임 설정을 바꾸지 않습니다.`)
     +note("같은 커리어의 재수집·모드·포메이션 변경 시 지정을 유지합니다. 새 커리어·Bridge 변경·페이지 재로드 시 초기화됩니다. 고정은 미확인 의료·출전 자격을 확인된 것으로 만들지 않습니다.")
+    +note("경기 규정 · 감독 수동 입력: FM 규칙 화면에서 확인한 정규시간 한도를 입력하세요. 빈칸=미확인, 0=허용 없음. 이 경기만 적용하며 자동 추출·검증된 규정이 아닙니다. 선수별 등록 자격, 교체 횟수·하프타임·연장·특별 교체는 별도 확인하세요.")
+    +`<div class="selection-grid">${ruleFields}</div>`
+    +note(`검토 벤치는 최대 ${review.matchRules.reviewBenchLimit}명입니다. 입력 한도가 9명을 넘어도 현재 검토 범위는 9명입니다. 한도 초과 시 이 경기와 이후 출전분 예약을 보류합니다.`)
     +`<div class="selection-grid">${lockFields}</div>`
     +obsolete.map(([id,playerId])=>`<p>현재 포메이션에 없는 고정: ${esc(id)} · UID ${esc(playerId)} <button data-unlock-slot="${esc(id)}" data-fixture-id="${fixtureId}">이 슬롯 고정 해제</button></p>`).join("")
     +`<details data-rest-controls ${restPanelOpen?"open":""}><summary>이 경기 휴식 지정 (${restIds.size}명)</summary><div class="selection-grid">${restFields}</div></details>`

@@ -69,6 +69,7 @@ document.addEventListener("change",e=>{
   if(e.target.id==="fixtureSelect") {ui.fixtureId=e.target.value;render();}
   if(e.target.id==="formationSelect") {ui.formation=e.target.value;render();}
   if(e.target.id==="rotationModeSelect") {ui.rotationMode=e.target.value;render();}
+  if(e.target.hasAttribute("data-match-rule"))editSelection(e.target.dataset.fixtureId,{type:"rule",field:e.target.dataset.matchRule,value:e.target.validity.badInput?"invalid":e.target.value===""?null:Number(e.target.value)});
   if(e.target.hasAttribute("data-lock-slot"))editSelection(e.target.dataset.fixtureId,{type:"lock",slotId:e.target.dataset.lockSlot,playerId:e.target.value});
   if(e.target.hasAttribute("data-minute-cap-player"))editSelection(e.target.dataset.fixtureId,{type:"cap",playerId:e.target.dataset.minuteCapPlayer,minutes:e.target.validity.badInput?"invalid":e.target.value===""?null:Number(e.target.value)});
   if(e.target.hasAttribute("data-sub-slot"))editSelection(e.target.dataset.fixtureId,{type:"sub",slotId:e.target.dataset.subSlot,field:e.target.dataset.subField,value:e.target.dataset.subField==="minute"?(e.target.validity.badInput?"invalid":e.target.value===""?null:Number(e.target.value)):e.target.value});

@@ -126,6 +126,40 @@ or a competition rule. Per-UID, per-record field equality proves only reference
 equivalence. Current condition is not projected into future recovery. Medical minute caps remain unknown; manager-supplied times are explicitly plans.
 No automatic substitutions are generated from missing fatigue/injury data.
 
+## Manually transcribed match limits
+
+The matchday controls accept two optional, fixture-specific limits read by the
+manager from the FM rules screen: bench registration (0–23) and substitution
+players (0–11). These are supported input ranges, not inferred competition rules.
+Blank means unknown; zero means none permitted. The data is tagged
+`manager-entry`, `verified: false`, and exists only in browser session preferences.
+It never updates the native snapshot, save, or a player's eligibility flag.
+
+The review bench contains at most `min(9, entered bench limit)` players, preserving
+planned incoming players first. Nine remains an application review capacity,
+not a competition rule. A plan exceeding either entered limit conflicts and clears
+this match's XI/bench/minute reservations; subsequent plans stop, while earlier
+valid reservations remain. Every incoming player counts individually, including
+simultaneous substitutions. The planner does not validate substitution windows,
+half-time exemptions, extra time, special substitutions or re-entry. These and
+player-specific registration/eligibility remain explicit decision gaps.
+
+Edits remain isolated by fixture and survive same-career refresh, formation and
+mode changes. The existing reset clears them; a new career, Bridge or page reload
+also clears them. Users must recheck the rules when a save progresses.
+
+### Why these limits are not extracted automatically
+
+The pinned reference
+[`fmsave` rules model at 97ac7fe](https://github.com/rhiever/fmsave/blob/97ac7fe5991fa93f05e42e32f02f37e4c1874d61/src/fmsave/models/rules.py)
+explicitly withholds squad-rule groups: measured routes do not establish their
+competition identity, and their field meanings are not pinned to displayed labels.
+Its `CompetitionRules` rows describe calendar/promotion/prize data with an
+unconfirmed positional competition link; they do not expose validated bench or
+substitution limits. Club registration references likewise do not prove a
+player's competition eligibility. This feature therefore provides manual plan
+checks while automatic competition rules and player registration remain pending.
+
 ## Decision gates and remaining work
 
 Unknown/omitted injury, eligibility, condition, fatigue or injury risk is never
@@ -145,10 +179,12 @@ a claim that the complete Matchday feature is production-ready.
 Node regression tests cover unique assignment, observed/planned separation,
 all four modes, date boundaries, missing selected fixtures, unknowns, stale data,
 source immutability, hard locks/rest, conflict gating, capped minute conservation, explicit/automatic unique substitutes,
-missing coverage deferral, dated windows/unknowns/duplicates and UI escaping. Synthetic
-Chromium tests exercise lock/rest and minute-plan conflict resolution and retained/reset state.
+missing coverage deferral, dated windows/unknowns/duplicates, manual rule limits,
+zero/unknown separation, downstream conflict gating and UI escaping. Synthetic
+Chromium tests exercise lock/rest, minute-plan and manual-rule conflict resolution
+and retained/reset state.
 The integrated macOS workflow uses
 the actual public FM26 save, Rust/Swift API, UID/field audit and Chromium/WebKit
 to verify real rotation plans, hard manager directives, minute splits, dated history conversion/windows and selection retention after
-a real save reimport.
+a real save reimport, including manual-rule limits.
 CI evidence does not replace the user's actual Mac/FM26 validation.

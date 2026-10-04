@@ -79,5 +79,10 @@ export function editFixtureSelection(byFixture,fixtureId,edit){
     if(directive.minute==null && !directive.playerId) delete next.substitutions[edit.slotId];
     else Object.defineProperty(next.substitutions,edit.slotId,{value:directive,enumerable:true,configurable:true,writable:true});
   }
+  if(edit.type==="rule" && ["benchLimit","substitutionLimit"].includes(edit.field)){
+    next.matchRules={...previous.matchRules};
+    if(edit.value===null) delete next.matchRules[edit.field];
+    else next.matchRules[edit.field]=edit.value;
+  }
   byFixture.set(fixtureId,next);
 }

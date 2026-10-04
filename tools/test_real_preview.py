@@ -116,15 +116,29 @@ def main():
         assert page.get_by_role('heading',name='교체 계획 보류',exact=True).count()==0
         minute_panel=page.locator('section.panel').filter(has=page.get_by_role('heading',name='출전시간·교체 계획 · 90분 시나리오',exact=True))
         assert 'Backup Player' in minute_panel.inner_text() and '30' in minute_panel.inner_text()
+        rule=page.locator('input[data-match-rule="substitutionLimit"]')
+        rule.fill('0');rule.dispatch_event('change')
+        page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).wait_for()
+        rule.fill('1');rule.dispatch_event('change')
+        assert page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).count()==0
+        bench_rule=page.locator('input[data-match-rule="benchLimit"]')
+        bench_rule.fill('0');bench_rule.dispatch_event('change')
+        page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).wait_for()
+        bench_rule.fill('1');bench_rule.dispatch_event('change')
+        assert page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).count()==0
         page.locator('#sub-minute-rdm').fill('70');page.locator('#sub-minute-rdm').dispatch_event('change')
         page.get_by_role('heading',name='선택 충돌 · 배치 보류',exact=True).wait_for()
         page.locator('#sub-minute-rdm').fill('60');page.locator('#sub-minute-rdm').dispatch_event('change')
         page.locator('#fixtureSelect').select_option('m1')
+        assert page.locator('input[data-match-rule="substitutionLimit"]').input_value()==''
         assert page.locator('input[data-minute-cap-player="7"]').input_value()==''
         page.locator('#fixtureSelect').select_option('m2')
         assert page.locator('input[data-minute-cap-player="7"]').input_value()=='60'
         page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
         assert page.locator('details[data-minute-controls]').evaluate('(panel)=>panel.open')
+        assert page.locator('input[data-match-rule="substitutionLimit"]').input_value()=='1'
+        assert page.locator('input[data-match-rule="benchLimit"]').input_value()=='1'
+        print('PASS manual rule limits, zero conflicts, fixture isolation and refresh retention')
         assert page.locator('#sub-player-rdm').input_value()=='8'
         assert page.locator('#sub-minute-rdm').input_value()=='60'
         page.locator('input[data-minute-cap-player="7"]').fill('');page.locator('input[data-minute-cap-player="7"]').dispatch_event('change')
