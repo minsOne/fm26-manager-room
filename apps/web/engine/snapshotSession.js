@@ -1,3 +1,4 @@
+import { readCandidatePage } from "./candidateImport.js";
 import { normalizeRealSnapshot } from "./realSnapshot.js";
 
 export const DEFAULT_BRIDGE = "http://127.0.0.1:8765";
@@ -130,6 +131,19 @@ export class SnapshotSession {
     this.fingerprint = null; this.state.revision += 1;
     this.state.error = this.state.parser?.lastError ?? null;
     this.state.status = this.state.error ? "stale" : "current"; this.emit(); return true;
+  }
+  importCandidates(text){
+    if(!this.state.snapshot||this.state.status!=="current"||this.state.parser?.parsing)throw Error("현재 스냅샷 연결 후 후보를 가져오세요.");
+    const result=readCandidatePage(text,this.state.snapshot);
+    this.state.snapshot={...this.state.snapshot,candidates:result.players,candidateCoverage:`가져온 후보 페이지 · ${result.coverage}`,candidateImport:result.search};
+    this.state.revision+=1;this.emit();
+  }
+  exportArchive(){if(!this.archive)throw Error("보관 기능 미연결");return this.archive.exportText();}
+  inspectArchive(text){if(!this.archive)throw Error("보관 기능 미연결");return this.archive.inspectImport(text);}
+  importArchive(text){
+    if(!this.archive || this.state.status!=="current" || this.state.parser?.parsing)throw Error("현재 데이터 연결 상태에서만 기록을 가져올 수 있습니다.");
+    this.archive.importText(text);this.state.snapshot=this.archive.view(this.state.snapshot);
+    this.fingerprint=null;this.state.revision+=1;this.emit();
   }
   recordDecision(plan){return this.editJournal(a=>a.saveDecision(this.state.snapshot,plan));}
   assessDecision(id,assessment){return this.editJournal(a=>a.assessDecision(this.state.snapshot,id,assessment));}

@@ -96,6 +96,10 @@ def main():
             assert fresh["id"] != pin["id"]
             assert json.loads(cli("select-save", str(career)))["id"] == fresh["id"]
             pin = fresh
+            if not args.save:
+                preview=cli("coach","--player","1","--question","Explain observed values","--model","configured-model",*parser_args)
+                assert "LOCAL PREVIEW ONLY" in preview and '"store" : false' in preview
+                assert "테스트" not in preview and "weeklyWage" not in preview
             bad = root / "empty.fm"
             bad.touch()
             cli("select-save", str(bad), ok=False)

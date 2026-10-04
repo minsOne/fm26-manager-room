@@ -80,12 +80,19 @@ fn main() -> Result<()> {
                 .context("usage: fm26-manager-room-parser inspect <save.fm>")?;
             inspect(path)
         }
+        "candidates" => {
+            let path = args.next().map(PathBuf::from).context("usage: fm26-manager-room-parser candidates <save.fm> <query> <offset>")?;
+            let query = args.next().unwrap_or_default();
+            let offset: usize = args.next().unwrap_or_else(|| "0".into()).parse().context("invalid candidate offset")?;
+            if query.len() > 200 || offset > 250_000 { bail!("candidate query/offset exceeds bounds"); }
+            quick_snapshot(path, Some((query, offset)))
+        }
         "snapshot" => {
             let path = args
                 .next()
                 .map(PathBuf::from)
                 .context("usage: fm26-manager-room-parser snapshot <save.fm>")?;
-            quick_snapshot(path)
+            quick_snapshot(path, None)
         }
         _ => {
             eprintln!("Usage:");
@@ -98,7 +105,7 @@ fn main() -> Result<()> {
 }
 
 
-fn quick_snapshot(path: PathBuf) -> Result<()> {
+fn quick_snapshot(path: PathBuf, search: Option<(String, usize)>) -> Result<()> {
     let file = File::open(&path)
         .with_context(|| format!("could not open {}", path.display()))?;
     let mapped = unsafe { MmapOptions::new().map(&file)? };
@@ -156,7 +163,7 @@ fn quick_snapshot(path: PathBuf) -> Result<()> {
         12,
     );
 
-    let snapshot = snapshot::build(
+    let mut snapshot = snapshot::build(
         &game_db,
         index.save_name,
         game_info.db_version,
@@ -171,6 +178,9 @@ fn quick_snapshot(path: PathBuf) -> Result<()> {
         fixtures,
     );
 
+    if let Some((query, offset)) = search {
+        snapshot::add_candidates(&mut snapshot, &game_db, clock, &candidates, &people, &current_contracts, &club_index, &query, offset);
+    }
     println!("{}", serde_json::to_string_pretty(&snapshot)?);
     Ok(())
 }

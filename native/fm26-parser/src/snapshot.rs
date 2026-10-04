@@ -45,6 +45,10 @@ pub struct QuickSnapshot {
     pub fixtures: Vec<FixtureRow>,
     pub players: Vec<QuickPlayer>,
     pub coverage: QuickCoverage,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub external_candidates: Vec<QuickPlayer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_search: Option<CandidateSearch>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +77,7 @@ pub struct QuickCoverage {
     pub fixtures: &'static str,
     pub recent_minutes: &'static str,
     pub finances: &'static str,
+    pub external_candidates: String,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -185,13 +190,38 @@ pub fn build(
         schema_version: 2, source: "rust-native", save_name, db_version,
         game_date: format_date(clock),
         manager: QuickManager { name: summary.manager_name.clone(), club: summary.club_name.clone(), club_uid: summary.club_uid },
-        club_finance, fixtures, players,
+        club_finance, fixtures, players, external_candidates: Vec::new(), candidate_search: None,
         coverage: QuickCoverage {
             players: "native", attributes: "native", personality: "native",
             contracts: "native-chain-current", fixtures: "native-managed-upcoming",
             recent_minutes: "native-match-history", finances: "managed-club-native-finance",
+            external_candidates: "not-requested".into(),
         },
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateSearch { pub scanned: usize, pub matched: usize, pub offset: usize, pub returned: usize, pub has_more: bool }
+
+/// Query all decoded records, but serialize only a bounded page. Unknown club/availability stays unknown.
+pub fn add_candidates(snapshot: &mut QuickSnapshot, game_db: &[u8], clock: GameDate,
+    candidates: &[PlayerCandidate], people: &[Option<PersonCore>], contracts: &[Option<CurrentContractCore>],
+    clubs: &ClubIndex, query: &str, offset: usize) {
+    let query = query.trim().to_lowercase();
+    let mut matches: Vec<usize> = candidates.iter().enumerate().filter_map(|(i,c)| {
+        if clubs.resolve_team(c.team_id).is_some_and(|club| club.club_uid == snapshot.manager.club_uid) { return None; }
+        let name = people.get(i).and_then(Option::as_ref).and_then(|p| p.name.as_deref()).unwrap_or("");
+        (query.is_empty() || name.to_lowercase().contains(&query) || c.uid.to_string() == query).then_some(i)
+    }).collect();
+    matches.sort_by(|a,b| candidates[*b].current_ability.cmp(&candidates[*a].current_ability).then(candidates[*a].uid.cmp(&candidates[*b].uid)));
+    let count = matches.len();
+    snapshot.external_candidates = matches.into_iter().skip(offset).take(100).map(|i|
+        build_player(game_db, &candidates[i], people.get(i).and_then(Option::as_ref), contracts.get(i).and_then(Option::as_ref), RecentMinutes::default(), clock)
+    ).collect();
+    let returned = snapshot.external_candidates.len();
+    snapshot.coverage.external_candidates = format!("native-query-page: scanned {}, matched {}, offset {}, returned {}; decoded save records only; availability and offers unknown", candidates.len(), count, offset, returned);
+    snapshot.candidate_search = Some(CandidateSearch { scanned: candidates.len(), matched: count, offset, returned, has_more: offset.saturating_add(returned) < count });
 }
 
 fn build_player(

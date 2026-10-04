@@ -1,7 +1,7 @@
 import Foundation
 
 enum Command: String {
-    case serve, start, stop, probe, parse
+    case serve, start, stop, probe, parse, coach, candidates
     case snapshotPath = "snapshot-path"
     case selectSave = "select-save"
     case pinSave = "pin-save"
@@ -17,6 +17,8 @@ if args.isEmpty || args.first == "--help" || args.first == "help" {
       select-save [path.fm] [--new-career]   Open a file picker or pin the supplied career
       doctor [--deep] [--json] [--online]  Diagnose installation and selected save
       start [--no-open]       Parse selected career, run in background, open browser
+      candidates [--query TEXT] [--offset N]  Export a page of external candidates as JSON
+      coach --player UID --question "..." --model MODEL [--send]  Preview or send AI context
       stop                   Stop only the managed Companion process
       serve [--open-web]      Foreground service for development
       pin-save <path.fm> | unpin-save | selection | parse <path.fm> | probe
@@ -38,6 +40,41 @@ let selectionStore = SaveSelectionStore.defaultStore()
 let state = CompanionState()
 
 switch command {
+case .candidates:
+    guard let selected = selectionStore.load() else { throw CoachError.invalid("Select a career before querying candidates.") }
+    let query = option("--query", in: args) ?? ""
+    guard query.utf8.count <= 200, let offset = Int(option("--offset", in: args) ?? "0"), (0...250000).contains(offset) else { throw CoachError.invalid("Invalid candidate query or offset.") }
+    let work = FileManager.default.temporaryDirectory.appendingPathComponent("mr-candidates-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: work, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: work) }
+    let output = SnapshotStore(url: work.appendingPathComponent("snapshot.json"))
+    let runner = NativeParserRunner(parserURL: try NativeParserRunner.resolve(explicit: option("--parser", in: args)), store: output, state: state, candidateQuery: query, candidateOffset: offset)
+    try runner.parse(saveURL: URL(fileURLWithPath: selected.path))
+    var snapshot = try JSONSerialization.jsonObject(with: output.read()) as! [String: Any]
+    snapshot["saveId"] = selected.id
+    print(String(decoding: try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys]), as: UTF8.self))
+case .coach:
+    guard let selected = selectionStore.load(), let playerID = option("--player", in: args),
+          let question = option("--question", in: args) else {
+        throw CoachError.invalid("Select a career first, then use coach --player UID --question '...' --model MODEL. Default is local preview; --send explicitly transmits to OpenAI.")
+    }
+    let model = option("--model", in: args) ?? ProcessInfo.processInfo.environment["OPENAI_MODEL"] ?? ""
+    let work = FileManager.default.temporaryDirectory.appendingPathComponent("mr-coach-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: work, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: work) }
+    let privateStore = SnapshotStore(url: work.appendingPathComponent("snapshot.json"))
+    let runner = NativeParserRunner(parserURL: try NativeParserRunner.resolve(explicit: option("--parser", in: args)), store: privateStore, state: state)
+    try runner.parse(saveURL: URL(fileURLWithPath: selected.path))
+    let body = try AICoach.requestBody(snapshot: privateStore.read(), playerID: playerID, question: question, model: model)
+    if args.contains("--send") {
+        let answer = try AICoach.send(body, apiKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "")
+        print("AI 생성 해석 · 게임 화면 확인 필요 · 게임 변경 없음\n")
+        // JSON quoting prevents terminal escape sequences supplied by a model from executing.
+        print(String(decoding: try JSONSerialization.data(withJSONObject: ["answer": answer], options: [.prettyPrinted]), as: UTF8.self))
+    } else {
+        print("LOCAL PREVIEW ONLY — no request sent. Review this exact context before adding --send.\n")
+        print(String(decoding: body, as: UTF8.self))
+    }
 case .probe:
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

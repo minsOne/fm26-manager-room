@@ -266,6 +266,20 @@ func request(_ origin: String? = nil, host: String = "127.0.0.1:8765", method: S
                     let second = try Data(contentsOf: counter); try check(second.count == 2)
                 }
             }),
+            ("coach previews only scoped data and rejects incomplete/error outputs", {
+                let body = try AICoach.requestBody(snapshot: json(payload()), playerID: "1", question: "Explain role evidence", model: "configured-model")
+                let text = String(decoding: body, as: UTF8.self)
+                try check(!text.contains("한글 테스트") && !text.contains("Test Career") && !text.contains("weeklyWage"))
+                let object = try JSONSerialization.jsonObject(with: body) as! [String: Any]
+                try check(object["store"] as? Bool == false)
+                try rejects { _ = try AICoach.requestBody(snapshot: json(payload()), playerID: "missing", question: "Q", model: "m") }
+                try rejects { _ = try AICoach.requestBody(snapshot: json(payload()), playerID: "1", question: "Q", model: "") }
+                let good: [String: Any] = ["status": "completed", "output": [["type": "reasoning"], ["type": "message", "role": "assistant", "content": [["type": "output_text", "text": "근거 확인"]]]]]
+                let answer = try AICoach.answer(json(good), status: 200)
+                try check(answer == "근거 확인")
+                try rejects { _ = try AICoach.answer(json(good), status: 401) }
+                try rejects { _ = try AICoach.answer(json(["status": "incomplete", "output": []]), status: 200) }
+            }),
             ("pinned selection persists and reuses the same identity", {
                 try withDirectory { dir in
                     let first = try save(dir)

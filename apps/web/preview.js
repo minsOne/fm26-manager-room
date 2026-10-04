@@ -7,6 +7,7 @@ const readStorage = key => { try { return localStorage.getItem(key); } catch { r
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
 const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge};
 let current = {snapshot:null,status:"empty",revision:0};
+let archiveImport=null;
 let session, timer, generation=0, renderedKey="";
 const menu = document.getElementById("roomNavigation");
 menu.innerHTML=Object.entries(rooms).map(([key,title])=>`<button data-view="${key}">${esc(title)}</button>`).join("");
@@ -30,6 +31,7 @@ function update(state) {
   if(key!==renderedKey && ui.view!=="settings") { renderedKey=key; render(); }
 }
 function startSession() {
+  archiveImport=null;
   generation+=1; const token=generation;
   clearTimeout(timer); session?.dispose();
   let storage=null;try{storage=window.localStorage;}catch{}
@@ -60,6 +62,14 @@ document.addEventListener("click",event=>{
   if(button.hasAttribute("data-refresh"))void session.refresh();
   if(button.hasAttribute("data-clear-selection"))editSelection(button.dataset.fixtureId,{type:"clear"});
   if(button.hasAttribute("data-unlock-slot"))editSelection(button.dataset.fixtureId,{type:"lock",slotId:button.dataset.unlockSlot,playerId:""});
+  if(button.hasAttribute("data-export-archive")){
+    const blob=new Blob([session.exportArchive()],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download="manager-room-observations.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  if(button.hasAttribute("data-confirm-archive") && archiveImport){
+    try{session.importArchive(archiveImport);archiveImport=null;render();document.getElementById("archiveImportStatus").textContent="기록 가져오기 완료. 같은 커리어 ID·버전만 비교합니다.";}
+    catch(e){document.getElementById("archiveImportStatus").textContent=e.message;}
+  }
   if(button.hasAttribute("data-save-review") && current.snapshot){
     const rotation=rotationReview(current.snapshot,{fixtureId:ui.fixtureId,formation:ui.formation,mode:ui.rotationMode,constraintsByFixture:ui.constraintsByFixture});
     session.recordDecision(rotation.plans[0]);
@@ -71,14 +81,30 @@ document.addEventListener("click",event=>{
     }
   }
   if(button.hasAttribute("data-accept-career")) {
-    ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
+    archiveImport=null;ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
     ui.constraintsByFixture.clear();
     ui.restPanelOpen=false;ui.minutePanelOpen=false;
     document.getElementById("searchInput").value="";session.acceptPending();render();
   }
 });
 document.getElementById("searchInput").addEventListener("input",e=>{ui.query=e.target.value;render();});
-document.addEventListener("change",e=>{
+document.addEventListener("change",async e=>{
+  if(e.target.id==="candidateImportFile"){
+    const file=e.target.files?.[0];if(!file)return;const token=generation;
+    try{if(file.size>4*1024*1024)throw Error("후보 파일 크기 제한을 초과했습니다.");const text=await file.text();if(token!==generation)return;session.importCandidates(text);}
+    catch(error){const status=document.getElementById("candidateImportStatus");if(status)status.textContent=error.message;}
+  }
+  if(e.target.id==="archiveImportFile"){
+    const file=e.target.files?.[0];archiveImport=null;if(!file)return;
+    const generationAtStart=generation;
+    try{
+      if(file.size>3*1024*1024+65536)throw Error("파일 크기 제한을 초과했습니다.");
+      const text=await file.text();if(generation!==generationAtStart)return;
+      const info=session.inspectArchive(text);archiveImport=text;
+      document.getElementById("archiveImportStatus").textContent=`${info.segments}개 구간 / ${info.dates}일 기록. 확인 버튼을 누르면 기존 보관 기록 전체를 이 파일로 교체합니다.`;
+      document.querySelector('[data-confirm-archive]').disabled=false;
+    }catch(error){const status=document.getElementById("archiveImportStatus");if(status)status.textContent=error.message;}
+  }
   if(e.target.hasAttribute("data-review-assessment"))session.assessDecision(e.target.dataset.reviewAssessment,e.target.value);
   if(e.target.id==="fixtureSelect") {ui.fixtureId=e.target.value;render();}
   if(e.target.id==="formationSelect") {ui.formation=e.target.value;render();}

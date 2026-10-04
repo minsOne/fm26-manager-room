@@ -41,7 +41,9 @@ export function renderRoom(view, state, ui) {
       +note("같은 파일·감독·날짜로 덮어쓴 새 게임은 자동 식별할 수 없습니다. --new-career를 사용하세요. 이전 저장으로 돌아간 경우에도 기존 성장 기록과 합치지 않습니다.")
       +note("아래 버튼은 현재 커리어의 브라우저 관측 구간과 선발·교체·규정 지정을 새로 시작합니다. 이전 관측 구간은 보관 한도 내에서 유지하며 게임 파일은 바꾸지 않습니다.")
       +`<button data-new-observations ${state.status!=="current"||!s?.observationArchive||(!s.selectionId&&!s.saveId)?"disabled":""}>새 관측 구간 시작 · 경기 지정 초기화</button>`)
-    +card("날짜별 기록 보관",note(`이 브라우저·Bridge별 보관입니다. 커리어/분기 최대 8개, 각 최대 60일, 전체 약 3MB까지이며 오래된 기록부터 줄입니다. 브라우저 데이터 삭제·다른 기기에는 이어지지 않습니다. 현재 구간 ${s?.observationArchive?.dates??0}일 수록.`));
+    +card("날짜별 기록 보관",note(`이 브라우저·Bridge별 보관입니다. 커리어/분기 최대 8개, 각 최대 60일, 전체 약 3MB까지이며 오래된 기록부터 줄입니다. 브라우저 데이터 삭제·다른 기기에는 이어지지 않습니다. 현재 구간 ${s?.observationArchive?.dates??0}일 수록.`)
+      +note("기록 파일은 선수 UID·능력치·검토 이력을 포함합니다. 가져오기는 기존 보관 기록 전체를 교체합니다. 커리어 ID가 다른 자료는 자동으로 합치지 않습니다.")
+      +`<button data-export-archive>기록 내보내기</button><label for="archiveImportFile">기록 파일 선택</label><input id="archiveImportFile" type="file" accept="application/json,.json"><p id="archiveImportStatus" role="status"></p><button data-confirm-archive disabled>선택한 기록으로 교체</button>`);
   if (!s) return card("실제 데이터 연결 필요", note("Mac Companion을 실행한 뒤 다시 조회하세요. 연결 실패를 데모 데이터로 숨기지 않습니다.")
     + '<button data-refresh>다시 조회</button> <button data-view="settings">연결 설정</button> <a href="./demo.html">예시 데이터로 기존 UI 보기</a>');
   const stale = state.status !== "current" || state.parser?.parsing === true;
@@ -190,7 +192,10 @@ export function renderRoom(view, state, ui) {
       }))) +card("출전시간",table(["선수","최근 5개 통계 기록의 출전분","약속","불만 위험"],players.map(p=>[playerLink(p),numeric(p.appearances),show(p.agreed),esc(playingTimeReview(p).action)]))) ;break;
     case "recruitment": {
       const reviews=recruitmentReview(s);
-      body=card("포지션별 보강 검토",note("영입 필요성을 확정하는 기능이 아닙니다. 확인된 Role Fit 기반으로 현재 스쿼드의 주전·백업 적합도만 검토합니다.")
+      body=card("외부 후보 수집",note('Mac에서 manager-room candidates --query "검색어" --offset 0 > candidates.json 으로 현재 세이브의 외부 선수를 조회하세요. 빈 검색어는 전체 디코딩 레코드를 CA 순으로 조회하며 한 페이지는 최대 100명입니다. 다음 페이지는 offset에 100을 더합니다.')
+        +note("후보 파일은 현재 커리어·날짜·버전이 같을 때만 표시합니다. 새 스냅샷을 수집하면 후보 파일을 다시 생성하세요. 파서가 디코딩한 범위이며 완전한 세계 DB·영입 가능성을 보증하지 않습니다.")
+        +`<label for="candidateImportFile">후보 페이지 가져오기</label><input id="candidateImportFile" type="file" accept="application/json,.json"><p id="candidateImportStatus" role="status"></p>`)
+        +card("포지션별 보강 검토",note("영입 필요성을 확정하는 기능이 아닙니다. 확인된 Role Fit 기반으로 현재 스쿼드의 주전·백업 적합도만 검토합니다.")
         +table(["포지션","상태","주전 후보","2순위 후보","검토 행동","근거"],reviews.map(r=>[
           esc(r.position),esc(r.status),
           r.starter?playerLink(r.starter.player):show(null),
@@ -221,7 +226,7 @@ export function renderRoom(view, state, ui) {
             esc(r.decisionMissing.join(" · ")),`<select aria-label="검토 자체 평가" data-review-assessment="${esc(r.id)}" ${stale?"disabled":""}>${[["pending","미평가"],["helpful","검토에 도움됨"],["needs-review","보완 필요"]].map(([value,label])=>`<option value="${value}" ${r.assessment===value?"selected":""}>${label}</option>`).join("")}</select>`
           ])))
         +card("추천 사후 검증",`<h3>수록 기록 ${s.outcomes.length}건</h3>`+note("결과의 정의와 표본이 검증되기 전에는 정확도나 성공 확률을 표시하지 않습니다."));break;}
-    case "coach": body=card("AI 연결 상태",note("외부 AI 모델은 아직 연결되지 않았습니다. 기존 데모의 규칙 기반 답변을 실제 ChatGPT 분석으로 표시하지 않습니다. 선수 버튼을 누르면 확인된 근거를 직접 볼 수 있습니다."))
+    case "coach": body=card("AI 연결 상태",note("외부 AI 요청은 Mac 터미널의 manager-room coach에서 실행합니다. --player UID --question 질문 --model 모델명으로 전송 내용을 미리 확인하고, --send를 추가한 경우에만 OpenAI에 전송합니다. OPENAI_API_KEY는 터미널 환경에만 설정하세요. 아래 브리핑은 로컬 계산입니다."))
       +card("로컬 근거 브리핑",table(["주제","확인된 범위","다음 확인"],evidenceBriefing(s).map(r=>[esc(r.topic),esc(r.evidence),esc(r.action)])));break;
     default: body=card("자료",table(fitHeaders,players.map(playerRow)));
   }
