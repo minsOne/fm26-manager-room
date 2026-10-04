@@ -1,3 +1,5 @@
+import { validDate, normalizeMatchHistory } from "./realHistory.js";
+export { validDate } from "./realHistory.js";
 /** Read-only normalization. A stored placeholder is never promoted to a fact. */
 const SOURCES = new Set(["rust-native", "rust-save-parser", "fmsave"]);
 const POSITIONS = new Set(["GK", "CB", "LB", "RB", "LWB", "RWB", "DM", "CM", "AM", "LW", "RW", "ST"]);
@@ -7,11 +9,6 @@ export const number = (v, min = -Infinity, max = Infinity) =>
   typeof v === "number" && Number.isFinite(v) && v >= min && v <= max ? v : null;
 const integer = (v, min, max) => Number.isInteger(v) ? number(v, min, max) : null;
 export const text = v => typeof v === "string" && v.trim() ? v.trim() : null;
-export function validDate(v) {
-  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
-  const d = new Date(`${v}T00:00:00Z`);
-  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === v;
-}
 export function knownNumber(o, key, min, max, explicit = false) {
   if (!obj(o) || o[`${key}Known`] === false || (explicit && o[`${key}Known`] !== true)) return null;
   return number(o[key], min, max);
@@ -73,6 +70,7 @@ function normalizePlayers(rows, gameDate) {
       fatigue: knownNumber(fitness, "fatigue", 0, 100, true),
       injuryRisk: knownNumber(fitness, "injuryRisk", 0, 20, true),
       minutes, appearances,
+      matchHistory:normalizeMatchHistory(pt,gameDate),
       historyComplete: pt.historyComplete === true && pt.recentMinutesKnown === true,
       minutesLast5Team: pt.minutesLast5TeamKnown === true ? number(pt.minutesLast5Team, 0, 1000) : null,
       agreed: pt.agreedKnown === false || contract.squadStatusKnown === false ? null : text(pt.agreed ?? contract.squadStatus),

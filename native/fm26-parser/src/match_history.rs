@@ -17,13 +17,15 @@ const LOWEST_TEAM_ID: u32 = 1;
 const HIGHEST_TEAM_ID: u32 = 2_999_999;
 const HIGHEST_COMPETITION_ID: u32 = 65_535;
 
-#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentMinutes {
     pub last14: u16,
     pub last5: u16,
     pub known: bool,
     pub retained_matches: u16,
+    #[serde(skip)]
+    pub records: Vec<MatchRow>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -37,10 +39,12 @@ pub struct MatchHistoryStats {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct MatchRow {
-    date: GameDate,
-    has_stats: bool,
-    minutes: u8,
+pub struct MatchRow {
+    pub date: GameDate,
+    pub opponent_team_id: u32,
+    pub competition_id: u32,
+    pub has_stats: bool,
+    pub minutes: u8,
 }
 
 pub fn recent_minutes_all(
@@ -89,6 +93,7 @@ pub fn recent_minutes_all(
             last5: last5.min(u16::MAX as u32) as u16,
             known: !rows.is_empty(),
             retained_matches: rows.len().min(u16::MAX as usize) as u16,
+            records: rows,
         });
     }
     (output, stats)
@@ -192,6 +197,8 @@ fn read_record(game_db: &[u8], at: usize, end: usize) -> Option<(MatchRow, usize
     if at + size > end { return None; }
     Some((MatchRow {
         date,
+        opponent_team_id: read_u32(game_db, at + OPPONENT_TEAM_OFFSET)?,
+        competition_id: read_u32(game_db, at + COMPETITION_OFFSET)?,
         has_stats: flag == 1,
         minutes: if flag == 1 { *game_db.get(at + MINUTES_OFFSET)? } else { 0 },
     }, size))
@@ -203,4 +210,58 @@ fn day_number(date: GameDate) -> i64 {
 }
 fn read_u32(buffer: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes(buffer.get(offset..offset + 4)?.try_into().ok()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn raw_record(day: u16, stats: bool, minutes: u8) -> Vec<u8> {
+        let mut bytes = vec![0; if stats { RECORD_BYTES } else { HEADER_BYTES }];
+        bytes[0] = LEAD;
+        bytes[1..3].copy_from_slice(&day.to_le_bytes());
+        bytes[3..5].copy_from_slice(&2036u16.to_le_bytes());
+        bytes[5..9].copy_from_slice(&77u32.to_le_bytes());
+        bytes[9..13].copy_from_slice(&12u32.to_le_bytes());
+        bytes[14] = u8::from(stats);
+        if stats { bytes[MINUTES_OFFSET] = minutes; }
+        bytes
+    }
+    #[test]
+    fn dated_headers_preserve_identity_and_missing_stats() {
+        let raw = raw_record(60, false, 0);
+        let (row, size) = read_record(&raw, 0, raw.len()).unwrap();
+        assert_eq!(size, HEADER_BYTES);
+        assert_eq!(row.date, GameDate { year: 2036, day_of_year: 60 });
+        assert_eq!(row.opponent_team_id, 77);
+        assert_eq!(row.competition_id, 12);
+        assert!(!row.has_stats);
+        assert_eq!(row.has_stats.then_some(row.minutes), None);
+        for minutes in [0, 90, 120] {
+            let bytes = raw_record(61, true, minutes);
+            let (with_stats, _) = read_record(&bytes, 0, bytes.len()).unwrap();
+            assert_eq!(with_stats.has_stats.then_some(with_stats.minutes), Some(minutes));
+        }
+    }
+    #[test]
+    fn malformed_or_truncated_records_are_rejected() {
+        let mut bytes = raw_record(61, true, 90);
+        assert!(read_record(&bytes, 0, bytes.len()-1).is_none());
+        bytes[14] = 2;
+        assert!(read_record(&bytes, 0, bytes.len()).is_none());
+    }
+    #[test]
+    fn retained_history_keeps_headers_and_excludes_future_dates() {
+        let mut bytes = vec![0x01, 1, 0x14, 0x01, 0, 0, 0, 0];
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend(raw_record(60, true, 90));
+        bytes.extend(raw_record(61, false, 0));
+        bytes.extend(raw_record(62, true, 40));
+        let player = PlayerCandidate { record_offset: 30, pindex: 1, uid: 7, team_id: 1,
+            current_ability: 100, potential_ability: 130 };
+        let (histories, stats) = recent_minutes_all(&bytes, &[player], GameDate { year: 2036, day_of_year: 61 });
+        assert_eq!(stats.retained_records, 3);
+        assert_eq!(histories[0].records.len(), 2);
+        assert_eq!(histories[0].last14, 90);
+        assert!(!histories[0].records[0].has_stats);
+    }
 }

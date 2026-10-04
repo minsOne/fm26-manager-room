@@ -116,6 +116,20 @@ pub struct QuickPlayingTime {
     pub starts_last5: u8,
     pub minutes_last5: u16,
     pub recent_minutes_known: bool,
+    pub matches_known: bool,
+    pub history_complete: bool,
+    pub minutes_interpretation_verified: bool,
+    pub matches: Vec<QuickMatch>,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickMatch {
+    pub date: String,
+    pub opponent_team_id: u32,
+    // fmsave's competition_id is a stage-space reference, not a database competition UID.
+    pub competition_id: u32,
+    pub minutes: Option<u8>,
+    pub minutes_known: bool,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -155,7 +169,7 @@ pub fn build(
         if resolution.club_uid != summary.club_uid { continue; }
         let person = people.get(index).and_then(Option::as_ref);
         let contract = contracts.get(index).and_then(Option::as_ref);
-        let recent = recent_minutes.get(index).copied().unwrap_or_default();
+        let recent = recent_minutes.get(index).cloned().unwrap_or_default();
         players.push(build_player(game_db, candidate, person, contract, recent, clock));
     }
     players.sort_by(|left, right| right.ca.cmp(&left.ca).then_with(|| left.name.cmp(&right.name)));
@@ -224,6 +238,18 @@ fn build_player(
         playing_time: QuickPlayingTime {
             agreed: agreed.clone(), actual: None, recent_minutes: recent.last14,
             starts_last5: 0, minutes_last5: recent.last5, recent_minutes_known: recent.known,
+            matches_known: !recent.records.is_empty(), history_complete: false,
+            minutes_interpretation_verified: false,
+            matches: {
+                let mut rows: Vec<_> = recent.records.iter().map(|row| QuickMatch {
+                    date: format_date(row.date), opponent_team_id: row.opponent_team_id,
+                    competition_id: row.competition_id,
+                    minutes: row.has_stats.then_some(row.minutes), minutes_known: row.has_stats,
+                }).collect();
+                rows.sort_by(|a,b| b.date.cmp(&a.date).then(a.opponent_team_id.cmp(&b.opponent_team_id))
+                    .then(a.competition_id.cmp(&b.competition_id)).then(a.minutes.cmp(&b.minutes)));
+                rows
+            },
         },
         fitness: QuickFitness {
             condition, condition_known, raw_condition, match_sharpness, match_sharpness_known,

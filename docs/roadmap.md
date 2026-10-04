@@ -18,8 +18,10 @@ Current read-only increment: [schedule-aware rotation review](schedule-aware-rot
 connects selected real fixtures, four review modes, unique per-match assignments
 and five-fixture planned workload. Fixture-specific starter locks/rest and explicit
 selection conflicts, manager minute caps and single-slot substitution plans are implemented.
-Competition eligibility/substitution rules, dated workload history and live medical
-evidence remain required before complete Matchday readiness.
+Dated retained history and fixture-anchored workload windows are implemented with
+explicit missing-data and source-interpretation limits. Competition eligibility/
+substitution rules, fuller history coverage, game-screen minute validation and live
+medical evidence remain required before complete Matchday readiness.
 
 ## Phase 2 — Development & market
 - Training advisor

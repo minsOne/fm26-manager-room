@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -98,6 +98,32 @@ def reference_player(player: Any, clock: date) -> dict[str, Any]:
     }
 
 
+def reference_match_history(rows: list[Any], clock: date) -> dict[int, dict[str, Any]]:
+    """Named fmsave records only; keep unknown stats and incomplete retained scope explicit."""
+    by_player: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if row.date <= clock:
+            by_player[row.player_uid].append({
+                "date": row.date.isoformat(), "opponentTeamId": row.opponent_team_id,
+                "competitionId": row.competition_id,
+                "minutes": row.minutes if row.has_stats else None,
+                "minutesKnown": bool(row.has_stats and row.minutes is not None),
+            })
+    result = {}
+    for uid, matches in by_player.items():
+        # Stable explicit field ordering: date descending, identity and nullable minute ascending.
+        matches.sort(key=lambda row: (row["opponentTeamId"],row["competitionId"],-1 if row["minutes"] is None else row["minutes"]))
+        matches.sort(key=lambda row: row["date"], reverse=True)
+        result[uid] = {"matches": matches, "matchesKnown": bool(matches),
+                       "historyComplete": False, "minutesInterpretationVerified": False}
+    return result
+
+
+def empty_match_history() -> dict[str, Any]:
+    return {"matches": [], "matchesKnown": False, "historyComplete": False,
+            "minutesInterpretationVerified": False}
+
+
 def read_reference(save: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     import fmsave  # pinned by workflow; lazy for offline regression tests
     with fmsave.open(save) as career:
@@ -109,12 +135,18 @@ def read_reference(save: Path) -> tuple[dict[str, Any], dict[str, Any]]:
             raise ValueError("reference_requires_exactly_one_managed_club")
         managed = managers[0]
         squad = [p for p in career.players() if p.club_uid == managed.club_uid]
+        histories = reference_match_history(list(career.player_match_stats()), clock)
+        players = []
+        for player in squad:
+            published = reference_player(player, clock)
+            published["playingTime"] = histories.get(player.uid, empty_match_history())
+            players.append(published)
         result = {
             "schemaVersion": 2,
             "source": "rust-native",
             "gameDate": clock.isoformat(),
             "manager": {"clubUid": managed.club_uid, "club": managed.club_name},
-            "players": [reference_player(p, clock) for p in squad],
+            "players": players,
         }
         info = {"referenceCommit": REFERENCE_COMMIT,
                 "referenceKnownBuild": bool(career.info.known_build),
@@ -140,6 +172,14 @@ class Audit:
                 self.fail(path, "named_field_set_mismatch", uid)
             for key, value in expected.items():
                 self.check(value, actual.get(key, MISSING), f"{path}.{key}".strip("."), uid)
+            return
+        if isinstance(expected, list) and path.endswith(".matches"):
+            if not isinstance(actual, list):
+                self.fail(path, "array_missing_or_wrong_type", uid)
+                return
+            self.check(len(expected), len(actual), path + ".length", uid)
+            for index, (left, right) in enumerate(zip(expected, actual)):
+                self.check(left, right, f"{path}.{index}", uid)
             return
         self.checks += 1
         group = path.split(".")[0]

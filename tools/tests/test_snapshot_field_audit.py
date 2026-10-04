@@ -146,4 +146,28 @@ class FieldAuditTests(unittest.TestCase):
         self.assertEqual(p['paRangeCode'],-8); self.assertEqual(p['positions'],['ST'])
 
 
+    def test_dated_history_named_reference_preserves_unknowns_order_and_future_exclusion(self):
+        row=lambda day,minutes: NS(player_uid=101,date=date(2037,7,day),opponent_team_id=77,
+            competition_id=12,minutes=minutes,has_stats=minutes is not None)
+        history=audit.reference_match_history([row(3,90),row(1,None),row(2,0)],date(2037,7,2))[101]
+        self.assertEqual([r['date'] for r in history['matches']],['2037-07-02','2037-07-01'])
+        self.assertEqual(history['matches'][0]['minutes'],0)
+        self.assertIsNone(history['matches'][1]['minutes'])
+        self.assertFalse(history['matches'][1]['minutesKnown'])
+        self.assertFalse(history['historyComplete']);self.assertFalse(history['minutesInterpretationVerified'])
+        self.assertFalse(audit.empty_match_history()['matchesKnown'])
+
+    def test_dated_record_fields_are_audited_individually_without_raw_data_in_report(self):
+        s=fixture();s['players'][0]['playingTime']={'matches':[{'date':'2037-07-01',
+            'opponentTeamId':77,'competitionId':12,'minutes':0,'minutesKnown':True}]}
+        for field,value in [('date','2037-07-02'),('opponentTeamId',88),('competitionId',13),('minutes',90),('minutesKnown',1)]:
+            changed=copy.deepcopy(s);changed['players'][0]['playingTime']['matches'][0][field]=value
+            report=audit.compare_snapshots(s,changed)
+            self.assertFalse(report['passed']);self.assertEqual(report['mismatches'],1)
+            self.assertEqual(report['examples'][0]['field'],'playingTime.matches.0.'+field)
+            self.assertNotIn('2037-07-01',json.dumps(report))
+        changed=copy.deepcopy(s);changed['players'][0]['playingTime']['matches']=[]
+        self.assertFalse(audit.compare_snapshots(s,changed)['passed'])
+
+
 if __name__ == '__main__': unittest.main()
