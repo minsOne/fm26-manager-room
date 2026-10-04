@@ -38,7 +38,7 @@ struct SaveSelectionStore: Sendable {
     }
 
     @discardableResult
-    func pin(_ saveURL: URL) throws -> SavedSaveSelection {
+    func pin(_ saveURL: URL, newCareer: Bool = false) throws -> SavedSaveSelection {
         let save = saveURL.resolvingSymlinksInPath().standardizedFileURL
         let attrs = try FileManager.default.attributesOfItem(atPath: save.path)
         guard FileManager.default.isReadableFile(atPath: save.path),
@@ -50,9 +50,9 @@ struct SaveSelectionStore: Sendable {
 
         let existing = load()
         let selection = SavedSaveSelection(
-            id: existing?.path == save.path ? existing!.id : UUID().uuidString.lowercased(),
+            id: !newCareer && existing?.path == save.path ? existing!.id : UUID().uuidString.lowercased(),
             path: save.path,
-            createdAt: existing?.path == save.path ? existing!.createdAt : Date()
+            createdAt: !newCareer && existing?.path == save.path ? existing!.createdAt : Date()
         )
 
         try FileManager.default.createDirectory(

@@ -1,3 +1,5 @@
+import { rotationReview } from "./engine/realRotation.js";
+import { CareerArchive } from "./engine/careerArchive.js";
 import { SnapshotSession, initialBridge, validateBridge } from "./engine/snapshotSession.js";
 import { rooms, esc, statusHTML, renderRoom, playerDetail } from "./previewView.js";
 import { editFixtureSelection } from "./engine/realSelection.js";
@@ -30,7 +32,8 @@ function update(state) {
 function startSession() {
   generation+=1; const token=generation;
   clearTimeout(timer); session?.dispose();
-  session=new SnapshotSession({bridge:ui.bridge,onChange:update});
+  let storage=null;try{storage=window.localStorage;}catch{}
+  session=new SnapshotSession({bridge:ui.bridge,onChange:update,archive:new CareerArchive({storage,namespace:ui.bridge})});
   current=session.state; renderedKey=""; update(current); render();
   const tick=async()=>{
     if(token!==generation)return;
@@ -57,6 +60,16 @@ document.addEventListener("click",event=>{
   if(button.hasAttribute("data-refresh"))void session.refresh();
   if(button.hasAttribute("data-clear-selection"))editSelection(button.dataset.fixtureId,{type:"clear"});
   if(button.hasAttribute("data-unlock-slot"))editSelection(button.dataset.fixtureId,{type:"lock",slotId:button.dataset.unlockSlot,playerId:""});
+  if(button.hasAttribute("data-save-review") && current.snapshot){
+    const rotation=rotationReview(current.snapshot,{fixtureId:ui.fixtureId,formation:ui.formation,mode:ui.rotationMode,constraintsByFixture:ui.constraintsByFixture});
+    session.recordDecision(rotation.plans[0]);
+  }
+  if(button.hasAttribute("data-new-observations")){
+    if(session.startNewObservations()){
+      ui.constraintsByFixture.clear();ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
+      ui.restPanelOpen=false;ui.minutePanelOpen=false;document.getElementById("searchInput").value="";render();
+    }
+  }
   if(button.hasAttribute("data-accept-career")) {
     ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
     ui.constraintsByFixture.clear();
@@ -66,6 +79,7 @@ document.addEventListener("click",event=>{
 });
 document.getElementById("searchInput").addEventListener("input",e=>{ui.query=e.target.value;render();});
 document.addEventListener("change",e=>{
+  if(e.target.hasAttribute("data-review-assessment"))session.assessDecision(e.target.dataset.reviewAssessment,e.target.value);
   if(e.target.id==="fixtureSelect") {ui.fixtureId=e.target.value;render();}
   if(e.target.id==="formationSelect") {ui.formation=e.target.value;render();}
   if(e.target.id==="rotationModeSelect") {ui.rotationMode=e.target.value;render();}

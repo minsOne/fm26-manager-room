@@ -161,9 +161,21 @@ export function playingTimeReview(player) {
   return { action: "출전 약속 대조 필요", risk: null, reason: `팀 최근 5경기 ${player.minutesLast5Team}분 / ${player.agreed}. 실제 불만 상태는 미확인입니다.` };
 }
 export function growthReview(player, snapshot) {
-  const rows = player.history.filter(h => snapshot.saveId && h.lineage === snapshot.saveId);
-  const dated = [...new Map(rows.map(h => [h.date,h])).values()].sort((a,b)=>a.date.localeCompare(b.date));
-  if (dated.length < 2) return { delta: null, message: "동일 세이브의 비교 가능한 성장 기록이 부족합니다." };
-  const first = dated[0], last = dated.at(-1);
-  return { delta: last.ca - first.ca, message: `${first.date} → ${last.date}; 관측 변화이며 성장 예측이 아닙니다.` };
+  const local=Array.isArray(player.observations) && snapshot.observationLineage;
+  const rows = (local?player.observations:player.history??[]).filter(h =>
+    (local?h.lineage===snapshot.observationLineage:snapshot.saveId && h.lineage===snapshot.saveId)
+    && validDate(h.date) && h.date<=snapshot.gameDate && Number.isInteger(h.ca) && h.ca>=0 && h.ca<=200);
+  const dates=new Set();
+  if(rows.some(h=>{if(dates.has(h.date))return true;dates.add(h.date);return false;}))
+    return {delta:null,message:"동일 날짜의 중복 기록이 있어 비교를 보류합니다.",attributes:[]};
+  const dated=rows.slice().sort((a,b)=>a.date.localeCompare(b.date));
+  if(dated.length<2)return {delta:null,message:"동일 커리어의 서로 다른 날짜 기록이 2개 이상 필요합니다.",attributes:[]};
+  const first=dated[0],last=dated.at(-1);
+  const attributes=Object.entries(last.attributes??{}).flatMap(([key,value])=>{
+    const old=first.attributes?.[key];
+    return Number.isInteger(old)&&old>=1&&old<=20&&Number.isInteger(value)&&value>=1&&value<=20&&value!==old
+      ?[{key,from:old,to:value,delta:value-old}]:[];
+  }).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)||a.key.localeCompare(b.key));
+  return {delta:last.ca-first.ca,from:first.date,through:last.date,observations:dated.length,attributes,
+    message:`${first.date} → ${last.date}; ${dated.length}일 관측. 훈련 효과·성장 예측이나 정체 판정이 아닙니다.`};
 }

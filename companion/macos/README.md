@@ -146,3 +146,7 @@ Tests and custom installations can isolate all local Manager Room state with `FM
 Only IPv4 loopback is bound. Browser origins are explicitly allow-listed, private-network preflight is supported, and non-GET/OPTIONS methods are rejected.
 
 This companion remains read-only.
+
+### Same-path new game
+
+Stop the managed service, then run `manager-room select-save "/path/to/New Career.fm" --new-career` and start again. The flag forces a fresh selection UUID even for the same path. Without it, reselecting the same path preserves the ID. Browser observations and directives are isolated when the new ID is accepted. A rollback or changed parser metadata is also held for a separate observation baseline.
