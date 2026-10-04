@@ -91,13 +91,15 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
     result = {'engine': kind, 'passed': False}
     console_error_count = []
     try:
+        career_env=dict(os.environ,FM26_MANAGER_ROOM_HOME=str(root/kind/'home'))
+        subprocess.run([str(args.companion),'select-save',str(sample),'--new-career'],env=career_env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         with (root / kind / 'companion.log').open('wb') as log:
             started = time.monotonic()
             child = subprocess.Popen([
                 str(args.companion), 'serve', '--parser', str(args.parser),
                 '--save', str(sample), '--save-dir', str(saves), '--port', str(port),
                 '--snapshot-file', str(destination),
-            ], stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+            ], env=career_env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
             def initial_ready():
                 if child.poll() is not None:
                     raise RuntimeError('companion_exited')
@@ -320,6 +322,19 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             if page.locator('#formationSelect').input_value() != '4-2-3-1':
                 raise RuntimeError('recovery_lost_formation')
             result['watcherAndBrowserRecover'] = True
+            page.locator('nav [data-view="development"]').click()
+            if '현재 관측 구간 1일' not in page.locator('#content').inner_text():
+                raise RuntimeError('same_day_reimports_created_growth')
+            page.reload();page.get_by_text('실제 세이브',exact=True).wait_for()
+            page.locator('nav [data-view="development"]').click()
+            if '현재 관측 구간 1일' not in page.locator('#content').inner_text():
+                raise RuntimeError('local_observations_not_persisted')
+            page.locator('nav [data-view="settings"]').click()
+            page.locator('[data-new-observations]').click()
+            if '현재 구간 1일' not in page.locator('#content').inner_text():
+                raise RuntimeError('new_observation_baseline_failed')
+            result['careerObservationsPersistedWithoutFalseGrowth'] = True
+
             page.locator('nav [data-view="medical"]').click()
             if '판단 보류' not in page.locator('#content').inner_text():
                 raise RuntimeError('unknown_medical_data_not_gated')

@@ -1,5 +1,8 @@
 # Roadmap
 
+Current status: [remaining work and evidence gates](remaining-work.md).
+New games and local growth history: [career observations](career-observations.md).
+
 ## Phase 0 — Runtime research
 - FM26 build/version detection
 - Runtime data reader

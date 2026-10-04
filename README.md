@@ -55,6 +55,11 @@ if you want `manager-room` available in new terminal sessions. Without changing
 PATH, use `"$HOME/.local/bin/manager-room"` for each command.
 
 Stop before selecting another career; then `select-save` and `start` again.
+For a **new game**, especially when reusing a filename, use
+`manager-room select-save "/path/to/New Career.fm" --new-career` while stopped.
+It creates a fresh career ID so previous observations and match directives cannot
+silently carry over. The UI separately asks before accepting a new career or a
+backwards game date. [Career observations and limits](docs/career-observations.md).
 Use `serve` for a foreground development service and `start --no-open` for a
 headless launch. `--port 18765` supports an occupied default port; supply the
 same port to `doctor`. See [macOS Companion](companion/macos/README.md).
@@ -126,6 +131,13 @@ version guard → preview → explicit approval → apply → read-back verifica
 ```
 
 No such game writer is enabled in the current integrated build.
+
+## Current remaining work
+
+See [the consolidated tracker](docs/remaining-work.md) for implemented features,
+blocked data/real-Mac/provider validation, and remaining product work. Local career
+observations enable CA/attribute change reports; training/candidate/Coach reviews
+are explicitly evidence-only and do not certify medical, eligibility or AI results.
 
 ## Research notes
 

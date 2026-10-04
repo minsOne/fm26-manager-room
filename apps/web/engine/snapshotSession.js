@@ -42,9 +42,9 @@ async function limitedText(response, maxBytes) {
 /** Stateful read session: no implicit demo, no overlapping polls, no silent career switch. */
 export class SnapshotSession {
   constructor({bridge = DEFAULT_BRIDGE, fetcher = globalThis.fetch.bind(globalThis), timeoutMs = 5000,
-    now = () => new Date().toISOString(), onChange = () => {}, maxBytes = 32 * 1024 * 1024} = {}) {
+    archive = null, now = () => new Date().toISOString(), onChange = () => {}, maxBytes = 32 * 1024 * 1024} = {}) {
     this.bridge = validateBridge(bridge); this.fetcher = fetcher; this.timeoutMs = timeoutMs;
-    this.now = now; this.onChange = onChange; this.maxBytes = maxBytes;
+    this.archive = archive; this.now = now; this.onChange = onChange; this.maxBytes = maxBytes;
     this.state = { snapshot:null, status:"empty", error:null, revision:0, receivedAt:null,
       parser:null, metadataWarning:null, pending:null, refreshing:false };
     this.fingerprint = null; this.inflight = null; this.controllers = new Set(); this.disposed = false;
@@ -79,7 +79,7 @@ export class SnapshotSession {
       if (results[0].status === "rejected") throw results[0].reason;
       const body = results[0].value;
       const metadata = results[1].status === "fulfilled" ? results[1].value : {error:"파서 상태 조회 실패"};
-      const snapshot = normalizeRealSnapshot(JSON.parse(body));
+      let snapshot = normalizeRealSnapshot(JSON.parse(body));
       let parser = null, warning = metadata.error ?? null;
       try {
         parser = metadata.body === null || metadata.body === undefined ? null : JSON.parse(metadata.body);
@@ -94,20 +94,25 @@ export class SnapshotSession {
         ? parser.selectionId.trim() : null;
       if (selectionId) {
         snapshot.selectionId = selectionId;
-        snapshot.careerKey = JSON.stringify([selectionId, snapshot.manager.clubUid]);
+        snapshot.careerKey = JSON.stringify([selectionId, snapshot.manager.clubUid, snapshot.manager.name]);
       }
 
       const previous = this.state.snapshot;
-      if (previous && previous.careerKey !== snapshot.careerKey) {
+      const boundary=this.archive?.boundary(snapshot) ?? (previous?.careerKey===snapshot.careerKey && snapshot.gameDate<previous.gameDate ? "게임 날짜가 과거로 돌아갔습니다. 별도 기록으로 시작하세요." : null);
+      if ((previous && previous.careerKey !== snapshot.careerKey) || boundary) {
         this.state.pending = snapshot; this.state.status = "career-changed";
-        this.state.error = "다른 세이브 또는 감독·구단입니다. 기존 데이터는 유지했습니다.";
+        this.state.pendingRestart=!!boundary;
+        this.state.error = boundary ?? "다른 세이브 또는 감독·구단입니다. 기존 데이터는 유지했습니다.";
         return;
       }
-      const fingerprint = JSON.stringify(snapshot);
+      const fingerprint = JSON.stringify([snapshot,!!parser?.parsing,parser?.lastError??null]);
       if (fingerprint !== this.fingerprint) {
-        this.fingerprint = fingerprint; this.state.snapshot = snapshot; this.state.revision += 1;
+        this.fingerprint = fingerprint;
+        if(this.archive && !parser?.parsing && !parser?.lastError && !warning && parser) snapshot=this.archive.capture(snapshot);
+        else if(this.archive) snapshot=this.archive.view(snapshot);
+        this.state.snapshot = snapshot; this.state.revision += 1;
       }
-      this.state.pending = null;
+      this.state.pending = null;this.state.pendingRestart=false;
       this.state.error = typeof parser?.lastError === "string" && parser.lastError ? parser.lastError : null;
       this.state.status = this.state.error ? "stale" : "current";
     } catch (error) {
@@ -118,10 +123,24 @@ export class SnapshotSession {
   }
   acceptPending() {
     if (!this.state.pending || this.disposed) return false;
-    this.state.snapshot = this.state.pending; this.state.pending = null;
-    this.fingerprint = JSON.stringify(this.state.snapshot); this.state.revision += 1;
+    let snapshot=this.state.pending;
+    if(this.archive && !this.state.parser?.parsing && !this.state.parser?.lastError && !this.state.metadataWarning && this.state.parser)
+      snapshot=this.archive.capture(snapshot,{restart:this.state.pendingRestart===true});
+    this.state.snapshot = snapshot; this.state.pending = null;this.state.pendingRestart=false;
+    this.fingerprint = null; this.state.revision += 1;
     this.state.error = this.state.parser?.lastError ?? null;
     this.state.status = this.state.error ? "stale" : "current"; this.emit(); return true;
+  }
+  recordDecision(plan){return this.editJournal(a=>a.saveDecision(this.state.snapshot,plan));}
+  assessDecision(id,assessment){return this.editJournal(a=>a.assessDecision(this.state.snapshot,id,assessment));}
+  editJournal(edit){
+    if(!this.archive || !this.state.snapshot || this.state.status!=="current" || this.state.parser?.parsing)return false;
+    this.state.snapshot=edit(this.archive);this.state.revision+=1;this.emit();return true;
+  }
+  startNewObservations(){
+    if(!this.archive || !this.state.snapshot || this.state.status!=="current" || !this.state.parser || this.state.metadataWarning || this.state.parser.parsing)return false;
+    this.state.snapshot=this.archive.capture(this.state.snapshot,{restart:true});
+    this.fingerprint=null;this.state.revision+=1;this.emit();return true;
   }
   dispose() { this.disposed = true; for (const c of this.controllers) c.abort(); }
 }

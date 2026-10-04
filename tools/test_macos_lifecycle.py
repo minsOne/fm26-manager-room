@@ -92,6 +92,10 @@ def main():
             assert before["healthy"] is False and before.get("selectionId") is None
             pin = json.loads(cli("select-save", str(career)))
             assert pin["id"] == selected()["id"]
+            fresh = json.loads(cli("select-save", str(career), "--new-career"))
+            assert fresh["id"] != pin["id"]
+            assert json.loads(cli("select-save", str(career)))["id"] == fresh["id"]
+            pin = fresh
             bad = root / "empty.fm"
             bad.touch()
             cli("select-save", str(bad), ok=False)

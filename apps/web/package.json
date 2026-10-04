@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check app.js && node --check preview.js && node --check previewView.js && node --check engine/analysis.js && node --check engine/matchday.js && node --check engine/training.js && node --check engine/recruitment.js && node --check engine/economy.js && node --check engine/realRoleFit.js && node --check engine/realDepth.js && node --check engine/realRecruitment.js && node --check engine/realMatchday.js && node --check engine/realRotation.js && node --check engine/realSelection.js && node --check engine/realMinutePlan.js && node --check engine/realMatchRules.js && node --check engine/realHistory.js && node --check engine/realSnapshot.js"
+    "check": "node --check app.js && node --check preview.js && node --check previewView.js && node --check engine/analysis.js && node --check engine/matchday.js && node --check engine/training.js && node --check engine/recruitment.js && node --check engine/economy.js && node --check engine/realRoleFit.js && node --check engine/realDepth.js && node --check engine/realRecruitment.js && node --check engine/realMatchday.js && node --check engine/realRotation.js && node --check engine/realSelection.js && node --check engine/realMinutePlan.js && node --check engine/realMatchRules.js && node --check engine/realHistory.js && node --check engine/careerArchive.js && node --check engine/realReviews.js && node --check engine/snapshotSession.js && node --check engine/realSnapshot.js"
   }
 }

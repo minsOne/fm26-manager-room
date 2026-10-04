@@ -1,3 +1,4 @@
+import { trainingReview, candidateComparison, observationReport, evidenceBriefing } from "./engine/realReviews.js";
 import { historyWindow } from "./engine/realHistory.js";
 import { medicalReview, playingTimeReview, growthReview, number } from "./engine/realSnapshot.js";
 import { bestVerifiedRoles } from "./engine/realRoleFit.js";
@@ -28,13 +29,19 @@ export function statusHTML(state) {
     ${state.parser?`<div>${state.status === "current" ? "Connected" : "Connection needs review"} · Pinned Save: ${show(state.parser.selectionMode === "pinned" ? state.parser.selectedSavePath?.split("/").pop() : null)} · Last Sync: ${show(state.parser.lastSuccessAt)}</div>`:""}
     ${state.error?`<div class="error">${esc(state.error)}</div>`:""}
     ${state.metadataWarning?`<div>${esc(state.metadataWarning)}</div>`:""}
+    ${s?.observationArchive?.warning?`<div>${esc(s.observationArchive.warning)}</div>`:""}
     ${s && !state.parser?"<div>파서 상태 API 미제공: 가장 최근 게임 저장이 반영되었는지는 확인되지 않았습니다.</div>":""}
-    ${state.pending?`<div>${esc(state.pending.saveName)} / ${esc(state.pending.manager.club)} <button data-accept-career>이 세이브로 전환</button></div>`:""}`;
+    ${state.pending?`<div>${esc(state.pending.saveName)} / ${esc(state.pending.manager.club)} <button data-accept-career>${state.pendingRestart?"별도 기록으로 시작":"이 세이브로 전환"}</button></div>`:""}`;
 }
 export function renderRoom(view, state, ui) {
   const s = state.snapshot;
   if (view === "settings") return card("로컬 연결", `<form id="bridgeForm"><label for="bridgeInput">Bridge 주소</label><input id="bridgeInput" name="bridge" value="${esc(ui.bridge)}" required><button>연결</button></form>`
-    + note("같은 컴퓨터의 로컬 API만 사용합니다. 주소 변경은 이 세션의 기존 스냅샷을 버립니다. 실제 세이브를 외부 AI에 보내지 않습니다."));
+    + note("같은 컴퓨터의 로컬 API만 사용합니다. 주소 변경은 이 세션의 기존 스냅샷을 버립니다. 실제 세이브를 외부 AI에 보내지 않습니다."))
+    +card("새 게임·커리어 분리",note("새 게임을 저장한 뒤 Mac에서 manager-room stop → manager-room select-save 경로.fm --new-career → manager-room start 순서로 실행하세요. 같은 파일명을 재사용해도 새 커리어 ID를 부여합니다. 새 경기 일정은 수집된 이후 표시합니다.")
+      +note("같은 파일·감독·날짜로 덮어쓴 새 게임은 자동 식별할 수 없습니다. --new-career를 사용하세요. 이전 저장으로 돌아간 경우에도 기존 성장 기록과 합치지 않습니다.")
+      +note("아래 버튼은 현재 커리어의 브라우저 관측 구간과 선발·교체·규정 지정을 새로 시작합니다. 이전 관측 구간은 보관 한도 내에서 유지하며 게임 파일은 바꾸지 않습니다.")
+      +`<button data-new-observations ${state.status!=="current"||!s?.observationArchive||(!s.selectionId&&!s.saveId)?"disabled":""}>새 관측 구간 시작 · 경기 지정 초기화</button>`)
+    +card("날짜별 기록 보관",note(`이 브라우저·Bridge별 보관입니다. 커리어/분기 최대 8개, 각 최대 60일, 전체 약 3MB까지이며 오래된 기록부터 줄입니다. 브라우저 데이터 삭제·다른 기기에는 이어지지 않습니다. 현재 구간 ${s?.observationArchive?.dates??0}일 수록.`));
   if (!s) return card("실제 데이터 연결 필요", note("Mac Companion을 실행한 뒤 다시 조회하세요. 연결 실패를 데모 데이터로 숨기지 않습니다.")
     + '<button data-refresh>다시 조회</button> <button data-view="settings">연결 설정</button> <a href="./demo.html">예시 데이터로 기존 UI 보기</a>');
   const stale = state.status !== "current" || state.parser?.parsing === true;
@@ -86,6 +93,9 @@ export function renderRoom(view, state, ui) {
         break;
       }
       body+=selectionControls(s,rotation.plans[0],ui.restPanelOpen,ui.minutePanelOpen);
+      body+=card("검토 계획 기록",note("현재 선발·교체 초안을 로컬 보고서에 보관합니다. 게임에 적용한 명단이나 경기 결과가 아니며 의료·자격 미확인은 그대로 기록합니다.")
+        +`<button data-save-review ${stale||!s.observationLineage||review.status!=="review"||!review.selectedCount?"disabled":""}>현재 검토 계획 보관</button>`
+        +note(`현재 관측 구간 검토 기록 ${s.decisionJournal?.length??0}건 · 최근 30건까지 보관`));
       const workloadIds=new Set([...review.lineup.filter(r=>r.player).map(r=>r.player.id),...review.minutePlan.changes.map(c=>c.incoming.id)]);
       body+=card("경기일 기준 수록 출전량 · 최근 14일",note("경기일을 포함한 14개 달력 날짜의 기록입니다. 스냅샷 이후 실제 출전은 미확인이고, 감독 계획은 별도로 계산합니다. 친선·대표팀·유소년 및 오래된 경기 누락 가능성이 있습니다.")
         +table(["선수","자료 기준","기간 내 수록 출전분","출전분 있는 기록","출전분 미확인 기록","완전성·추가 확인"],rotation.plans[0].observedWorkloads.filter(r=>workloadIds.has(r.player.id)).map(({player,window:w})=>[
@@ -165,11 +175,15 @@ export function renderRoom(view, state, ui) {
           +table(["선수","포지션","최적 역할","Role Fit","능력치 커버리지","해석"],rows));
       break;
     }
-    case "training": body=card("집중훈련 검토",note("현재 집중훈련과 FM26 역할별 훈련 목록의 확인이 필요합니다. 여기서는 PA와 CA를 대조할 뿐 성장량·적합한 집중훈련을 단정하지 않습니다.")
-      +table(["선수","CA","PA","PA − CA","현재 집중훈련"],players.map(p=>[playerLink(p),numeric(p.ca),numeric(p.pa),numeric(p.ca===null||p.pa===null?null:p.pa-p.ca),show(null)]))); break;
-    case "development": body=card("성장 관측",table(["선수","나이","CA 변화","근거"],players.map(p=>{
-      const g=growthReview(p,s); return [playerLink(p),numeric(p.age),numeric(g.delta),esc(g.message)];
-    }))); break;
+    case "training": body=card("역할별 훈련 검토 근거",note("현재 집중훈련과 FM26 훈련 목록은 미확인입니다. 역할 핵심 능력치 중 낮은 관측값을 보여주며 훈련 항목·강도·성장량을 처방하지 않습니다.")
+      +table(["선수","역할","검토할 관측 능력치","CA","PA"],players.map(p=>{
+        const r=trainingReview(p);return [playerLink(p),show(r.role),r.attributes.map(a=>`${esc(a.attribute)} ${numeric(a.value)}`).join(" · ")||esc(r.reason),numeric(p.ca),numeric(p.pa)];
+      })));break;
+    case "development": body=card("성장 관측",note(`현재 관측 구간 ${s.observationArchive?.dates??0}일 수록. 같은 날짜 재저장은 최신 관측으로 교체하며 성장 비교를 만들지 않습니다. 새 커리어·과거 날짜·버전 변경은 별도 구간입니다.`)
+      +note(s.observationArchive?.warning??"브라우저에 수집된 서로 다른 날짜만 비교합니다. 0 변화는 정체 판정이 아닙니다.")
+      +table(["선수","나이","CA 변화","능력치 변화","근거"],players.map(p=>{
+        const g=growthReview(p,s);return [playerLink(p),numeric(p.age),numeric(g.delta),g.attributes.map(a=>`${esc(a.key)} ${a.from} → ${a.to}`).join(" · ")||"비교 가능한 변화 없음",esc(g.message)];
+      })));break;
     case "medical": body=card("Coach Confidence · 근거 확인",note("관측 항목 수는 추천 성공 확률이 아닙니다. 최신성·기록 완전성·출전 자격은 별도로 확인합니다.")
       +table(["선수","컨디션","피로","부상 위험","관측 근거","기용 판단","미확인"],players.map(p=>{
         const r=medicalReview(p,s,stale); return [playerLink(p),numeric(p.condition),numeric(p.fatigue),numeric(p.injuryRisk),`${r.observedFields} / ${r.denominator}`,esc(r.action),esc(r.missing.join(" · "))];
@@ -185,6 +199,8 @@ export function renderRoom(view, state, ui) {
         ])));
       body+=card("수록 영입 후보",note(`검색 범위: ${s.candidateCoverage}. 이 목록을 전 세계 전체 선수로 간주하지 않습니다.`)
         +table(fitHeaders,s.candidates.filter(p=>!ui.query||p.name.toLocaleLowerCase().includes(ui.query.toLocaleLowerCase())).map(playerRow),"영입 후보 인덱스가 수록되지 않았습니다. 후보가 없다는 뜻은 아닙니다."));
+      body+=card("수록 외부 후보 비교",note("현재 백업과 Role Fit만 비교합니다. 가격·관심·계약·등록 자격 미확인 시 영입 가능성이나 비용 효율을 판정하지 않습니다.")
+        +table(["포지션","외부 후보","역할","Role Fit","내부 백업 대비"],candidateComparison(s).map(r=>[esc(r.position),playerLink(r.player),esc(r.role),numeric(r.score),numeric(r.backupDifference)]),"비교 가능한 외부 후보 데이터가 없습니다."));
       break;
     }
     case "transfers": body=card("임대·방출 검토",note(`임대 오퍼 ${s.loanOffers.length}건 수록. 오퍼 수만으로 조건 적합성을 판단하지 않습니다. 시장 관심·시설·출전 약속 미확인 상태에서는 처분 권고를 보류합니다.`)
@@ -194,8 +210,19 @@ export function renderRoom(view, state, ui) {
     case "economy": body=card("관리팀 재정",s.clubFinance?table(["항목","파서 관측값"],Object.entries(s.clubFinance).map(([k,v])=>[esc(k),numeric(v)])):note("관리팀 재정 데이터 미수록"));
       body+=card("세계 경제",note(`리그 자료 ${s.leagues.length}개 수록. 국가·리그 연결과 시계열 지출이 검증되기 전에는 사우디 과열 지수를 계산하지 않습니다. 현재 예산은 실제 지출이나 인플레이션과 다릅니다.`))
       +note("금액 단위 확인 필요 · World Balance 게임 수정 비활성");break;
-    case "reports": body=card("추천 사후 검증",`<h3>수록 기록 ${s.outcomes.length}건</h3>`+note("결과의 정의와 표본이 검증되기 전에는 정확도나 성공 확률을 표시하지 않습니다."));break;
-    case "coach": body=card("AI 연결 상태",note("외부 AI 모델은 아직 연결되지 않았습니다. 기존 데모의 규칙 기반 답변을 실제 ChatGPT 분석으로 표시하지 않습니다. 선수 버튼을 누르면 확인된 근거를 직접 볼 수 있습니다."));break;
+    case "reports": {
+      const report=observationReport(s);
+      body=card("관측 변화 보고서",note(`비교 가능 ${report.comparable}/${report.total}명 · CA 증가 ${report.increased}명 · 감소 ${report.decreased}명 · 동일 ${report.unchanged}명`)+note(report.note)
+        +table(["선수","비교 시작","비교 종료","CA 변화"],report.rows.map(r=>[playerLink(r.player),esc(r.from),esc(r.through),numeric(r.delta)])))
+        +card("보관한 검토 계획",note("자체 평가는 감독의 주관적 검토입니다. 경기 결과·모델 정확도·추천 성공률로 계산하지 않습니다.")
+          +table(["기록 날짜","경기 날짜","포메이션","선발 UID","교체","미확인 근거","자체 평가"],(s.decisionJournal??[]).slice().reverse().map(r=>[
+            esc(r.date),esc(r.fixtureDate),esc(r.formation),r.lineup.map(p=>`${esc(p.slot)}: ${esc(p.playerId)}`).join(" · "),
+            r.changes.map(c=>`${esc(c.slot)} ${c.minute}분 ${esc(c.outgoingId)} → ${esc(c.incomingId)}`).join(" · ")||"없음",
+            esc(r.decisionMissing.join(" · ")),`<select aria-label="검토 자체 평가" data-review-assessment="${esc(r.id)}" ${stale?"disabled":""}>${[["pending","미평가"],["helpful","검토에 도움됨"],["needs-review","보완 필요"]].map(([value,label])=>`<option value="${value}" ${r.assessment===value?"selected":""}>${label}</option>`).join("")}</select>`
+          ])))
+        +card("추천 사후 검증",`<h3>수록 기록 ${s.outcomes.length}건</h3>`+note("결과의 정의와 표본이 검증되기 전에는 정확도나 성공 확률을 표시하지 않습니다."));break;}
+    case "coach": body=card("AI 연결 상태",note("외부 AI 모델은 아직 연결되지 않았습니다. 기존 데모의 규칙 기반 답변을 실제 ChatGPT 분석으로 표시하지 않습니다. 선수 버튼을 누르면 확인된 근거를 직접 볼 수 있습니다."))
+      +card("로컬 근거 브리핑",table(["주제","확인된 범위","다음 확인"],evidenceBriefing(s).map(r=>[esc(r.topic),esc(r.evidence),esc(r.action)])));break;
     default: body=card("자료",table(fitHeaders,players.map(playerRow)));
   }
   return (stale?note("이전 스냅샷으로 표시 중입니다. 현재 경기의 기용 결정을 확정하지 마세요."):"")+body;

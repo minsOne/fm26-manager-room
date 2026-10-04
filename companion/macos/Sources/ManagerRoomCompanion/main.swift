@@ -14,7 +14,7 @@ if args.isEmpty || args.first == "--help" || args.first == "help" {
     print("""
     FM26 Manager Room — read-only macOS assistant
     Usage: manager-room <command> [options]
-      select-save [path.fm]   Open a file picker or pin the supplied career
+      select-save [path.fm] [--new-career]   Open a file picker or pin the supplied career
       doctor [--deep] [--json] [--online]  Diagnose installation and selected save
       start [--no-open]       Parse selected career, run in background, open browser
       stop                   Stop only the managed Companion process
@@ -61,7 +61,7 @@ case .selectSave, .pinSave:
     }
     let selected = try ServiceControl.installed.withLock {
         try ServiceControl.installed.requireStopped()
-        return try selectionStore.pin(save)
+        return try selectionStore.pin(save, newCareer: args.contains("--new-career"))
     }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

@@ -37,14 +37,14 @@ def main():
     args=parser.parse_args()
     server=ThreadingHTTPServer(("127.0.0.1",0),partial(QuietHandler,directory=str(ROOT/"apps/web")))
     threading.Thread(target=server.serve_forever,daemon=True).start()
-    payload=fixture(); state={"snapshot":payload,"fail":False,"parserError":None}
+    payload=fixture(); state={"snapshot":payload,"fail":False,"parserError":None,"selectionId":None}
     with sync_playwright() as p:
         browser=p.chromium.launch(executable_path=args.executable,headless=True,args=["--no-sandbox"])
         page=browser.new_page(viewport={"width":1440,"height":1000}); errors=[]
         page.on("pageerror",lambda e: errors.append(str(e)))
         def bridge(route):
             if state["fail"]: route.abort(); return
-            data={"parsing":False,"lastError":state["parserError"]} if route.request.url.endswith("/api/parser") else state["snapshot"]
+            data={"parsing":False,"lastError":state["parserError"],"selectionId":state["selectionId"]} if route.request.url.endswith("/api/parser") else state["snapshot"]
             route.fulfill(status=200,content_type="application/json",body=json.dumps(data),headers={"Access-Control-Allow-Origin":"*"})
         page.route("http://127.0.0.1:8765/**",bridge)
         page.goto(f"http://127.0.0.1:{server.server_port}/index.html")
@@ -198,6 +198,38 @@ def main():
         state["snapshot"]=fixture();state["snapshot"]["saveName"]="Other career.fm"
         page.locator("#refreshButton").click()
         page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        # Explicit selection enables durable observations; this is synthetic game-date evidence.
+        state["selectionId"]="new-career-test"
+        page.locator('#refreshButton').click()
+        page.get_by_text('다른 세이브 전환 보류',exact=True).wait_for()
+        page.locator('[data-accept-career]').click()
+        page.locator('nav [data-view="matchday"]').click()
+        page.locator('[data-save-review]').click()
+        assert '현재 관측 구간 검토 기록 1건' in page.locator('#content').inner_text()
+        page.locator('nav [data-view="reports"]').click()
+        page.locator('[data-review-assessment]').select_option('helpful')
+        assert page.locator('[data-review-assessment]').input_value()=='helpful'
+        page.locator('nav [data-view="development"]').click()
+        assert '현재 관측 구간 1일'  in page.locator('#content').inner_text()
+        state['snapshot']['gameDate']='2037-07-02';state['snapshot']['players'][0]['ca']=130
+        page.locator('#refreshButton').click()
+        page.wait_for_function("document.querySelector('#content').textContent.includes('현재 관측 구간 2일')")
+        assert '2037-07-01 → 2037-07-02' in page.locator('#content').inner_text()
+        page.reload();page.get_by_text('실제 세이브',exact=True).wait_for()
+        page.locator('nav [data-view="reports"]').click()
+        assert page.locator('[data-review-assessment]').input_value()=='helpful'
+        page.locator('nav [data-view="development"]').click()
+        assert '현재 관측 구간 2일' in page.locator('#content').inner_text()
+        # Same ID/date regression is a new branch, never negative growth.
+        state['snapshot']['gameDate']='2037-06-01'
+        page.locator('#refreshButton').click()
+        page.get_by_text('다른 세이브 전환 보류',exact=True).wait_for()
+        page.get_by_role('button',name='별도 기록으로 시작',exact=True).click()
+        assert '현재 관측 구간 1일' in page.locator('#content').inner_text()
+        page.locator('nav [data-view="settings"]').click()
+        page.locator('[data-new-observations]').click()
+        assert '현재 구간 1일' in page.locator('#content').inner_text()
+        print('PASS durable dated history, reload, same-file rollback and explicit new observations')
         page.locator('nav [data-view="manager"]').click()
         if args.screenshot_dir:
             args.screenshot_dir.mkdir(parents=True,exist_ok=True)
