@@ -19,7 +19,11 @@ def fixture():
         "attributes":{key:14 for key in ["passing","vision","firstTouch","technique","decisions","composure","positioning","anticipation","stamina","workRate","offTheBall"]},
         "hidden":{"professionalism":17},
         "fitness":{"condition":100,"fatigue":0,"fatigueKnown":False,"injuryRisk":0,"injuryRiskKnown":False},
-        "playingTime":{"recentMinutes":0,"recentMinutesKnown":False},"contract":{"weeklyWage":0,"end":None}}],
+        "playingTime":{"recentMinutes":0,"recentMinutesKnown":False,"matchesKnown":True,"historyComplete":False,
+          "minutesInterpretationVerified":False,"matches":[
+            *[{"date":f"2037-06-{day}","opponentTeamId":100,"competitionId":12,"minutes":90,"minutesKnown":True} for day in [23,24,25,26]],
+            {"date":"2037-06-30","opponentTeamId":100,"competitionId":12,"minutes":None,"minutesKnown":False},
+            {"date":"2037-07-01","opponentTeamId":100,"competitionId":12,"minutes":0,"minutesKnown":True}]},"contract":{"weeklyWage":0,"end":None}}],
       "fixtures":[{"id":"m1","date":"2037-07-02","opponent":"Next FC","home":True,"competitionKnown":False},
         {"id":"m2","date":"2037-07-07","opponent":"Later FC","home":False,"competitionKnown":False}]}
 
@@ -65,14 +69,23 @@ def main():
         assert page.locator("#searchInput").input_value()=="Young"
         assert "Young Player" in page.locator("#selectedPlayer").inner_text()
         assert page.locator('nav [aria-current="page"]').get_attribute("data-view")=="tactics"
-        print("PASS refresh retains tab, player, search and formation")
+        assert '날짜별 경기 기록' in page.locator('#selectedPlayer').inner_text()
+        assert '2037-06-30' in page.locator('#selectedPlayer').inner_text()
+        assert '전체 출전량은 미확인' in page.locator('#selectedPlayer').inner_text()
+        print("PASS refresh retains tab, player, search, formation and dated history")
         page.locator('nav [data-view="matchday"]').click()
         page.locator("#fixtureSelect").select_option("m2")
         page.locator("#rotationModeSelect").select_option("protect")
         assert page.locator("#rotationModeSelect").input_value()=="protect"
         plan_panel=page.locator("section.panel").filter(has=page.get_by_role("heading",name="향후 최대 5경기 로테이션 · 계획 시나리오",exact=True))
         assert "Later FC" in plan_panel.inner_text() and "Next FC" not in plan_panel.inner_text()
-        print("PASS selected fixture immediately anchors the rendered rotation plan")
+        history_panel=page.locator('section.panel').filter(has=page.get_by_role('heading',name='경기일 기준 수록 출전량 · 최근 14일',exact=True))
+        assert '270' in history_panel.inner_text() and '2037-06-24' in history_panel.inner_text()
+        page.locator('#fixtureSelect').select_option('m1')
+        assert '360' in history_panel.inner_text() and '2037-06-19' in history_panel.inner_text()
+        page.locator('#fixtureSelect').select_option('m2')
+        assert '270' in history_panel.inner_text()
+        print("PASS selected fixture anchors dated workload and drops expired observations")
         page.locator('#lock-rdm').select_option('7')
         assert '감독 고정' in page.locator('#content').inner_text()
         page.locator('details[data-rest-controls] summary').click()

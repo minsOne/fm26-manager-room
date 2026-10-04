@@ -55,7 +55,7 @@ assignment tie-breaker. Neither score is a calibrated confidence/probability.
 
 | Input | Balanced / Development | Protect Key Players | Best XI |
 |---|---|---|---|
-| Recorded recent 14-day minutes >= 300, fixture within 3 days of snapshot | −10 if congested, otherwise −4 | 1.5× penalty | No adjustment |
+| Dated 14-calendar-date retained minutes >= 300 (legacy aggregate only within 3 days of snapshot) | −10 if congested, otherwise −4 | 1.5× penalty | No adjustment |
 | Snapshot condition <= 85, fixture within 3 days | −8 | 1.5× penalty | No adjustment |
 | Earlier planned appearances within 4 days | −12 per 90-minute reservation, capped at −24 before weights | 1.5× penalty | No adjustment |
 | Verified fixture importance >= 75 | Halve workload penalties, rounded | Halve workload penalties, rounded | No adjustment |
@@ -95,9 +95,35 @@ Unselected players reserve zero **planned** minutes; actual future time is unkno
 Observed recent minutes are preserved separately, including nulls. Reservations
 are never added to the observed history or written back to the snapshot.
 
-We do not decay the observed 14-day total into a future rolling window: the
-snapshot lacks a validated per-match timeline. Current condition is not projected
-into future recovery. Medical minute caps remain unknown; manager-supplied times are explicitly plans.
+Dated history is now exported and windows are recomputed from individual records.
+The window is exactly 14 UTC calendar dates including the selected fixture date:
+`[fixture date - 13 days, fixture date]`. Only records on or before the snapshot
+clock count. Old records expire as the fixture anchor advances; planned appearances
+remain in their separate reservation channel. No record is created after capture.
+A window without known-minute records is unknown, unless complete coverage is
+explicitly established. Recorded zero is retained. An empty native scan does not
+establish that a player did not play.
+
+The schema-2 `playingTime` object adds `matchesKnown`, `historyComplete`,
+`minutesInterpretationVerified` and `matches` (date, opponent team ID, stage-space
+competition ID, nullable minutes, minutesKnown). Header-only records retain date
+and references with null minutes. The native reader always declares completeness
+and interpretation verification false. Its older aggregate fields retain their
+legacy inclusive date-minus-14 convention for compatibility. The UI labels the
+snapshot aggregate separately from the new exact 14-date fixture window.
+
+Malformed dates/IDs, future observed rows, out-of-sanity-range minute values and
+repeated date/opponent/stage identities defer timeline arithmetic; they never cause
+fallback to the legacy aggregate. Same-day history requires ordering verification.
+Without a dated timeline, the legacy aggregate can inform only the existing
+within-three-days heuristic; it is never moved into a future window.
+
+The pinned fmsave reference describes these as retained records with possible old
+match truncation and excluded friendlies, internationals and youth games. Ownership
+and minute interpretation are reverse-engineered, not verified against the FM UI.
+The 130-minute input sanity bound comes from that reference, not medical guidance
+or a competition rule. Per-UID, per-record field equality proves only reference
+equivalence. Current condition is not projected into future recovery. Medical minute caps remain unknown; manager-supplied times are explicitly plans.
 No automatic substitutions are generated from missing fatigue/injury data.
 
 ## Decision gates and remaining work
@@ -111,7 +137,7 @@ complete synthetic inputs. A snapshot update retains fixture/mode selection;
 accepting a different career or changing Bridge resets them.
 
 Remaining P1 work includes validated competition-specific eligibility,
-per-match timeline windows, and runtime medical evidence. This iteration is not
+broader match-history coverage, game-screen minute validation, and runtime medical evidence. This iteration is not
 a claim that the complete Matchday feature is production-ready.
 
 ## Validation
@@ -119,10 +145,10 @@ a claim that the complete Matchday feature is production-ready.
 Node regression tests cover unique assignment, observed/planned separation,
 all four modes, date boundaries, missing selected fixtures, unknowns, stale data,
 source immutability, hard locks/rest, conflict gating, capped minute conservation, explicit/automatic unique substitutes,
-missing coverage deferral and UI escaping. Synthetic
+missing coverage deferral, dated windows/unknowns/duplicates and UI escaping. Synthetic
 Chromium tests exercise lock/rest and minute-plan conflict resolution and retained/reset state.
 The integrated macOS workflow uses
 the actual public FM26 save, Rust/Swift API, UID/field audit and Chromium/WebKit
-to verify real rotation plans, hard manager directives, minute splits and selection retention after
+to verify real rotation plans, hard manager directives, minute splits, dated history conversion/windows and selection retention after
 a real save reimport.
 CI evidence does not replace the user's actual Mac/FM26 validation.

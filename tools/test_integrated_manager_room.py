@@ -127,7 +127,7 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                 const {normalizeRealSnapshot} = await import('./engine/realSnapshot.js');
                 const raw = await (await fetch(base + '/api/snapshot')).json();
                 const normalized = normalizeRealSnapshot(raw);
-                let checked = 0;
+                let checked = 0, datedRecords = 0, historyPlayerId = null;
                 for (const source of raw.players) {
                     const p = normalized.players.find(p => p.id === source.id);
                     if (!p || p.name !== source.name || p.ca !== source.ca) throw new Error('identity_parity');
@@ -141,11 +141,23 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                         checked++;
                     }
                     if (p.fatigue !== null || p.injuryRisk !== null) throw new Error('unknown_promoted');
+                    const matches = source.playingTime.matches;
+                    if (!Array.isArray(matches) || p.matchHistory.records.length!==matches.length) throw new Error('dated_history_count');
+                    if (p.matchHistory.complete || p.matchHistory.minutesVerified) throw new Error('dated_history_overclaim');
+                    for (let i=0; i<matches.length; i++) {
+                        const a=matches[i],b=p.matchHistory.records[i];
+                        if(a.date!==b.date || a.opponentTeamId!==b.opponentTeamId || a.competitionId!==b.competitionId
+                           || b.minutes!==(a.minutesKnown && Number.isInteger(a.minutes) && a.minutes<=130?a.minutes:null)) throw new Error('dated_history_conversion');
+                        datedRecords++;
+                    }
+                    if(matches.length && !historyPlayerId) historyPlayerId=p.id;
                 }
-                return {players: normalized.players.length, namedFields: checked};
+                if(!datedRecords || !historyPlayerId) throw new Error('no_real_dated_history');
+                return {players: normalized.players.length, namedFields: checked,datedRecords,historyPlayerId};
             }''', base)
             result['browserConvertedPlayers'] = conversion['players']
             result['browserNamedFieldChecks'] = conversion['namedFields']
+            result['browserDatedRecordsChecked'] = conversion['datedRecords']
             for view in ['manager','squad','matchday','tactics','training','development','medical',
                          'recruitment','transfers','contracts','economy','reports','coach','settings']:
                 page.locator(f'nav [data-view="{view}"]').click()
@@ -157,6 +169,7 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             rotation = page.evaluate('''async (base) => {
                 const {normalizeRealSnapshot} = await import('./engine/realSnapshot.js');
                 const {rotationReview} = await import('./engine/realRotation.js');
+                const {historyWindow} = await import('./engine/realHistory.js');
                 const raw = await (await fetch(base + '/api/snapshot')).json();
                 const s = normalizeRealSnapshot(raw);
                 const original = JSON.stringify(s);
@@ -167,6 +180,14 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                     if (new Set(ids).size !== ids.length) throw new Error('rotation_duplicate_player');
                     if (p.readyForFinalDecision || p.medicalMinuteCap !== null) throw new Error('rotation_unknown_promoted');
                     if (p.review.bench.players.some(r=>ids.includes(r.player.id))) throw new Error('rotation_bench_collision');
+                    for(const item of p.observedWorkloads){
+                        const window=historyWindow(item.player,s.gameDate,p.fixture.date);
+                        if(window.status!=='review') continue;
+                        const cutoff=Date.parse(p.fixture.date+'T00:00:00Z')-13*86400000;
+                        const rows=item.player.matchHistory.records.filter(r=>Date.parse(r.date+'T00:00:00Z')>=cutoff && r.date<=p.fixture.date && r.date<=s.gameDate && r.minutes!==null);
+                        const expected=rows.length?rows.reduce((n,r)=>n+r.minutes,0):null;
+                        if(item.window.minutes!==expected || item.window.complete || item.window.minutesVerified) throw new Error('dated_rotation_window');
+                    }
                 }
                 for (const row of plan.players) {
                     if (row.observedMinutes !== s.players.find(p=>p.id===row.player.id).minutes) throw new Error('rotation_observed_minutes');
@@ -211,13 +232,16 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                 raise RuntimeError('rotation_controls_not_applied')
             page.get_by_role('heading', name='향후 최대 5경기 로테이션 · 계획 시나리오', exact=True).wait_for()
             result['realRotationSelectionChecked'] = True
-            player = expected['players'][0]
+            player = next(p for p in expected['players'] if p['id']==conversion['historyPlayerId'])
             page.locator('nav [data-view="tactics"]').click()
             page.locator('#formationSelect').select_option('4-2-3-1')
             page.locator(f'button[data-player="{player["id"]}"]').first.click()
             page.locator('#searchInput').fill(player['id'])
             if page.locator('#selectedPlayer h2').first.inner_text() != player['name']:
                 raise RuntimeError('selected_player_name_mismatch')
+            if '날짜별 경기 기록' not in page.locator('#selectedPlayer').inner_text() or '전체 출전량은 미확인' not in page.locator('#selectedPlayer').inner_text():
+                raise RuntimeError('real_history_detail_missing')
+            result['realDatedHistoryUIAndWindowsChecked'] = True
             page.locator('nav [data-view="matchday"]').click()
             page.locator(f'#lock-{rotation["lockSlot"]}').select_option(rotation['lockPlayerId'])
             page.locator('details[data-rest-controls] summary').click()

@@ -18,6 +18,11 @@ substitutions constrain XI/bench selection. Short caps trigger verified replacem
 review; insufficient replacement coverage defers subsequent plans.
 Conflicts require explicit resolution and defer subsequent rotation plans.
 
+Player details show retained dated match records with unknown minutes preserved.
+Matchday recomputes an exact 14-calendar-date window ending on each fixture, keeps
+planned minutes separate, and defers ambiguous/invalid history arithmetic. Complete
+coverage and game-screen minute interpretation remain unverified.
+
 Role Fit and workload-adjusted selection utility are separate. Planned starter
 and substitute reservations split a hypothetical 90-minute scenario, not observed minutes,
 fatigue predictions or medical minute caps. Missing injury/eligibility/history

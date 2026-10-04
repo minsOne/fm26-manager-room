@@ -1,3 +1,4 @@
+import { historyWindow } from "./engine/realHistory.js";
 import { medicalReview, playingTimeReview, growthReview, number } from "./engine/realSnapshot.js";
 import { bestVerifiedRoles } from "./engine/realRoleFit.js";
 import { verifiedSquadDepth } from "./engine/realDepth.js";
@@ -85,6 +86,12 @@ export function renderRoom(view, state, ui) {
         break;
       }
       body+=selectionControls(s,rotation.plans[0],ui.restPanelOpen,ui.minutePanelOpen);
+      const workloadIds=new Set([...review.lineup.filter(r=>r.player).map(r=>r.player.id),...review.minutePlan.changes.map(c=>c.incoming.id)]);
+      body+=card("경기일 기준 수록 출전량 · 최근 14일",note("경기일을 포함한 14개 달력 날짜의 기록입니다. 스냅샷 이후 실제 출전은 미확인이고, 감독 계획은 별도로 계산합니다. 친선·대표팀·유소년 및 오래된 경기 누락 가능성이 있습니다.")
+        +table(["선수","자료 기준","기간 내 수록 출전분","출전분 있는 기록","출전분 미확인 기록","완전성·추가 확인"],rotation.plans[0].observedWorkloads.filter(r=>workloadIds.has(r.player.id)).map(({player,window:w})=>[
+          playerLink(player),w.source==="dated"?esc(`${w.from}~${w.through} · 관측 ${w.observedThrough}까지`):"날짜별 기록 미제공 · 스냅샷 합계",numeric(w.minutes),w.status==="review"?numeric(w.knownRecords):show(null),w.status==="review"?numeric(w.missingRecords):show(null),
+          esc([w.complete?"수록 범위 완전성 확인":"전체 출전량 미확인",w.source==="dated" && !w.minutesVerified?"출전분 해석 대조 필요":null,w.sameDayRecords?"당일 기록 시간 순서 미확인":null,...w.issues].filter(Boolean).join(" · "))
+        ])));
       if(rotation.conflicts.length) body+=card("선택 충돌 · 배치 보류",
         note("지정을 자동으로 풀거나 다른 선수로 바꾸지 않습니다. 충돌 경기 이후의 로테이션도 보류합니다.")
         +table(["경기","슬롯","원인·해결 방법"],rotation.conflicts.map(c=>[
@@ -199,10 +206,21 @@ export function playerDetail(player, s) {
     + note("파서가 제공한 관측값입니다. 미확인 값은 0으로 채우지 않았습니다. 세이브 빌드별 게임 화면 대조는 별도 검증입니다.")
     + `<div class="summary-grid">${card("일반 능력치",table(["항목","관측값"],Object.entries(player.attributes).map(([k,v])=>[esc(k),numeric(v)])))}
       ${card("히든·성격",table(["항목","관측값"],Object.entries(player.hidden).map(([k,v])=>[esc(k),numeric(v)])))}</div>`
+    + datedHistoryDetail(player,s.gameDate)
     + roleFitDetail(player)
     + `</section>`;
 }
 
+
+function datedHistoryDetail(player,gameDate){
+  const h=player.matchHistory;
+  if(!h || h.status==="unavailable") return card("날짜별 경기 기록",note("날짜별 기록 미제공: 경기 누락과 실제 미출전을 구분할 수 없습니다."));
+  const w=historyWindow(player,gameDate,gameDate);
+  return card("날짜별 경기 기록",note("세이브에 남은 파서 관측값입니다. 친선·대표팀·유소년 및 오래된 경기 누락 가능성이 있어 전체 출전량은 미확인입니다. 출전분 해석은 게임 화면 대조가 필요합니다.")
+    +note(`최근 14일 ${w.from}~${w.through}: ${w.minutes===null?"미확인":`${w.minutes}분 수록`} · 출전분 미확인 기록 ${w.missingRecords}건`)
+    +(h.issues.length?note(h.issues.join(" · ")):"")
+    +table(["날짜","상대 팀 ID","대회 단계 ID","수록 출전분"],h.records.map(r=>[esc(r.date),numeric(r.opponentTeamId),numeric(r.competitionId),numeric(r.minutes)]),"수록 경기 없음 · 실제 미출전 여부 미확인"));
+}
 
 function roleFitDetail(player) {
   const position = player.primaryPosition ?? player.positions?.[0] ?? null;

@@ -1,5 +1,5 @@
 import { matchdayReview } from "./realMatchday.js";
-import { validDate } from "./realSnapshot.js";
+import { validDate, historyWindow } from "./realHistory.js";
 
 export const rotationModes = {
   "best-xi":"Best XI",
@@ -38,9 +38,15 @@ export function rotationReview(snapshot, options={}) {
     const congested=(gapBefore!==null && gapBefore<=4) || (gapAfter!==null && gapAfter<=4);
     const currentEvidence=daysBetween(snapshot.gameDate,fixture.date)<=3;
     const adjustments=new Map();
+    const observedWorkloads=[];
     for(const player of snapshot.players??[]){
       const recentPlans=reservations.get(player.id).filter(row=>daysBetween(row.date,fixture.date)<=4);
-      adjustments.set(player.id,selectionAdjustment(player,mode,{congested,currentEvidence,
+      let window=historyWindow(player,snapshot.gameDate,fixture.date);
+      if(window.status==="unavailable") window={...window,source:"snapshot-total",
+        minutes:currentEvidence && known(player.minutes,0,20160)?player.minutes:null,
+        complete:currentEvidence && player.historyComplete===true};
+      observedWorkloads.push({player,window});
+      adjustments.set(player.id,selectionAdjustment(player,mode,{congested,currentEvidence,window,
         plannedMinutes:recentPlans.reduce((sum,row)=>sum+row.minutes,0),importance:fixture.importance}));
     }
     const missing=[
@@ -48,8 +54,11 @@ export function rotationReview(snapshot, options={}) {
       fixture.date>snapshot.gameDate?"경기 당일 체력·부상·출전 자격 재확인":null,
       fixture.importance==null?"경기 중요도":null,
       upcoming.some(f=>f.id!==fixture.id && f.date===fixture.date)?"동일 날짜 일정의 시간·대상팀 확인":null,
-      mode!=="best-xi" && (snapshot.players??[]).some(p=>!known(p.minutes,0,20160) || p.historyComplete!==true)
-        ?"최근 출전 기록·완전성":null
+      mode!=="best-xi" && observedWorkloads.some(({window:w})=>w.minutes===null || !w.complete)
+        ?"최근 출전 기록·완전성":null,
+      observedWorkloads.some(({window:w})=>w.status==="invalid")?"날짜별 출전 기록 오류·중복":null,
+      observedWorkloads.some(({window:w})=>w.sameDayRecords>0)?"경기 당일 수록 기록의 시간 순서":null,
+      observedWorkloads.some(({window:w})=>w.status==="review" && !w.minutesVerified)?"출전분 해석의 게임 화면 대조":null
     ].filter(Boolean);
     const constraints=options.constraintsByFixture?.get(fixture.id);
     const review=matchdayReview(snapshot,options.formation,{adjustments,stale:options.stale,decisionMissing:missing,constraints});
@@ -57,7 +66,7 @@ export function rotationReview(snapshot, options={}) {
     const previousIds=new Set(previousPlan?.review.lineup.filter(row=>row.player).map(row=>row.player.id)??[]);
     const changedStarters=previousPlan?review.lineup.filter(row=>row.player && !previousIds.has(row.player.id)).length:null;
     const plan={fixture,gapBefore,gapAfter,restDaysBefore:gapBefore===null?null:Math.max(0,gapBefore-1),
-      restDaysAfter:gapAfter===null?null:Math.max(0,gapAfter-1),congested,changedStarters,review,
+      restDaysAfter:gapAfter===null?null:Math.max(0,gapAfter-1),congested,changedStarters,review,observedWorkloads,
       scenarioMinutes:90,medicalMinuteCap:null,readyForFinalDecision:review.readyForFinalDecision};
     plans.push(plan);
     // No reservations or downstream optimization may assume an unresolved lineup.
@@ -74,7 +83,7 @@ export function rotationReview(snapshot, options={}) {
       plannedSubAppearances:reservations.get(player.id).filter(r=>r.kind==="substitute").length,
       plannedMinutes:reservations.get(player.id).reduce((sum,row)=>sum+row.minutes,0),
       reservations:reservations.get(player.id),medicalMinuteCap:null})),
-    methodology:"manager-room-sequential-rotation-v2",
+    methodology:"manager-room-sequential-rotation-v3",
     note:"각 경기의 검토 점수를 전역 배치한 순차 시나리오입니다. 전체 경기의 공동 최적해나 체력 예측이 아닙니다. 90분 시나리오에서 감독 상한·교체 시점을 반영한 출전분을 예약하며 실제 출전분·의학적 상한과 구분합니다. 경기마다 다시 저장·확인하세요."
   };
 }
@@ -90,9 +99,12 @@ function selectionAdjustment(player,mode,context){
     const penalty=Math.round(amount*weight*importanceWeight);
     delta-=penalty;evidence.push(`${label}: 검토 점수 −${penalty}`);
   };
+  const window=context.window;
+  if(window.minutes!==null && window.minutes>=300)
+    subtract(context.congested?10:4,window.source==="dated"
+      ?`${window.from}~${window.through} 수록 ${window.minutes}분${window.complete?"":" 이상"}`
+      :`스냅샷 기준 최근 14일 수록 ${window.minutes}분${window.complete?"":" 이상"}`);
   if(context.currentEvidence){
-    if(known(player.minutes,0,20160) && player.minutes>=300)
-      subtract(context.congested?10:4,`스냅샷 기준 최근 14일 수록 ${player.minutes}분${player.historyComplete?"":" 이상"}`);
     if(known(player.condition,0,100) && player.condition<=85)
       subtract(8,`스냅샷 컨디션 ${player.condition}; 미래 회복 미예측`);
   }
@@ -103,8 +115,11 @@ function selectionAdjustment(player,mode,context){
     const bonus=headroom===null?4:4+Math.min(6,Math.floor(headroom/5));
     delta+=bonus;evidence.push(`만 ${player.age}세 개발 검토: +${bonus}; ${headroom===null?"PA 여유 미확인":`PA − CA ${headroom}`}`);
   }
-  if(!known(player.minutes,0,20160)) evidence.push("최근 출전량 미확인; 0분으로 간주하지 않음");
-  else if(player.historyComplete!==true) evidence.push("출전 기록은 수록 하한; 누락된 경기를 추정하지 않음");
+  if(window.minutes===null) evidence.push("검토 기간 출전량 미확인; 0분으로 간주하지 않음");
+  else if(!window.complete) evidence.push("출전 기록은 수록 하한; 누락된 경기를 추정하지 않음");
+  if(window.source==="dated" && window.status==="review") evidence.push(`경기일 기준 날짜별 기록 ${window.knownRecords}건 · 출전분 누락 ${window.missingRecords}건; ${window.minutesVerified?"출전분 해석 확인":"출전분 해석 게임 화면 대조 필요"}`);
+  if(window.status==="invalid") evidence.push(...window.issues);
+  if(window.source==="snapshot-total") evidence.push("날짜별 기록 미제공; 스냅샷 합계를 미래 기간으로 이동하지 않음");
   if(context.importance==null) evidence.push("경기 중요도 미확인; 쉬운 경기로 간주하지 않음");
   if(!evidence.length) evidence.push("확인된 입력에서 추가 부하 조정 없음; 정상 체력 판정 아님");
   return {delta,evidence};
