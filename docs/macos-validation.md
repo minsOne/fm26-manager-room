@@ -50,3 +50,29 @@ web UI polls every 5 seconds. These settings describe implementation, not measur
 end-to-end latency or battery cost. Parser timing excludes browser/network/watcher
 delay. Keep private save/player JSON out of public issues; share aggregate timings
 and sanitized diagnostics instead.
+
+## ChatGPT sign-in and AI Coach
+
+These checks require your actual Mac and eligible ChatGPT account. CI does not
+perform consent, real Keychain approval or live plan-backed inference.
+
+1. Update Companion, then run `manager-room stop` and `manager-room start` without
+   configuring an API key. Open AI Coach and select **Continue with ChatGPT**.
+2. Verify the system browser opens the official OpenAI sign-in page. Choose the
+   intended account/workspace and authorize plan usage. Return to Manager Room.
+   Do not copy callback URLs, tokens or Keychain contents into reports.
+3. Refresh models, select an available model and verify the selected account
+   label. A connection or model list alone does not complete this check.
+4. Preview one player's request. Confirm the account/model and intended fields,
+   then send once. Confirm a completed Korean response and check ChatGPT usage.
+5. Prepare another preview, switch model/account and verify the previous approval
+   disappears. Log out and verify sending is unavailable. Log in to the saved
+   connection and confirm the existing registration is reused.
+6. Restart Companion, refresh models and verify the connection resumes from
+   Keychain. After normal token expiry, explicitly refresh models or send a new
+   approved request to check token renewal. Do not force requests to exhaust usage.
+7. Cancel login; deny plan permission; temporarily disconnect the network. Verify
+   the UI reports these states, partial replies are not shown as completed, and
+   no automatic inference retry or API-key billing fallback occurs.
+8. Verify the browser on the actual Mac (including Safari if used) can return to
+   the loopback callback. Record only macOS/browser versions and sanitized outcomes.
