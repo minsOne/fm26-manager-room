@@ -1,3 +1,5 @@
+import { DecisionEvidence, evidenceTemplate } from "./engine/decisionEvidence.js";
+import { balanceProposal, simulateBalanceProposal } from "./engine/evidenceReviews.js";
 import { rotationReview } from "./engine/realRotation.js";
 import { CareerArchive } from "./engine/careerArchive.js";
 import { SnapshotSession, initialBridge, validateBridge } from "./engine/snapshotSession.js";
@@ -6,7 +8,7 @@ import { editFixtureSelection } from "./engine/realSelection.js";
 import { WebActionSession } from "./engine/webActions.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
-const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge};
+const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,evidenceDraft:"",evidenceMessage:""};
 let current = {snapshot:null,status:"empty",revision:0};
 let archiveImport=null;
 let session, actions, timer, generation=0, renderedKey="";
@@ -14,7 +16,7 @@ const menu = document.getElementById("roomNavigation");
 menu.innerHTML=Object.entries(rooms).map(([key,title])=>`<button data-view="${key}">${esc(title)}</button>`).join("");
 function render() {
   const active=document.activeElement;
-  const draftFocus=active?.matches('#candidateQuery,#coachQuestion,#coachPlayer,#chatGPTProfile,#chatGPTModel')
+  const draftFocus=active?.matches('#candidateQuery,#coachQuestion,#coachPlayer,#chatGPTProfile,#chatGPTModel,#evidenceDraft')
     ?{id:active.id,start:active.selectionStart,end:active.selectionEnd}:null;
   document.getElementById("pageTitle").textContent=rooms[ui.view];
   for(const button of menu.querySelectorAll("button")) {
@@ -35,14 +37,17 @@ function update(state) {
   document.getElementById("refreshButton").disabled=state.refreshing;
   const key=`${state.revision}/${state.status}/${state.parser?.parsing===true}`;
   // Keep address drafts, search text, selected player/tab/formation and scroll position intact.
-  if((key!==renderedKey||actionChanged) && ui.view!=="settings") { renderedKey=key; render(); }
+  if((key!==renderedKey||actionChanged) && !["settings","evidence"].includes(ui.view)) { renderedKey=key; render(); }
+}
+function downloadJSON(text,name){
+  const url=URL.createObjectURL(new Blob([text],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function startSession() {
-  archiveImport=null;
+  archiveImport=null;ui.evidenceDraft="";ui.evidenceMessage="";
   generation+=1; const token=generation;
   clearTimeout(timer); actions?.dispose();actions=null;session?.dispose();
   let storage=null;try{storage=window.localStorage;}catch{}
-  session=new SnapshotSession({bridge:ui.bridge,onChange:update,archive:new CareerArchive({storage,namespace:ui.bridge})});
+  session=new SnapshotSession({bridge:ui.bridge,onChange:update,archive:new CareerArchive({storage,namespace:ui.bridge}),evidence:new DecisionEvidence({storage,namespace:ui.bridge})});
   actions=new WebActionSession({session,onChange:state=>{ui.actions=state;render();}});ui.actions=actions.state;
   current=session.state; renderedKey=""; update(current); render();
   const tick=async()=>{
@@ -67,6 +72,12 @@ document.addEventListener("click",event=>{
   if(button.dataset.view && rooms[button.dataset.view]) {ui.view=button.dataset.view;render();if(ui.view==='coach')void actions.refreshAuth();}
   if(button.hasAttribute("data-player")) {ui.selectedId=button.dataset.player;render();}
   if(button.hasAttribute("data-close-player")) {ui.selectedId=null;render();}
+  if(button.hasAttribute("data-evidence-template")){
+    try{ui.evidenceDraft=JSON.stringify(evidenceTemplate(current.snapshot),null,2);ui.evidenceMessage="현재 범위의 빈 입력 틀입니다. 입력 예시를 참고해 확인한 항목만 추가하세요.";render();}catch(e){ui.evidenceMessage=e.message;render();}
+  }
+  if(button.hasAttribute("data-evidence-export")){
+    try{downloadJSON(session.evidence.exportText(),"manager-room-evidence.json");}catch(e){ui.evidenceMessage=e.message;render();}
+  }
   if(button.hasAttribute("data-refresh"))void session.refresh();
   if(button.hasAttribute("data-candidate-offset"))void actions.search(Number(button.dataset.candidateOffset));
   if(button.hasAttribute("data-coach-send"))void actions.send();
@@ -102,10 +113,16 @@ document.addEventListener("click",event=>{
 });
 document.getElementById("searchInput").addEventListener("input",e=>{ui.query=e.target.value;render();});
 document.addEventListener("input",e=>{
+  if(e.target.id==='evidenceDraft')ui.evidenceDraft=e.target.value;
   if(e.target.id==='candidateQuery')actions.edit('query',e.target.value);
   if(e.target.id==='coachQuestion')actions.edit('question',e.target.value);
 });
 document.addEventListener("change",async e=>{
+  if(e.target.id==='evidenceImportFile'){
+    const file=e.target.files?.[0],token=generation;if(!file)return;
+    try{if(file.size>1024*1024)throw Error('근거 파일은 1MB 이하여야 합니다.');const text=await file.text();if(token!==generation)return;ui.evidenceDraft=text;ui.evidenceMessage='파일을 읽었습니다. 내용을 확인하고 교체 버튼을 누르세요.';render();}
+    catch(error){ui.evidenceMessage=error.message;render();}
+  }
   if(e.target.id==='chatGPTProfile'&&e.target.value)void actions.manage('auth-select',{profileId:e.target.value});
   if(e.target.id==='chatGPTModel'&&e.target.value)void actions.manage('auth-model',{model:e.target.value});
   if(e.target.id==='coachPlayer')actions.edit('playerId',e.target.value);
@@ -141,6 +158,18 @@ document.addEventListener("toggle",e=>{
   if(e.target.isConnected && e.target.hasAttribute("data-rest-controls"))ui.restPanelOpen=e.target.open;
 },true);
 document.addEventListener("submit",e=>{
+  if(e.target.id==='evidenceForm'){
+    e.preventDefault();try{session.importEvidence(ui.evidenceDraft);ui.evidenceMessage='근거를 검증하고 저장했습니다.';}catch(error){ui.evidenceMessage=error.message;}render();return;
+  }
+  if(e.target.id==='balanceForm'){
+    e.preventDefault();try{
+      if(current.status!=='current'||current.parser?.parsing)throw Error('현재 데이터 연결 후 사용하세요.');
+      const form=new FormData(e.target),proposal=balanceProposal(current.snapshot,form.get('field'),Number(form.get('percent')));
+      const simulated=simulateBalanceProposal(current.snapshot,proposal);simulateBalanceProposal(simulated,proposal,{rollback:true});
+      downloadJSON(JSON.stringify(proposal,null,2),'world-balance-review.json');
+      document.getElementById('balanceStatus').textContent=`${proposal.before} → ${proposal.after} → ${proposal.before} 시뮬레이션 검증 완료. 게임 파일은 변경하지 않았습니다.`;
+    }catch(error){document.getElementById('balanceStatus').textContent=error.message;}return;
+  }
   if(e.target.id==='candidateSearchForm'){e.preventDefault();void actions.search(0);return;}
   if(e.target.id==='coachForm'){e.preventDefault();void actions.prepare();return;}
   if(e.target.id!=="bridgeForm")return;e.preventDefault();

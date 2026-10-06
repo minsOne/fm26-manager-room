@@ -113,6 +113,7 @@ export function normalizeRealSnapshot(input) {
       id: uid, date: f.date, opponent: text(f.opponent) ?? "상대 미확인",
       home: f.homeKnown === false ? null : typeof f.home === "boolean" ? f.home : null,
       competition: f.competitionKnown === true ? text(f.competition) : null,
+      competitionId: id(f.competitionId),
       importance: f.importanceKnown === true ? number(f.importance, 0, 100) : null
     };
   }).sort((a,b) => a.date.localeCompare(b.date));

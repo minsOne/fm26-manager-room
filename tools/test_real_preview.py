@@ -75,10 +75,10 @@ def main():
         page.goto(f"http://127.0.0.1:{server.server_port}/index.html")
         page.get_by_text("실제 세이브",exact=True).wait_for()
         print("PASS real schema loads without implicit demo")
-        for view in ["manager","squad","matchday","tactics","training","development","medical","recruitment","transfers","contracts","economy","reports","coach","settings"]:
+        for view in ["manager","squad","matchday","tactics","training","development","medical","recruitment","transfers","contracts","economy","reports","coach","evidence","settings"]:
             page.locator(f'nav [data-view="{view}"]').click()
             assert not any(x in page.locator("#content").inner_text() for x in ["NaN","undefined","Infinity"])
-        print("PASS all 14 tabs handle partial/empty datasets")
+        print("PASS all 15 tabs handle partial/empty datasets")
         page.locator('nav [data-view="medical"]').click()
         assert "판단 보류" in page.locator("#content").inner_text()
         assert "미확인" in page.locator("#content").inner_text()
@@ -304,6 +304,56 @@ def main():
         page.wait_for_function("!document.querySelector('#chatGPTModel')")
         assert state['aiSends']==1 and page.locator('#coachPreview').count()==0
         print('PASS synthetic ChatGPT login, model switch, explicit single send, logout and new-game isolation; no live provider')
+
+        # Manual evidence is scoped to the active career/day and never a native medical claim.
+        state['snapshot']['clubFinance']={'balance':100000,'wageBudgetWeekly':10000}
+        state['snapshot']['fixtures'][0]['competitionId']=3
+        page.locator('#refreshButton').click()
+        page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        page.locator('nav [data-view="evidence"]').click()
+        page.locator('[data-evidence-template]').click()
+        packet=json.loads(page.locator('#evidenceDraft').input_value())
+        packet['medical']=[{'playerId':'7','injured':True,'fatigueLabel':'Tired','riskLabel':'<img src=x onerror="window.PWNED=true">','reference':'FM medical screen'}]
+        packet['eligibility']=[{'playerId':'7','fixtureId':'m1','competitionId':'3','registered':False,'exempt':False,'suspended':False,'workPermit':True,'otherRulesClear':True,'reference':'FM registration'}]
+        packet['catalogue']=[{'id':'passing','name':'Game focus','attributes':['passing'],'reference':'FM training'}]
+        packet['assignments']=[{'playerId':'7','focusId':'passing','since':packet['scope']['date'],'reference':'FM assignment'}]
+        packet['offers']=[{'id':'offer1','playerId':'7','kind':'loan-out','club':'Other FC','expires':'2037-07-02','interest':True,'registration':None,'contractClear':True,'currency':'GBP','fee':100,'weeklyWage':0,'feeThreshold':90,'maxWeeklyWage':0,'facility':16,'minFacility':15,'promisedMinutes':60,'minMinutes':45,'reference':'FM offer'}]
+        packet['economy']=[{'clubId':'1','leagueId':'league','currency':'GBP','from':'2037-05-01','through':'2037-05-31','income':200,'expenditure':100,'transferSpend':40,'transferIncome':10,'wageSpend':20,'reference':'FM finance'}]
+        # File selection is review-only; commit happens only after an explicit submit.
+        page.locator('#evidenceImportFile').set_input_files({'name':'evidence.json','mimeType':'application/json','buffer':json.dumps(packet).encode()})
+        page.wait_for_function("document.querySelector('#evidenceStatus').textContent.includes('내용을 확인')")
+        page.locator('#evidenceForm button').click()
+        assert '저장했습니다' in page.locator('#evidenceStatus').inner_text()
+        page.locator('nav [data-view="matchday"]').click()
+        assert '감독 입력 근거' in page.locator('#content').inner_text()
+        assert page.locator('#content img').count()==0 and page.evaluate('window.PWNED') is None
+        page.locator('nav [data-view="training"]').click()
+        assert 'Game focus' in page.locator('#content').inner_text()
+        page.locator('nav [data-view="transfers"]').click()
+        assert '판단 보류' in page.locator('#content').inner_text()
+        page.locator('nav [data-view="economy"]').click()
+        assert '100.0%' in page.locator('#content').inner_text()
+        with page.expect_download() as download_info:
+            page.locator('#balanceForm button').click()
+        proposal=json.loads(Path(download_info.value.path()).read_text())
+        assert proposal['before']==100000 and proposal['after']==95000 and proposal['writeEnabled'] is False
+        assert '시뮬레이션 검증 완료' in page.locator('#balanceStatus').inner_text()
+        page.reload();page.get_by_text('실제 세이브',exact=True).wait_for()
+        page.locator('nav [data-view="evidence"]').click()
+        assert '현재 범위 근거 연결됨' in page.locator('#content').inner_text()
+        with page.expect_download() as download_info:
+            page.locator('[data-evidence-export]').click()
+        assert json.loads(Path(download_info.value.path()).read_text())==packet
+        packet['scope']['lineage']='wrong'
+        page.locator('#evidenceDraft').fill(json.dumps(packet));page.locator('#evidenceForm button').click()
+        assert '커리어·관측 구간' in page.locator('#evidenceStatus').inner_text()
+        assert '현재 범위 근거 연결됨' in page.locator('#content').inner_text()
+        state['snapshot']['gameDate']='2037-06-02'
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        page.locator('nav [data-view="medical"]').click()
+        assert 'Tired' not in page.locator('#content').inner_text()
+        assert state['aiSends']==1
+        print('PASS evidence file preview, scoped import, exclusion, training/offers/flows, simulation, persistence and expiry; no game writes')
 
         page.locator('nav [data-view="manager"]').click()
         if args.screenshot_dir:

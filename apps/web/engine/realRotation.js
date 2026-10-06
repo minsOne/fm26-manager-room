@@ -1,3 +1,4 @@
+import { fixtureEvidenceSnapshot } from "./evidenceReviews.js";
 import { matchdayReview } from "./realMatchday.js";
 import { matchRuleLimits } from "./realMatchRules.js";
 import { validDate, historyWindow } from "./realHistory.js";
@@ -62,7 +63,7 @@ export function rotationReview(snapshot, options={}) {
       observedWorkloads.some(({window:w})=>w.sameDayRecords>0)?"경기 당일 수록 기록의 시간 순서":null,
       observedWorkloads.some(({window:w})=>w.status==="review" && !w.minutesVerified)?"출전분 해석의 게임 화면 대조":null
     ].filter(Boolean);
-    const review=matchdayReview(snapshot,options.formation,{adjustments,stale:options.stale,decisionMissing:missing,constraints});
+    const review=matchdayReview(fixtureEvidenceSnapshot(snapshot,fixture),options.formation,{adjustments,stale:options.stale,decisionMissing:missing,constraints});
     const previousPlan=plans.at(-1);
     const previousIds=new Set(previousPlan?.review.lineup.filter(row=>row.player).map(row=>row.player.id)??[]);
     const changedStarters=previousPlan?review.lineup.filter(row=>row.player && !previousIds.has(row.player.id)).length:null;

@@ -52,3 +52,9 @@ the missing sources. Work can resume on each gate as its evidence becomes availa
 - Versioned migration policy when verified parser attribute semantics change.
 
 Implementation and operational setup for these latest paths: [external candidates and Coach](external-candidates-and-coach.md). Remaining game-data validation is still not replaced by a model response or a manual import.
+
+## Game-screen evidence development
+
+The five decision areas now have a scoped manager-transcription workflow and executable review engines: [input schema and workflow](decision-evidence.md). This adds fixture-specific exclusions, real catalogue/assignment matching, offer condition gates, actual outcome/plan execution comparisons, actual cash-flow sample comparisons and bounded reversible **in-memory** balance proposals. Evidence import is durable, bounded and deactivated on scope changes.
+
+Automatic extraction and official rule/medical verification remain open. Result linkage measures plan execution, not causal recommendation accuracy. World Balance has no supported game writer or real-file recovery profile. These limits must remain visible in completion reports; the new workflow is not evidence that the native parser has learned these fields.
