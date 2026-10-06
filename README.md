@@ -158,3 +158,5 @@ are explicitly evidence-only and do not certify medical, eligibility or AI resul
 ## Scope boundaries
 
 Current CI evidence is reference equivalence on public FM26 fixtures, not proof for every FM26 build or every in-game field. Playwright WebKit is not installed Safari, and user-Mac/running-FM behavior still requires real-device validation.
+
+Recruitment now searches the pinned save directly from the web. AI Coach supports local request preview and explicit web sending after Mac configuration: see [web search and Coach setup](docs/external-candidates-and-coach.md#web-search-and-coach-setup).

@@ -21,7 +21,7 @@ enum AICoach {
             throw CoachError.invalid("--player must identify a player in the selected managed squad.")
         }
         var observed: [String: Any] = [:]
-        for key in ["id", "ca", "pa", "paKnown", "age", "ageKnown", "positions", "positionRatings", "attributes", "fitness", "playingTime"] {
+        for key in ["id", "ca", "caKnown", "pa", "paKnown", "age", "ageKnown", "positions", "positionsKnown", "positionRatings", "attributes", "attributesKnown", "fitness", "playingTime"] {
             if let value = player[key] { observed[key] = value }
         }
         // False-known numeric placeholders remain tagged, never silently certified.

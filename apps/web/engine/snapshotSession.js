@@ -20,7 +20,7 @@ export function initialBridge(search = "", saved = null) {
   }
   return DEFAULT_BRIDGE;
 }
-async function limitedText(response, maxBytes) {
+export async function limitedText(response, maxBytes) {
   const length = Number(response.headers.get("content-length"));
   if (length > maxBytes) throw new Error("응답이 크기 제한을 초과했습니다.");
   const reader = response.body?.getReader();

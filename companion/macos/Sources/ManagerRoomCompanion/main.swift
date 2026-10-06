@@ -23,6 +23,7 @@ if args.isEmpty || args.first == "--help" || args.first == "help" {
       serve [--open-web]      Foreground service for development
       pin-save <path.fm> | unpin-save | selection | parse <path.fm> | probe
     Service options: --port 8765 --parser <path> --snapshot-file <path.json>
+    Web AI: --model MODEL (or OPENAI_MODEL); --enable-web-coach allows confirmed sends with OPENAI_API_KEY
     Selection precedence: --save > --save-dir > persisted pin > default directory
     """)
     exit(0)
@@ -276,7 +277,10 @@ case .serve:
 
     let port = parsePort(args) ?? 8765
     let server = try LocalHTTPServer(port: port, store: store, companionState: state,
-                                     instanceID: option("--service-instance", in: args))
+                                     instanceID: option("--service-instance", in: args),
+                                     coachModel: option("--model", in: args) ?? ProcessInfo.processInfo.environment["OPENAI_MODEL"] ?? "",
+                                     coachKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "",
+                                     enableWebCoach: args.contains("--enable-web-coach"))
     server.start()
 
     let shouldOpenWeb = args.contains("--open-web")

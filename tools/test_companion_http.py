@@ -35,13 +35,15 @@ def main() -> None:
                             raise TimeoutError("Companion did not bind loopback")
                         time.sleep(0.05)
 
-                def request(extra: str = "", *, host: str | None = None, split: bool = False, method: str = "GET") -> tuple[str, dict[str, str], bytes]:
-                    wire = f"{method} /api/health HTTP/1.1\r\nHost: {host or f'127.0.0.1:{port}'}\r\n{extra}\r\n".encode()
+                def request(extra: str = "", *, host: str | None = None, split: bool = False, method: str = "GET", path: str = "/api/health", payload: bytes = b"") -> tuple[str, dict[str, str], bytes]:
+                    wire = f"{method} {path} HTTP/1.1\r\nHost: {host or f'127.0.0.1:{port}'}\r\n{extra}\r\n".encode()
                     with socket.create_connection(("127.0.0.1", port), timeout=3) as conn:
                         if split:
                             conn.sendall(wire[:12]); time.sleep(0.05); conn.sendall(wire[12:])
                         else:
                             conn.sendall(wire)
+                        if payload:
+                            conn.sendall(payload[:1]); time.sleep(0.02); conn.sendall(payload[1:])
                         data = bytearray()
                         while block := conn.recv(65536):
                             data.extend(block)
@@ -69,7 +71,20 @@ def main() -> None:
                 assert request(host=f"attacker.example:{port}")[0].startswith("HTTP/1.1 403")
                 assert request(method="POST")[0].startswith("HTTP/1.1 405")
                 assert request("Origin: null\r\n")[0].startswith("HTTP/1.1 403")
-                print("PASS HTTP fragmented headers, exact CORS/PNA, JSON nulls, hostile origin/Host and write rejection")
+                _, _, body = request("Origin: https://minsone.github.io\r\n", path="/api/actions")
+                capabilities = json.loads(body)
+                assert capabilities["version"] == 1 and capabilities["coachSend"] is False
+                token = capabilities["token"]
+                status, headers, _ = request("Origin: https://minsone.github.io\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: content-type, x-manager-room-token\r\nAccess-Control-Request-Private-Network: true\r\n", method="OPTIONS", path="/api/actions")
+                assert "204" in status and "POST" in headers["Access-Control-Allow-Methods"]
+                assert headers["Access-Control-Allow-Private-Network"] == "true"
+                post_headers = f"Origin: https://minsone.github.io\r\nContent-Type: application/json\r\nContent-Length: 2\r\nX-Manager-Room-Token: {token}\r\n"
+                assert "409" in request(post_headers, method="POST", path="/api/actions", payload=b"{}", split=True)[0]
+                assert "403" in request(post_headers.replace(token, "invalid"), method="POST", path="/api/actions")[0]
+                assert "403" in request(post_headers.replace("https://minsone.github.io", "https://evil.example"), method="POST", path="/api/actions")[0]
+                assert "400" in request(post_headers.replace("Content-Length: 2", "Content-Length: 8193"), method="POST", path="/api/actions")[0]
+                assert "400" in request(post_headers.replace("application/json", "text/plain"), method="POST", path="/api/actions")[0]
+                print("PASS HTTP fragmented headers/body, exact CORS/PNA, token-protected bounded JSON actions, hostile origin/Host and game-write rejection")
             finally:
                 child.terminate()
                 try:

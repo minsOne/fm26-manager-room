@@ -37,13 +37,28 @@ def main():
     args=parser.parse_args()
     server=ThreadingHTTPServer(("127.0.0.1",0),partial(QuietHandler,directory=str(ROOT/"apps/web")))
     threading.Thread(target=server.serve_forever,daemon=True).start()
-    payload=fixture(); state={"snapshot":payload,"fail":False,"parserError":None,"selectionId":None}
+    payload=fixture(); state={"snapshot":payload,"fail":False,"parserError":None,"selectionId":None,"aiSends":0}
     with sync_playwright() as p:
         browser=p.chromium.launch(executable_path=args.executable,headless=True,args=["--no-sandbox"])
         page=browser.new_page(viewport={"width":1440,"height":1000}); errors=[]
         page.on("pageerror",lambda e: errors.append(str(e)))
         def bridge(route):
             if state["fail"]: route.abort(); return
+            if route.request.url.endswith('/api/actions'):
+                cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET, POST, OPTIONS','Access-Control-Allow-Headers':'content-type, x-manager-room-token'}
+                if route.request.method=='OPTIONS':route.fulfill(status=204,headers=cors);return
+                if route.request.method=='GET':
+                    data={'version':1,'token':'a'*64,'coachPreview':True,'coachSend':True}
+                else:
+                    request=json.loads(route.request.post_data)
+                    if request['action']=='coach-preview':
+                        data={'previewId':'synthetic-ticket','expiresInSeconds':120,'sendEnabled':True,
+                              'request':{'model':'synthetic','input':request['question'],'store':False}}
+                    elif request['action']=='coach-send':
+                        state['aiSends']+=1
+                        data={'answer':'<img src=x onerror="window.PWNED=true"> Synthetic interpretation','interpretationOnly':True}
+                    else: raise AssertionError('unexpected_action')
+                route.fulfill(status=200,content_type='application/json',body=json.dumps(data),headers=cors);return
             data={"parsing":False,"lastError":state["parserError"],"selectionId":state["selectionId"]} if route.request.url.endswith("/api/parser") else state["snapshot"]
             route.fulfill(status=200,content_type="application/json",body=json.dumps(data),headers={"Access-Control-Allow-Origin":"*"})
         page.route("http://127.0.0.1:8765/**",bridge)
@@ -238,6 +253,27 @@ def main():
         page.locator('[data-confirm-archive]').click()
         assert '기록 가져오기 완료' in page.locator('#archiveImportStatus').inner_text()
         print('PASS archive export, validated replacement and import UI')
+
+        page.locator('nav [data-view="coach"]').click()
+        page.locator('#coachPlayer').select_option('7')
+        page.locator('#coachQuestion').fill('관측 내용을 설명해줘')
+        page.locator('#coachForm button').click()
+        page.locator('#coachPreview').wait_for()
+        assert state['aiSends']==0
+        page.locator('[data-coach-send]').click()
+        page.locator('#coachAnswer').wait_for()
+        assert state['aiSends']==1 and page.locator('#coachAnswer img').count()==0
+        assert page.evaluate('window.PWNED') is None
+        page.locator('#coachQuestion').fill('다른 질문')
+        assert page.locator('#coachAnswer').count()==0
+        page.locator('#coachForm button').click();page.locator('#coachPreview').wait_for()
+        state['selectionId']='another-new-game'
+        page.locator('#refreshButton').click()
+        page.get_by_text('다른 세이브 전환 보류',exact=True).wait_for()
+        assert page.locator('#coachPreview').count()==0
+        page.locator('[data-accept-career]').click()
+        assert page.locator('#coachQuestion').input_value()=='' and state['aiSends']==1
+        print('PASS synthetic Coach preview, explicit single send, escaped reply and new-game isolation; no live provider')
 
         page.locator('nav [data-view="manager"]').click()
         if args.screenshot_dir:
