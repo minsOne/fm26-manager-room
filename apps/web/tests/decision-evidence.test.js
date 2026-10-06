@@ -123,11 +123,12 @@ test('session keeps evidence on unchanged polls but expires it on day, restart a
 });
 
 test('evidence UI escapes imported source/labels and exposes all five review areas',()=>{
-  const s=snapshot(),p=evidenceTemplate(s);p.medical=[{...med(),reference:'<img src=x>',riskLabel:'<script>bad</script>'}];attach(s,p);
+  const s=snapshot(),p=evidenceTemplate(s);p.medical=[{...med(),injured:true,reference:'<img src=x>',riskLabel:'<script>bad</script>'}];attach(s,p);
   const state={snapshot:s,status:'current',parser:{parsing:false}},ui={query:'',actions:{},evidenceDraft:'</textarea><script>bad</script>'};
   for(const view of ['evidence','medical','training','transfers','reports','economy']){
     const html=renderRoom(view,state,ui);assert.equal(html.includes('<script>bad</script>'),false);assert.equal(html.includes('<img src=x>'),false);
   }
   assert.match(renderRoom('medical',state,ui),/&lt;script&gt;/);
+  assert.match(renderRoom('matchday',state,ui),/감독 입력 근거: 현재 부상/);
   assert.match(renderRoom('economy',state,ui),/게임 파일 쓰기·복구는 지원하지/);
 });

@@ -99,6 +99,7 @@ export function renderRoom(view, state, ui) {
         break;
       }
       body+=selectionControls(s,rotation.plans[0],ui.restPanelOpen,ui.minutePanelOpen);
+      if(review.unavailable.length)body+=card("출전 제외 근거",table(["선수","확인할 사유"],review.unavailable.map(r=>[playerLink(r.player),esc(r.reason)])));
       body+=card("검토 계획 기록",note("현재 선발·교체 초안을 로컬 보고서에 보관합니다. 게임에 적용한 명단이나 경기 결과가 아니며 의료·자격 미확인은 그대로 기록합니다.")
         +`<button data-save-review ${stale||!s.observationLineage||review.status!=="review"||!review.selectedCount?"disabled":""}>현재 검토 계획 보관</button>`
         +note(`현재 관측 구간 검토 기록 ${s.decisionJournal?.length??0}건 · 최근 30건까지 보관`));
