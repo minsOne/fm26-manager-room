@@ -227,6 +227,16 @@ final class ChatGPTAuth: @unchecked Sendable {
                 throw CoachError.invalid("ChatGPT 세션이 해제되었거나 만료되었습니다. 저장된 계정으로 다시 로그인하세요.")
             }
             guard response.status == 200 else { throw Self.providerError(response) }
+            guard let replacement = result["refresh_token"] as? String, !replacement.isEmpty else {
+                saved.profiles[index].credentials = nil; saved.changed(); try persist(saved)
+                throw CoachError.invalid("ChatGPT 갱신 토큰을 확인할 수 없습니다. 다시 로그인하세요.")
+            }
+            if let id = result["id_token"] as? String {
+                let jwks = try transport(URLRequest(url: URL(string: "https://auth.openai.com/.well-known/jwks.json")!))
+                guard jwks.status == 200 else { throw CoachError.invalid("ChatGPT 서명 키 조회 실패.") }
+                let identity = try verify(id, jwks.data, saved.profiles[index].client, nil, clock())
+                guard identity["sub"] as? String == saved.profiles[index].subject else { throw CoachError.invalid("갱신된 ChatGPT 계정이 일치하지 않습니다.") }
+            }
             credential = try credentials(result, prior: credential)
             saved.profiles[index].credentials = credential
             if !credential.scopes.contains(Self.direct) { saved.changed() }
@@ -261,7 +271,7 @@ final class ChatGPTAuth: @unchecked Sendable {
     private func form(_ endpoint: String, _ fields: [String: String]) -> URLRequest {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
         let body = fields.sorted { $0.key < $1.key }.map { "\($0.key.addingPercentEncoding(withAllowedCharacters: allowed)!)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)" }.joined(separator: "&")
-        var request = URLRequest(url: URL(string: endpoint)!); request.httpMethod = "POST"; request.httpBody = Data(body.utf8)
+        var request = URLRequest(url: URL(string: endpoint)!, timeoutInterval: 20); request.httpMethod = "POST"; request.httpBody = Data(body.utf8)
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         return request
     }

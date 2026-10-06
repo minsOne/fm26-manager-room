@@ -44,6 +44,7 @@ export function renderRoom(view, state, ui) {
     +card("날짜별 기록 보관",note(`이 브라우저·Bridge별 보관입니다. 커리어/분기 최대 8개, 각 최대 60일, 전체 약 3MB까지이며 오래된 기록부터 줄입니다. 브라우저 데이터 삭제·다른 기기에는 이어지지 않습니다. 현재 구간 ${s?.observationArchive?.dates??0}일 수록.`)
       +note("기록 파일은 선수 UID·능력치·검토 이력을 포함합니다. 가져오기는 기존 보관 기록 전체를 교체합니다. 커리어 ID가 다른 자료는 자동으로 합치지 않습니다.")
       +`<button data-export-archive>기록 내보내기</button><label for="archiveImportFile">기록 파일 선택</label><input id="archiveImportFile" type="file" accept="application/json,.json"><p id="archiveImportStatus" role="status"></p><button data-confirm-archive disabled>선택한 기록으로 교체</button>`);
+  if (!s && view==="coach")return chatGPTConnection(ui)+card("AI Coach",note("로그인은 세이브 연결 없이 설정할 수 있습니다. 선수 질문은 최신 세이브 연결 후 사용할 수 있습니다."));
   if (!s) return card("실제 데이터 연결 필요", note("Mac Companion을 실행한 뒤 다시 조회하세요. 연결 실패를 데모 데이터로 숨기지 않습니다.")
     + '<button data-refresh>다시 조회</button> <button data-view="settings">연결 설정</button> <a href="./demo.html">예시 데이터로 기존 UI 보기</a>');
   const stale = state.status !== "current" || state.parser?.parsing === true;
@@ -241,18 +242,38 @@ function candidateSearchForm(state,ui){
     +`<p id="candidateSearchStatus" role="status">${esc(a.message??'')}</p>`
     +(page?`<div><button data-candidate-offset="${Math.max(0,page.offset-100)}" ${disabled||page.offset===0?'disabled':''}>이전 100명</button> <button data-candidate-offset="${page.offset+100}" ${disabled||!page.hasMore?'disabled':''}>다음 100명</button></div>`:''));
 }
+function chatGPTConnection(ui){
+  const a=ui.actions??{},auth=a.auth,disabled=a.busy?'disabled':'';
+  let content=note('API 키 없이 ChatGPT 계정을 연결할 수 있습니다. 지원되는 요금제의 사용량·크레딧이 적용됩니다. 로그인 정보는 Mac Keychain에 보관합니다.');
+  if(a.authError)content+=note(a.authError);
+  if(!auth)return card('ChatGPT 연결',content+`<button data-auth-refresh ${disabled}>연결 상태 확인</button>`);
+  content+=`<p>현재 방식: <strong>${auth.mode==='chatgpt'?'ChatGPT 요금제':'Mac API 키'}</strong></p>`;
+  if(auth.profiles.length)content+=`<label for="chatGPTProfile">저장된 계정·워크스페이스 연결</label><select id="chatGPTProfile" ${disabled}><option value="">연결 선택</option>${auth.profiles.map(p=>`<option value="${esc(p.id)}" ${auth.active===p.id?'selected':''}>${esc(p.label)}${p.connected?'':' · 로그아웃'}</option>`).join('')}</select>`;
+  content+=`<button data-auth-login="" ${disabled}>Continue with ChatGPT · 새 연결</button>`;
+  if(auth.active)content+=` <button data-auth-login="${esc(auth.active)}" ${!auth.planEnabled?'data-auth-consent':''} ${disabled}>${auth.planEnabled?'선택 계정 다시 로그인':'선택 계정 로그인 · 요금제 권한 승인'}</button>`;
+  if(auth.pending)content+=`<p>Mac 브라우저에서 로그인 중입니다. 완료 후 이 화면으로 돌아오세요.</p><button data-auth-action="auth-cancel" ${disabled}>로그인 취소</button>`;
+  if(auth.connected&&auth.mode==='chatgpt'){
+    content+=note(auth.planEnabled?'ChatGPT 요금제 사용 권한 승인됨':'로그인됨 · 요금제 사용 권한 미승인');
+    content+=`<button data-auth-action="auth-models" ${disabled||!auth.planEnabled||auth.pending?'disabled':''}>모델 목록 새로고침</button>`;
+    if(auth.models.length)content+=`<label for="chatGPTModel">사용할 모델</label><select id="chatGPTModel" ${disabled||auth.pending?'disabled':''}><option value="">모델 선택</option>${auth.models.map(m=>`<option value="${esc(m.slug)}" ${auth.model===m.slug?'selected':''}>${esc(m.name)}</option>`).join('')}</select>`;
+    content+=` <button data-auth-action="auth-logout" ${disabled}>선택 계정 로그아웃</button>`;
+  }
+  content+=` <button data-auth-action="auth-api-key" ${disabled||auth.mode==='api-key'?'disabled':''}>Mac API 키 방식 선택</button>`;
+  content+=`<p id="chatGPTStatus" role="status">${esc(auth.message??'')}</p><a href="https://chatgpt.com/#settings/Usage" target="_blank" rel="noopener noreferrer">ChatGPT 사용량·앱 권한 관리</a>`;
+  return card('ChatGPT 연결',content);
+}
 function coachForm(state,ui){
   const a=ui.actions??{},s=state.snapshot,disabled=a.busy||state.status!=='current'||state.parser?.parsing||!s?.selectionId;
   const preview=a.preview;
-  return card('AI Coach 요청',note('선수 한 명의 관측값과 질문을 OpenAI에 보냅니다. 먼저 전송 내용을 미리 보고 확인하세요. API 키는 Mac에만 설정하며 질문·응답은 브라우저에 저장하지 않습니다.')
+  return chatGPTConnection(ui)+card('AI Coach 요청',note('선수 한 명의 관측값과 질문을 OpenAI에 보냅니다. 먼저 전송 내용을 미리 보고 확인하세요. 질문·응답은 브라우저 저장소에 저장하지 않습니다.')
     +`<form id="coachForm"><label for="coachPlayer">검토할 선수</label><select id="coachPlayer" required ${disabled?'disabled':''}><option value="">선수 선택</option>${s.players.map(p=>`<option value="${esc(p.id)}" ${a.playerId===p.id?'selected':''}>${esc(p.name)} · ${esc(p.id)}</option>`).join('')}</select>
       <label for="coachQuestion">질문</label><textarea id="coachQuestion" rows="4" maxlength="4000" required ${disabled?'disabled':''}>${esc(a.question??'')}</textarea><button ${disabled?'disabled':''}>전송 내용 미리보기</button></form>`
     +`<p id="coachStatus" role="status">${esc(a.message??'')}</p>`
-    +(preview?`<section id="coachPreview"><h3>전송할 요청 · 아직 전송하지 않음</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(preview.request,null,2))}</pre>
-      <p>위 질문과 선수 관측값이 OpenAI로 전송되며 API 비용이 발생할 수 있습니다. 개인정보를 질문에 넣지 않았는지 확인하세요.</p>
-      <button data-coach-send ${disabled||!preview.sendEnabled||preview.expiresAt<=Date.now()?'disabled':''}>내용 확인 · OpenAI에 전송</button>${!preview.sendEnabled?note('전송을 활성화하려면 Mac에서 API 키·모델을 설정하고 --enable-web-coach로 다시 시작하세요.'):''}</section>`:'')
+    +(preview?`<section id="coachPreview"><h3>전송할 요청 · 아직 전송하지 않음</h3><p>${esc(preview.provider==='chatgpt'?'ChatGPT 요금제':'API 키')} · ${esc(preview.account??'Mac API key')}</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(preview.request,null,2))}</pre>
+      <p>위 질문과 선수 관측값이 OpenAI로 전송되며 ${preview.provider==='chatgpt'?'ChatGPT 요금제 사용량 또는 크레딧':'API 사용 요금'}이 적용됩니다. 개인정보를 질문에 넣지 않았는지 확인하세요.</p>
+      <button data-coach-send ${disabled||!preview.sendEnabled||preview.expiresAt<=Date.now()?'disabled':''}>내용 확인 · OpenAI에 전송</button>${!preview.sendEnabled?note('ChatGPT 계정의 요금제 권한·모델을 확인하거나 Mac에서 API 키 전송을 활성화하세요.'):''}</section>`:'')
     +(a.answer?`<section id="coachAnswer"><h3>AI 해석 · 게임 화면 확인 필요</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(a.answer)}</pre></section>`:'')
-    +note('Mac 설정: manager-room stop → OPENAI_MODEL을 설정한 뒤 manager-room start --enable-web-coach. OPENAI_API_KEY는 로컬 비밀 관리 방식으로 설정하세요. 모델만 설정하면 무료 로컬 미리보기를 사용할 수 있습니다.'));
+    +note('API 키 방식 사용 시: Mac에서 OPENAI_MODEL과 OPENAI_API_KEY를 설정하고 manager-room start --enable-web-coach로 시작하세요. ChatGPT 로그인 방식은 키 설정 없이 사용할 수 있습니다.'));
 }
 export function playerDetail(player, s) {
   if (!player) return "";

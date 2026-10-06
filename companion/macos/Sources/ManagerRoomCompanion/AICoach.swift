@@ -104,12 +104,12 @@ enum OpenAIHTTP {
     static func perform(_ request: URLRequest) throws -> Response {
         guard let url = request.url, url.scheme == "https", ["auth.openai.com", "api.openai.com"].contains(url.host), url.user == nil, url.password == nil, url.port == nil else { throw CoachError.invalid("허용되지 않은 OpenAI 주소입니다.") }
         let delegate = CoachTransport(); let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 60; config.timeoutIntervalForResource = 60
+        config.timeoutIntervalForRequest = request.timeoutInterval; config.timeoutIntervalForResource = request.timeoutInterval
         config.httpShouldSetCookies = false; config.urlCredentialStorage = nil; config.urlCache = nil
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         session.dataTask(with: request).resume()
-        guard delegate.finished.wait(timeout: .now() + 65) == .success, !delegate.failed else {
+        guard delegate.finished.wait(timeout: .now() + request.timeoutInterval + 5) == .success, !delegate.failed else {
             throw CoachError.invalid("OpenAI 연결 실패 또는 응답 제한 초과. 자동 재전송하지 않습니다.")
         }
         return Response(status: delegate.status, data: delegate.data)

@@ -14,7 +14,7 @@ const menu = document.getElementById("roomNavigation");
 menu.innerHTML=Object.entries(rooms).map(([key,title])=>`<button data-view="${key}">${esc(title)}</button>`).join("");
 function render() {
   const active=document.activeElement;
-  const draftFocus=active?.matches('#candidateQuery,#coachQuestion,#coachPlayer')
+  const draftFocus=active?.matches('#candidateQuery,#coachQuestion,#coachPlayer,#chatGPTProfile,#chatGPTModel')
     ?{id:active.id,start:active.selectionStart,end:active.selectionEnd}:null;
   document.getElementById("pageTitle").textContent=rooms[ui.view];
   for(const button of menu.querySelectorAll("button")) {
@@ -47,7 +47,7 @@ function startSession() {
   current=session.state; renderedKey=""; update(current); render();
   const tick=async()=>{
     if(token!==generation)return;
-    if(!document.hidden)await session.refresh();
+    if(!document.hidden){await session.refresh();if(ui.view==='coach')await actions.refreshAuth();}
     if(token===generation)timer=setTimeout(tick,5000);
   };
   void tick();
@@ -64,12 +64,15 @@ function editSelection(fixtureId,edit){
 }
 document.addEventListener("click",event=>{
   const button=event.target.closest("button"); if(!button)return;
-  if(button.dataset.view && rooms[button.dataset.view]) {ui.view=button.dataset.view;render();}
+  if(button.dataset.view && rooms[button.dataset.view]) {ui.view=button.dataset.view;render();if(ui.view==='coach')void actions.refreshAuth();}
   if(button.hasAttribute("data-player")) {ui.selectedId=button.dataset.player;render();}
   if(button.hasAttribute("data-close-player")) {ui.selectedId=null;render();}
   if(button.hasAttribute("data-refresh"))void session.refresh();
   if(button.hasAttribute("data-candidate-offset"))void actions.search(Number(button.dataset.candidateOffset));
   if(button.hasAttribute("data-coach-send"))void actions.send();
+  if(button.hasAttribute("data-auth-login"))void actions.manage('auth-login',button.dataset.authLogin?{profileId:button.dataset.authLogin,consent:button.hasAttribute('data-auth-consent')}:{});
+  if(button.hasAttribute("data-auth-action"))void actions.manage(button.dataset.authAction);
+  if(button.hasAttribute("data-auth-refresh"))void actions.refreshAuth();
   if(button.hasAttribute("data-clear-selection"))editSelection(button.dataset.fixtureId,{type:"clear"});
   if(button.hasAttribute("data-unlock-slot"))editSelection(button.dataset.fixtureId,{type:"lock",slotId:button.dataset.unlockSlot,playerId:""});
   if(button.hasAttribute("data-export-archive")){
@@ -103,6 +106,8 @@ document.addEventListener("input",e=>{
   if(e.target.id==='coachQuestion')actions.edit('question',e.target.value);
 });
 document.addEventListener("change",async e=>{
+  if(e.target.id==='chatGPTProfile'&&e.target.value)void actions.manage('auth-select',{profileId:e.target.value});
+  if(e.target.id==='chatGPTModel'&&e.target.value)void actions.manage('auth-model',{model:e.target.value});
   if(e.target.id==='coachPlayer')actions.edit('playerId',e.target.value);
   if(e.target.id==="candidateImportFile"){
     const file=e.target.files?.[0];if(!file)return;const token=generation;

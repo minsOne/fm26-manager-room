@@ -8,5 +8,5 @@ swiftc -swift-version 6 -parse-as-library \
   "$SOURCES/CompanionState.swift" "$SOURCES/SnapshotStore.swift" "$SOURCES/SaveSelectionStore.swift" \
   "$SOURCES/ChatGPTSecurity.swift" "$SOURCES/ChatGPTAuth.swift" "$SOURCES/AICoach.swift" "$SOURCES/WebActions.swift" "$SOURCES/SnapshotValidation.swift" "$SOURCES/NativeParserRunner.swift" \
   "$SOURCES/SaveDirectoryWatcher.swift" "$SOURCES/LocalRequestPolicy.swift" \
-  "$ROOT/companion/macos/Tests/CompanionCoreTests.swift" -o "$BUILD/companion-tests"
+  "$ROOT/companion/macos/Tests/ChatGPTAuthTests.swift" "$ROOT/companion/macos/Tests/CompanionCoreTests.swift" -o "$BUILD/companion-tests"
 "$BUILD/companion-tests"

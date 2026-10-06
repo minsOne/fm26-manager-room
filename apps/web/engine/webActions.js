@@ -11,8 +11,8 @@ const marker=s=>JSON.stringify([s.status,s.metadataWarning,s.parser?.parsing,s.p
 export class WebActionSession {
   constructor({session,fetcher=globalThis.fetch.bind(globalThis),onChange=()=>{},now=()=>Date.now()}={}){
     this.session=session;this.fetcher=fetcher;this.onChange=onChange;this.now=now;
-    this.state={busy:false,message:'',preview:null,answer:null,query:'',page:null,playerId:'',question:''};
-    this.key=marker(session.state);this.generation=0;this.controller=null;this.disposed=false;
+    this.state={busy:false,message:'',preview:null,answer:null,query:'',page:null,playerId:'',question:'',auth:null,authError:''};
+    this.key=marker(session.state);this.generation=0;this.controller=null;this.disposed=false;this.authRefreshing=false;
   }
   emit(){if(!this.disposed)this.onChange(this.state);}
   sync(){
@@ -23,6 +23,36 @@ export class WebActionSession {
     if(oldCareer!==this.career){this.state.playerId='';this.state.question='';this.state.query='';}
     this.state.message=pending?'데이터 상태가 변경되어 요청 결과를 보류했습니다. AI 전송을 눌렀다면 이미 처리되었을 수 있으며 자동 재전송하지 않습니다.':'';
     return true;
+  }
+  acceptAuth(value){
+    if(!value)return;
+    if(typeof value.revision!=='string'||!['api-key','chatgpt'].includes(value.mode)
+      ||!Array.isArray(value.profiles)||value.profiles.length>20||!Array.isArray(value.models)||value.models.length>500
+      ||value.profiles.some(p=>typeof p.id!=='string'||typeof p.label!=='string')
+      ||value.models.some(m=>typeof m.slug!=='string'||typeof m.name!=='string'))throw Error('ChatGPT 연결 상태 형식이 올바르지 않습니다.');
+    if(this.state.auth?.revision!==value.revision){this.state.preview=null;this.state.answer=null;}
+    this.state.auth={revision:value.revision,mode:value.mode,active:value.active,model:value.model,
+      pending:value.pending===true,connected:value.connected===true,planEnabled:value.planEnabled===true,ready:value.ready===true,
+      message:typeof value.message==='string'?value.message:'',profiles:value.profiles.map(p=>({id:p.id,label:p.label,connected:p.connected===true})),
+      models:value.models.map(m=>({slug:m.slug,name:m.name}))};
+    this.state.authError='';
+  }
+  async refreshAuth(){
+    if(this.disposed||this.state.busy||this.authRefreshing)return;
+    this.authRefreshing=true;const generation=this.generation;
+    try{
+      const capabilities=await this.request('GET',undefined,131072,5000);
+      if(generation!==this.generation||this.disposed)return;
+      this.acceptAuth(capabilities.auth);
+      this.state.authError=capabilities.authError??(capabilities.auth?'':'Companion을 업데이트하면 ChatGPT 로그인을 사용할 수 있습니다.');
+    }catch(error){if(generation===this.generation&&!this.disposed)this.state.authError=error.name==='AbortError'?'인증 상태 조회 중입니다. 잠시 후 다시 확인하세요.':error.message;}
+    finally{this.authRefreshing=false;if(generation===this.generation)this.emit();}
+  }
+  manage(action,fields={}){
+    this.state.preview=null;this.state.answer=null;
+    return this.run(action,fields,result=>{
+      this.acceptAuth(result.auth);this.state.message=result.auth?.message??'';
+    });
   }
   edit(field,value){
     if(this.state.busy||!['query','playerId','question'].includes(field))return;
@@ -55,19 +85,22 @@ export class WebActionSession {
   }
   async run(action,fields,apply){
     if(this.state.busy||this.disposed)return false;
+    if(this.authRefreshing){this.generation++;this.controller?.abort();this.authRefreshing=false;}
     this.sync();const generation=this.generation;
     try{
-      const snapshot=this.ready(),scope=actionScope(snapshot);
+      const authAction=action.startsWith('auth-'),scope=authAction?undefined:actionScope(this.ready());
       this.state.busy=true;this.state.message=action==='coach-send'?'AI 요청 처리 중입니다. 자동 재전송하지 않습니다.':'로컬 Companion에서 처리 중입니다.';this.emit();
-      const capabilities=await this.request('GET',undefined,16384,5000);
+      const capabilities=await this.request('GET',undefined,131072,5000);
       if(generation!==this.generation||this.disposed)return false;
       if(capabilities.version!==1||typeof capabilities.token!=='string'||!/^[A-Za-z0-9-]{32,128}$/.test(capabilities.token))throw Error('Companion 작업 API 버전이 올바르지 않습니다.');
-      if(action==='coach-preview'&&!capabilities.coachPreview)throw Error('Mac에서 --model 모델명 또는 OPENAI_MODEL을 설정하고 Companion을 다시 시작하세요.');
-      if(action==='coach-send'&&!capabilities.coachSend)throw Error('Mac에서 API 키·모델을 설정하고 --enable-web-coach로 다시 시작하세요.');
+      this.acceptAuth(capabilities.auth);
+      if(action==='coach-send'&&fields.authRevision&&capabilities.auth?.revision!==fields.authRevision)throw Error('계정·모델이 변경되었습니다. 새 미리보기를 확인하세요.');
+      if(action==='coach-preview'&&!capabilities.coachPreview)throw Error('ChatGPT에 로그인해 모델을 선택하거나 Mac에 API 모델을 설정하세요.');
+      if(action==='coach-send'&&!capabilities.coachSend)throw Error('ChatGPT 요금제 사용 권한·모델을 확인하거나 Mac에서 API 키 전송을 활성화하세요.');
       const result=await this.request('POST',{action,scope,...fields},action==='candidates'?4*1024*1024:1024*1024,
-        action==='candidates'?130000:action==='coach-send'?70000:10000,capabilities.token);
+        authAction||action==='candidates'||action==='coach-send'?130000:10000,capabilities.token);
       if(generation!==this.generation||this.disposed)return false;
-      this.ready();apply(result);return true;
+      if(!authAction)this.ready();apply(result);return true;
     }catch(error){
       if(generation===this.generation&&!this.disposed)this.state.message=error.name==='AbortError'
         ?'응답 대기 시간이 초과되었습니다. AI 요청은 처리되었을 수 있으며 자동 재전송하지 않습니다.':error.message;
@@ -97,7 +130,7 @@ export class WebActionSession {
     if(!preview?.sendEnabled||preview.expiresAt<=this.now()){
       this.state.message='전송 가능한 미리보기가 없거나 만료되었습니다. 다시 확인하세요.';this.emit();return Promise.resolve(false);
     }
-    return this.run('coach-send',{previewId:preview.previewId},result=>{
+    return this.run('coach-send',{previewId:preview.previewId,authRevision:preview.authRevision},result=>{
       if(typeof result.answer!=='string'||result.answer.length>65536||result.interpretationOnly!==true)throw Error('AI 응답 형식이 올바르지 않습니다.');
       this.state.answer=result.answer;this.state.message='AI가 생성한 해석입니다. 게임 화면과 대조하세요. 게임 변경 없음.';
     });
