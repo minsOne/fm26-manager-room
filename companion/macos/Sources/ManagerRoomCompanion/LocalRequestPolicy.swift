@@ -4,11 +4,13 @@ import Foundation
 /// This is not authentication against software already running as the local user.
 struct LocalRequestPolicy: Sendable {
     let port: UInt16
-    struct Request {
+    struct Request: Sendable {
         let method: String
         let path: String
         let origin: String?
         let privateNetworkRequested: Bool
+        let contentLength: Int
+        let actionToken: String?
     }
     enum Rejection: Error { case malformed, forbidden, methodNotAllowed }
 
@@ -35,13 +37,26 @@ struct LocalRequestPolicy: Sendable {
         let origin = headers["origin"]
         if let origin, !allowedOrigins.contains(origin) { throw Rejection.forbidden }
         let method = String(first[0])
-        guard ["GET", "OPTIONS"].contains(method) else { throw Rejection.methodNotAllowed }
-        guard headers["transfer-encoding"] == nil, headers["content-length"] == nil || headers["content-length"] == "0" else {
-            throw Rejection.malformed
+        let path = String(first[1]), actions = path == "/api/actions"
+        guard ["GET", "OPTIONS"].contains(method) || (method == "POST" && actions) else { throw Rejection.methodNotAllowed }
+        guard headers["transfer-encoding"] == nil, headers["expect"] == nil else { throw Rejection.malformed }
+        let rawLength = headers["content-length"] ?? "0"
+        guard !rawLength.isEmpty, rawLength.utf8.allSatisfy({ (48...57).contains($0) }),
+              let length = Int(rawLength), length <= 8192 else { throw Rejection.malformed }
+        if method == "POST" {
+            guard origin != nil, headers["x-manager-room-token"] != nil else { throw Rejection.forbidden }
+            guard length > 0, headers["content-type"]?.lowercased() == "application/json" else { throw Rejection.malformed }
+        } else if length != 0 { throw Rejection.malformed }
+        if let requested = headers["access-control-request-method"], requested != "GET" && !(actions && requested == "POST") {
+            throw Rejection.methodNotAllowed
         }
-        if let requested = headers["access-control-request-method"], requested != "GET" { throw Rejection.methodNotAllowed }
-        return Request(method: method, path: String(first[1]), origin: origin,
-                       privateNetworkRequested: headers["access-control-request-private-network"] == "true")
+        if let requested = headers["access-control-request-headers"] {
+            let permitted = actions ? Set(["content-type", "x-manager-room-token"]) : Set(["content-type"])
+            guard requested.lowercased().split(separator: ",").allSatisfy({ permitted.contains($0.trimmingCharacters(in: .whitespaces)) }) else { throw Rejection.forbidden }
+        }
+        return Request(method: method, path: path, origin: origin,
+                       privateNetworkRequested: headers["access-control-request-private-network"] == "true",
+                       contentLength: length, actionToken: headers["x-manager-room-token"])
     }
 
     var allowedOrigins: Set<String> {

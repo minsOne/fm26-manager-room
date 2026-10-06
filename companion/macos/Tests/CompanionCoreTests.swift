@@ -102,10 +102,106 @@ func save(_ root: URL) throws -> URL {
 func request(_ origin: String? = nil, host: String = "127.0.0.1:8765", method: String = "GET", extra: String = "") -> String {
     "\(method) /api/snapshot HTTP/1.1\r\nHost: \(host)\r\n" + (origin.map { "Origin: \($0)\r\n" } ?? "") + extra + "\r\n"
 }
+func webScope(_ selection: String = "pin") -> [String: Any] {
+    ["selectionId": selection, "source": "rust-native", "gameDate": "2037-07-01", "dbVersion": "26.0.0+0",
+     "build": NSNull(), "clubUid": "123", "managerName": "Manager"]
+}
+func webInput(_ action: String, _ fields: [String: Any] = [:]) throws -> Data {
+    try json(["action": action, "scope": webScope()].merging(fields) { _, new in new })
+}
+func webContext(_ dir: URL) throws -> (SnapshotStore, CompanionState, URL) {
+    let source = try save(dir), store = SnapshotStore(url: dir.appendingPathComponent("snapshot.json")), state = CompanionState()
+    try store.write(json(payload())); state.setSelection(id: "pin", path: source.path, mode: "pinned")
+    state.parsingSucceeded(save: source, durationMilliseconds: 1)
+    return (store, state, source)
+}
 
 @main enum CompanionCoreTests {
     static func main() {
         let tests: [(String, () throws -> Void)] = [
+            ("action POST requires exact route, Origin, token, JSON and bounded fixed-length body", {
+                let policy = LocalRequestPolicy(port: 8765)
+                let good = request("https://minsone.github.io", method: "POST", extra: "Content-Type: application/json\r\nContent-Length: 2\r\nX-Manager-Room-Token: test\r\n")
+                    .replacingOccurrences(of: "/api/snapshot", with: "/api/actions")
+                let parsed = try policy.parse(good); try check(parsed.contentLength == 2)
+                for invalid in [good.replacingOccurrences(of: "Origin: https://minsone.github.io\r\n", with: ""),
+                                good.replacingOccurrences(of: "Content-Length: 2", with: "Content-Length: 8193"),
+                                good.replacingOccurrences(of: "Content-Length: 2", with: "Content-Length: -2"),
+                                good.replacingOccurrences(of: "application/json", with: "text/plain"),
+                                good.replacingOccurrences(of: "X-Manager-Room-Token: test\r\n", with: ""),
+                                good.replacingOccurrences(of: "Content-Length: 2", with: "Transfer-Encoding: chunked") ] {
+                    try rejects { _ = try policy.parse(invalid) }
+                }
+            }),
+            ("web Coach previews without sending, sends exact approved bytes once, never exposes key", {
+                try withDirectory { dir in
+                    let (store, state, _) = try webContext(dir)
+                    var sent = 0, sentBody = Data()
+                    let web = WebActions(store: store, state: state, model: "model", apiKey: "private-key", allowSend: true,
+                        sender: { data, key in sent += 1; sentBody = data; try check(key == "private-key"); return "Interpretation" })
+                    try check(!web.authorized("invalid") && web.authorized(web.token))
+                    let capabilities = String(decoding: try web.capabilities(), as: UTF8.self); try check(!capabilities.contains("private-key"))
+                    let prepared = try web.perform(webInput("coach-preview", ["playerId": "1", "question": "Explain evidence"]))
+                    try check(sent == 0)
+                    let preview = try JSONSerialization.jsonObject(with: prepared) as! [String: Any]
+                    let approved = preview["request"] as! [String: Any], ticket = preview["previewId"] as! String
+                    let answer = try web.perform(webInput("coach-send", ["previewId": ticket]))
+                    try check(sent == 1 && String(decoding: answer, as: UTF8.self).contains("Interpretation"))
+                    let sentObject = try JSONSerialization.jsonObject(with: sentBody) as! [String: Any]
+                    try check(NSDictionary(dictionary: approved).isEqual(to: sentObject))
+                    try rejects { _ = try web.perform(webInput("coach-send", ["previewId": ticket])) }
+                    try check(sent == 1)
+                }
+            }),
+            ("web Coach rejects expiration, newer parse, changed career, and consumes failed sends", {
+                try withDirectory { dir in
+                    let (store, state, source) = try webContext(dir)
+                    var clock = Date(), sends = 0
+                    let web = WebActions(store: store, state: state, model: "model", apiKey: "key", allowSend: true,
+                        now: { clock }, sender: { _, _ in sends += 1; throw CoachError.invalid("private provider error") })
+                    func prepare() throws -> String {
+                        let response = try JSONSerialization.jsonObject(with: web.perform(webInput("coach-preview", ["playerId": "1", "question": "Q"]))) as! [String: Any]
+                        return response["previewId"] as! String
+                    }
+                    var ticket = try prepare(); clock = clock.addingTimeInterval(121)
+                    try rejects { _ = try web.perform(webInput("coach-send", ["previewId": ticket])) }; try check(sends == 0)
+                    ticket = try prepare(); state.parsingSucceeded(save: source, durationMilliseconds: 2)
+                    try rejects { _ = try web.perform(webInput("coach-send", ["previewId": ticket])) }; try check(sends == 0)
+                    ticket = try prepare(); state.setSelection(id: "new", path: source.path, mode: "pinned")
+                    try rejects { _ = try web.perform(webInput("coach-send", ["previewId": ticket])) }; try check(sends == 0)
+                    state.setSelection(id: "pin", path: source.path, mode: "pinned"); ticket = try prepare()
+                    try rejects { _ = try web.perform(webInput("coach-send", ["previewId": ticket])) }
+                    try rejects { _ = try web.perform(webInput("coach-send", ["previewId": ticket])) }; try check(sends == 1)
+                }
+            }),
+            ("web Coach opt-in is required and parsing/error state blocks local actions", {
+                try withDirectory { dir in
+                    let (store, state, source) = try webContext(dir)
+                    let web = WebActions(store: store, state: state, model: "model", apiKey: "key")
+                    try check(!web.sendEnabled)
+                    try rejects { _ = try web.perform(webInput("coach-send", ["previewId": "any"])) }
+                    state.parsingStarted(save: source)
+                    try rejects { _ = try web.perform(webInput("coach-preview", ["playerId": "1", "question": "Q"])) }
+                    state.parsingFailed(save: source, error: CoachError.invalid("parse failed"))
+                    try rejects { _ = try web.perform(webInput("coach-preview", ["playerId": "1", "question": "Q"])) }
+                }
+            }),
+            ("web candidate page uses private parse, matching live base and stable selection", {
+                try withDirectory { dir in
+                    let (store, state, _) = try webContext(dir), old = try store.read()
+                    let binary = try parser(dir, body: "test \"$1\" = candidates\ntest \"$3\" = query\ntest \"$4\" = 100\n" + emitValid())
+                    state.setParserPath(binary.path)
+                    let web = WebActions(store: store, state: state)
+                    let response = try JSONSerialization.jsonObject(with: web.perform(webInput("candidates", ["query": "query", "offset": "100"]))) as! [String: Any]
+                    try check(response["saveId"] as? String == "pin")
+                    let unchanged = try store.read(); try check(unchanged == old)
+                    var changed = payload(); changed["gameDate"] = "2037-07-02"
+                    let stale = try parser(dir, body: "printf '%s' " + quote(String(decoding: try json(changed), as: UTF8.self)))
+                    state.setParserPath(stale.path)
+                    try rejects { _ = try web.perform(webInput("candidates", ["query": "query", "offset": "100"])) }
+                    let stillUnchanged = try store.read(); try check(stillUnchanged == old)
+                }
+            }),
             ("snapshot valid; absent fixtures supported", { try SnapshotValidation.validate(json(payload())) }),
             ("snapshot rejects empty object and root array", {
                 try rejects { try SnapshotValidation.validate(Data("{}".utf8)) }

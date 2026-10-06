@@ -192,7 +192,8 @@ export function renderRoom(view, state, ui) {
       }))) +card("출전시간",table(["선수","최근 5개 통계 기록의 출전분","약속","불만 위험"],players.map(p=>[playerLink(p),numeric(p.appearances),show(p.agreed),esc(playingTimeReview(p).action)]))) ;break;
     case "recruitment": {
       const reviews=recruitmentReview(s);
-      body=card("외부 후보 수집",note('Mac에서 manager-room candidates --query "검색어" --offset 0 > candidates.json 으로 현재 세이브의 외부 선수를 조회하세요. 빈 검색어는 전체 디코딩 레코드를 CA 순으로 조회하며 한 페이지는 최대 100명입니다. 다음 페이지는 offset에 100을 더합니다.')
+      body=candidateSearchForm(state,ui)
+        +card("후보 파일 가져오기",note('CLI에서 만든 후보 파일도 사용할 수 있습니다: manager-room candidates --query "검색어" --offset 0 > candidates.json')
         +note("후보 파일은 현재 커리어·날짜·버전이 같을 때만 표시합니다. 새 스냅샷을 수집하면 후보 파일을 다시 생성하세요. 파서가 디코딩한 범위이며 완전한 세계 DB·영입 가능성을 보증하지 않습니다.")
         +`<label for="candidateImportFile">후보 페이지 가져오기</label><input id="candidateImportFile" type="file" accept="application/json,.json"><p id="candidateImportStatus" role="status"></p>`)
         +card("포지션별 보강 검토",note("영입 필요성을 확정하는 기능이 아닙니다. 확인된 Role Fit 기반으로 현재 스쿼드의 주전·백업 적합도만 검토합니다.")
@@ -226,11 +227,32 @@ export function renderRoom(view, state, ui) {
             esc(r.decisionMissing.join(" · ")),`<select aria-label="검토 자체 평가" data-review-assessment="${esc(r.id)}" ${stale?"disabled":""}>${[["pending","미평가"],["helpful","검토에 도움됨"],["needs-review","보완 필요"]].map(([value,label])=>`<option value="${value}" ${r.assessment===value?"selected":""}>${label}</option>`).join("")}</select>`
           ])))
         +card("추천 사후 검증",`<h3>수록 기록 ${s.outcomes.length}건</h3>`+note("결과의 정의와 표본이 검증되기 전에는 정확도나 성공 확률을 표시하지 않습니다."));break;}
-    case "coach": body=card("AI 연결 상태",note("외부 AI 요청은 Mac 터미널의 manager-room coach에서 실행합니다. --player UID --question 질문 --model 모델명으로 전송 내용을 미리 확인하고, --send를 추가한 경우에만 OpenAI에 전송합니다. OPENAI_API_KEY는 터미널 환경에만 설정하세요. 아래 브리핑은 로컬 계산입니다."))
+    case "coach": body=coachForm(state,ui)
       +card("로컬 근거 브리핑",table(["주제","확인된 범위","다음 확인"],evidenceBriefing(s).map(r=>[esc(r.topic),esc(r.evidence),esc(r.action)])));break;
     default: body=card("자료",table(fitHeaders,players.map(playerRow)));
   }
   return (stale?note("이전 스냅샷으로 표시 중입니다. 현재 경기의 기용 결정을 확정하지 마세요."):"")+body;
+}
+function candidateSearchForm(state,ui){
+  const a=ui.actions??{},disabled=a.busy||state.status!=='current'||state.parser?.parsing||!state.snapshot?.selectionId;
+  const page=a.page;
+  return card('외부 선수 검색',note('현재 고정 세이브에서 이름·UID로 검색합니다. 빈 검색어는 CA 순으로 최대 100명씩 표시합니다. 완전한 세계 DB나 영입 가능성을 뜻하지 않습니다.')
+    +`<form id="candidateSearchForm"><label for="candidateQuery">이름 또는 UID</label><input id="candidateQuery" maxlength="200" value="${esc(a.query??'')}" ${disabled?'disabled':''}><button ${disabled?'disabled':''}>후보 검색</button></form>`
+    +`<p id="candidateSearchStatus" role="status">${esc(a.message??'')}</p>`
+    +(page?`<div><button data-candidate-offset="${Math.max(0,page.offset-100)}" ${disabled||page.offset===0?'disabled':''}>이전 100명</button> <button data-candidate-offset="${page.offset+100}" ${disabled||!page.hasMore?'disabled':''}>다음 100명</button></div>`:''));
+}
+function coachForm(state,ui){
+  const a=ui.actions??{},s=state.snapshot,disabled=a.busy||state.status!=='current'||state.parser?.parsing||!s?.selectionId;
+  const preview=a.preview;
+  return card('AI Coach 요청',note('선수 한 명의 관측값과 질문을 OpenAI에 보냅니다. 먼저 전송 내용을 미리 보고 확인하세요. API 키는 Mac에만 설정하며 질문·응답은 브라우저에 저장하지 않습니다.')
+    +`<form id="coachForm"><label for="coachPlayer">검토할 선수</label><select id="coachPlayer" required ${disabled?'disabled':''}><option value="">선수 선택</option>${s.players.map(p=>`<option value="${esc(p.id)}" ${a.playerId===p.id?'selected':''}>${esc(p.name)} · ${esc(p.id)}</option>`).join('')}</select>
+      <label for="coachQuestion">질문</label><textarea id="coachQuestion" rows="4" maxlength="4000" required ${disabled?'disabled':''}>${esc(a.question??'')}</textarea><button ${disabled?'disabled':''}>전송 내용 미리보기</button></form>`
+    +`<p id="coachStatus" role="status">${esc(a.message??'')}</p>`
+    +(preview?`<section id="coachPreview"><h3>전송할 요청 · 아직 전송하지 않음</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(preview.request,null,2))}</pre>
+      <p>위 질문과 선수 관측값이 OpenAI로 전송되며 API 비용이 발생할 수 있습니다. 개인정보를 질문에 넣지 않았는지 확인하세요.</p>
+      <button data-coach-send ${disabled||!preview.sendEnabled||preview.expiresAt<=Date.now()?'disabled':''}>내용 확인 · OpenAI에 전송</button>${!preview.sendEnabled?note('전송을 활성화하려면 Mac에서 API 키·모델을 설정하고 --enable-web-coach로 다시 시작하세요.'):''}</section>`:'')
+    +(a.answer?`<section id="coachAnswer"><h3>AI 해석 · 게임 화면 확인 필요</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(a.answer)}</pre></section>`:'')
+    +note('Mac 설정: manager-room stop → OPENAI_MODEL을 설정한 뒤 manager-room start --enable-web-coach. OPENAI_API_KEY는 로컬 비밀 관리 방식으로 설정하세요. 모델만 설정하면 무료 로컬 미리보기를 사용할 수 있습니다.'));
 }
 export function playerDetail(player, s) {
   if (!player) return "";

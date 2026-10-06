@@ -142,8 +142,12 @@ Tests and custom installations can isolate all local Manager Room state with `FM
 - `GET /api/parser`
 - `GET /api/runtime`
 - `GET /api/snapshot`
+- `GET /api/actions` — local capabilities and per-process request token
+- `POST /api/actions` — bounded candidate search, Coach preview and explicitly enabled/confirmed AI send
 
-Only IPv4 loopback is bound. Browser origins are explicitly allow-listed, private-network preflight is supported, and non-GET/OPTIONS methods are rejected.
+Only IPv4 loopback is bound. Browser origins are explicitly allow-listed and private-network preflight is supported. POST is accepted only on `/api/actions` with the exact allowed Origin, a per-process token, fixed bounded length and JSON content type; other routes accept GET/OPTIONS only.
+
+Use `manager-room start --model YOUR_MODEL_ID` for local web Coach previews. To permit paid AI requests, configure `OPENAI_API_KEY` locally and restart with `--enable-web-coach`. Every request still needs a separate preview and explicit web confirmation. Details: [web actions](../../docs/external-candidates-and-coach.md#web-search-and-coach-setup).
 
 This companion remains read-only.
 

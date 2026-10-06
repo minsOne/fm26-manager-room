@@ -99,6 +99,7 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
                 str(args.companion), 'serve', '--parser', str(args.parser),
                 '--save', str(sample), '--save-dir', str(saves), '--port', str(port),
                 '--snapshot-file', str(destination),
+                '--model', 'configured-model',
             ], env=career_env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
             def initial_ready():
                 if child.poll() is not None:
@@ -175,6 +176,23 @@ def run_browser(kind, playwright, args, root, expected, original_digest):
             imported=json.loads(candidate_bytes)
             if len(imported.get('externalCandidates',[]))!=100:raise RuntimeError('candidate_page_incomplete')
             result['realCandidatePageImported'] = True
+            # Exercise actual browser POST/CORS -> private Rust query, not an intercepted route.
+            page.locator('#candidateQuery').fill('')
+            page.locator('#candidateSearchForm button').click()
+            page.wait_for_function("document.querySelector('#candidateSearchStatus').textContent.includes('후보 100명')", timeout=130000)
+            page.locator('[data-candidate-offset="100"]').click()
+            page.wait_for_function("document.querySelector('#candidateSearchStatus').textContent.includes('101번째')", timeout=130000)
+            result['realCandidateWebPagination'] = True
+            # The configured dummy model permits local preview only; no API key or provider request.
+            page.locator('nav [data-view="coach"]').click()
+            page.locator('#coachPlayer').select_option(str(api['players'][0]['id']))
+            page.locator('#coachQuestion').fill('관측 근거를 설명해줘')
+            page.locator('#coachForm button').click()
+            page.locator('#coachPreview').wait_for(timeout=15000)
+            if not page.locator('[data-coach-send]').is_disabled():raise RuntimeError('web_ai_send_enabled_without_opt_in')
+            request_preview=json.loads(page.locator('#coachPreview pre').inner_text())
+            if request_preview.get('store') is not False:raise RuntimeError('web_ai_preview_protocol')
+            result['realCoachPreviewWithoutTransmission'] = True
 
             # Actual native snapshot -> normalized calendar -> unique review plans.
             rotation = page.evaluate('''async (base) => {
