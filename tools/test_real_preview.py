@@ -49,11 +49,21 @@ def main():
                 if route.request.method=='OPTIONS':route.fulfill(status=204,headers=cors);return
                 if route.request.method=='GET':
                     data={'version':1,'token':'a'*64,'coachPreview':True,'coachSend':True}
+                    if 'auth' in state: data['auth']=state['auth']
                 else:
                     request=json.loads(route.request.post_data)
-                    if request['action']=='coach-preview':
+                    if request['action'].startswith('auth-'):
+                        auth=state['auth'];auth['revision']=str(int(auth['revision'])+1)
+                        if request['action']=='auth-login':auth['pending']=True;auth['mode']='chatgpt'
+                        elif request['action']=='auth-models':auth['models']=[{'slug':'first','name':'First model'},{'slug':'second','name':'Second model'}]
+                        elif request['action']=='auth-model':auth['model']=request['model'];auth['ready']=True
+                        elif request['action']=='auth-logout':auth['connected']=False;auth['ready']=False;auth['models']=[];auth['model']=''
+                        else:raise AssertionError('unexpected_auth_action')
+                        data={'auth':auth}
+                    elif request['action']=='coach-preview':
                         data={'previewId':'synthetic-ticket','expiresInSeconds':120,'sendEnabled':True,
-                              'request':{'model':'synthetic','input':request['question'],'store':False}}
+                              'request':{'model':state.get('auth',{}).get('model','synthetic'),'input':request['question'],'store':False}}
+                        if 'auth' in state:data.update(authRevision=state['auth']['revision'],provider='chatgpt',account='same@example.test · 연결 1')
                     elif request['action']=='coach-send':
                         state['aiSends']+=1
                         data={'answer':'<img src=x onerror="window.PWNED=true"> Synthetic interpretation','interpretationOnly':True}
@@ -254,12 +264,29 @@ def main():
         assert '기록 가져오기 완료' in page.locator('#archiveImportStatus').inner_text()
         print('PASS archive export, validated replacement and import UI')
 
+        state['auth']={'revision':'1','mode':'api-key','active':'','profiles':[],'model':'','models':[],
+                       'pending':False,'connected':False,'planEnabled':False,'ready':False,'message':''}
         page.locator('nav [data-view="coach"]').click()
+        page.locator('[data-auth-login=""]').click()
+        page.locator('[data-auth-action="auth-cancel"]').wait_for()
+        assert state['aiSends']==0
+        # Simulate the external browser completing consent. This is UI coverage, not live OAuth.
+        state['auth'].update(revision='3',pending=False,connected=True,planEnabled=True,active='connection',
+                             profiles=[{'id':'connection','label':'same@example.test · 연결 1','connected':True}])
+        page.locator('nav [data-view="coach"]').click()
+        page.locator('[data-auth-action="auth-models"]').click()
+        page.locator('#chatGPTModel').select_option('first')
+        page.wait_for_function("document.querySelector('#chatGPTModel')?.value==='first'")
+        assert state['aiSends']==0
         page.locator('#coachPlayer').select_option('7')
         page.locator('#coachQuestion').fill('관측 내용을 설명해줘')
         page.locator('#coachForm button').click()
         page.locator('#coachPreview').wait_for()
         assert state['aiSends']==0
+        page.locator('#chatGPTModel').select_option('second')
+        page.wait_for_function("!document.querySelector('#coachPreview')")
+        page.locator('#coachForm button').click();page.locator('#coachPreview').wait_for()
+        assert 'ChatGPT 요금제' in page.locator('#coachPreview').inner_text()
         page.locator('[data-coach-send]').click()
         page.locator('#coachAnswer').wait_for()
         assert state['aiSends']==1 and page.locator('#coachAnswer img').count()==0
@@ -273,7 +300,10 @@ def main():
         assert page.locator('#coachPreview').count()==0
         page.locator('[data-accept-career]').click()
         assert page.locator('#coachQuestion').input_value()=='' and state['aiSends']==1
-        print('PASS synthetic Coach preview, explicit single send, escaped reply and new-game isolation; no live provider')
+        page.locator('[data-auth-action="auth-logout"]').click()
+        page.wait_for_function("!document.querySelector('#chatGPTModel')")
+        assert state['aiSends']==1 and page.locator('#coachPreview').count()==0
+        print('PASS synthetic ChatGPT login, model switch, explicit single send, logout and new-game isolation; no live provider')
 
         page.locator('nav [data-view="manager"]').click()
         if args.screenshot_dir:

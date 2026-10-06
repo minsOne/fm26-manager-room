@@ -77,3 +77,50 @@ test('UI escapes request and model output and provides no API-key input',()=>{
   assert.ok(html.includes('&lt;script&gt;'));assert.ok(!html.includes('<script>'));
   assert.ok(html.includes('&lt;img'));assert.ok(!html.includes('type="password"'));
 });
+
+const authState=(revision='a')=>({revision,mode:'chatgpt',profiles:[{id:'connection',label:'me@example.test · 연결 1',connected:true}],
+  active:'connection',model:'account-model',connected:true,planEnabled:true,ready:true,pending:false,message:'',models:[{slug:'account-model',name:'Account model'}]});
+test('ChatGPT login works before a career is connected and never starts inference',async()=>{
+  const {actions,session,calls}=setup(input=>Response.json({auth:{...authState(),pending:true}}));
+  session.state={status:'empty',snapshot:null};
+  assert.equal(await actions.manage('auth-login'),true);
+  assert.equal(JSON.parse(calls[1].body).action,'auth-login');assert.equal(JSON.parse(calls[1].body).scope,undefined);
+  assert.equal(actions.state.auth.pending,true);assert.equal(calls.length,2);
+  assert.equal(await actions.prepare(),false);
+});
+test('account or model changes invalidate a preview, including changes discovered immediately before send',async()=>{
+  let current=authState(),sends=0;
+  const {actions}=setup(()=>{});
+  actions.fetcher=async(url,options)=>{
+    if(options.method==='GET')return Response.json({version:1,token,coachPreview:true,coachSend:true,auth:current});
+    const input=JSON.parse(options.body);
+    if(input.action==='coach-send'){sends++;return Response.json({answer:'answer',interpretationOnly:true});}
+    return Response.json({...preview(),authRevision:current.revision,provider:'chatgpt',account:'me'});
+  };
+  await actions.prepare();assert.ok(actions.state.preview);
+  current=authState('new-model');assert.equal(await actions.send(),false);assert.equal(sends,0);
+  await actions.prepare();current=authState('logout');await actions.refreshAuth();
+  assert.equal(actions.state.preview,null);assert.equal(actions.state.answer,null);assert.equal(sends,0);
+});
+test('auth status retains only UI fields, escapes labels and is usable without a snapshot',()=>{
+  const {actions}=setup(()=>{});
+  actions.acceptAuth({...authState(),access_token:'must-not-retain',refresh_token:'must-not-retain',profiles:[{id:'connection',label:'<img src=x onerror=bad()>',connected:true}]});
+  assert.equal(actions.state.auth.access_token,undefined);
+  const html=renderRoom('coach',{status:'empty',snapshot:null},{actions:actions.state});
+  assert.ok(html.includes('Continue with ChatGPT'));assert.ok(html.includes('&lt;img'));
+  assert.ok(!html.includes('<img'));assert.ok(!html.includes('must-not-retain'));
+});
+test('an explicit auth click cancels a pending status poll instead of dropping the click',async()=>{
+  const {actions}=setup(input=>Response.json({auth:authState()}));
+  let pendingGet;
+  const original=actions.fetcher;
+  actions.fetcher=(url,options)=>{
+    if(!pendingGet&&options.method==='GET')return new Promise((resolve,reject)=>{
+      pendingGet=resolve;options.signal.addEventListener('abort',()=>reject(Object.assign(Error('abort'),{name:'AbortError'})));
+    });
+    return original(url,options);
+  };
+  const polling=actions.refreshAuth();
+  assert.equal(await actions.manage('auth-api-key'),true);await polling;
+  assert.equal(actions.state.auth.revision,'a');
+});

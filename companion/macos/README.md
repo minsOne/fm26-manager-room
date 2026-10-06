@@ -143,11 +143,14 @@ Tests and custom installations can isolate all local Manager Room state with `FM
 - `GET /api/runtime`
 - `GET /api/snapshot`
 - `GET /api/actions` — local capabilities and per-process request token
-- `POST /api/actions` — bounded candidate search, Coach preview and explicitly enabled/confirmed AI send
+- `GET /auth/callback` — one-use OAuth callback, no Origin, exact `127.0.0.1` Host
+- `POST /api/actions` — bounded candidate search, ChatGPT account/model controls, Coach preview and explicitly confirmed AI send
 
 Only IPv4 loopback is bound. Browser origins are explicitly allow-listed and private-network preflight is supported. POST is accepted only on `/api/actions` with the exact allowed Origin, a per-process token, fixed bounded length and JSON content type; other routes accept GET/OPTIONS only.
 
-Use `manager-room start --model YOUR_MODEL_ID` for local web Coach previews. To permit paid AI requests, configure `OPENAI_API_KEY` locally and restart with `--enable-web-coach`. Every request still needs a separate preview and explicit web confirmation. Details: [web actions](../../docs/external-candidates-and-coach.md#web-search-and-coach-setup).
+Start Companion normally and use **AI Coach → Continue with ChatGPT** for API-key-free sign-in. Approve plan usage, refresh the model list and select a model. Tokens stay in Keychain; account/model changes require a fresh preview. Actual eligibility and plan usage need user-Mac validation.
+
+For API-key mode, use `manager-room start --model YOUR_MODEL_ID` for local web Coach previews. To permit paid AI requests, configure `OPENAI_API_KEY` locally and restart with `--enable-web-coach`. Every request still needs a separate preview and explicit web confirmation. Details: [web actions](../../docs/external-candidates-and-coach.md#web-search-and-coach-setup).
 
 This companion remains read-only.
 

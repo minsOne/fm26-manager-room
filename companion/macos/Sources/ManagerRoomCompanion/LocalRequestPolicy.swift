@@ -7,6 +7,7 @@ struct LocalRequestPolicy: Sendable {
     struct Request: Sendable {
         let method: String
         let path: String
+        let target: String
         let origin: String?
         let privateNetworkRequested: Bool
         let contentLength: Int
@@ -37,7 +38,12 @@ struct LocalRequestPolicy: Sendable {
         let origin = headers["origin"]
         if let origin, !allowedOrigins.contains(origin) { throw Rejection.forbidden }
         let method = String(first[0])
-        let path = String(first[1]), actions = path == "/api/actions"
+        let target = String(first[1])
+        let path = target.hasPrefix("/auth/callback?") ? "/auth/callback" : target
+        if path == "/auth/callback" {
+            guard method == "GET", origin == nil, host == "127.0.0.1:\(port)" else { throw Rejection.forbidden }
+        }
+        let actions = path == "/api/actions"
         guard ["GET", "OPTIONS"].contains(method) || (method == "POST" && actions) else { throw Rejection.methodNotAllowed }
         guard headers["transfer-encoding"] == nil, headers["expect"] == nil else { throw Rejection.malformed }
         let rawLength = headers["content-length"] ?? "0"
@@ -54,7 +60,7 @@ struct LocalRequestPolicy: Sendable {
             let permitted = actions ? Set(["content-type", "x-manager-room-token"]) : Set(["content-type"])
             guard requested.lowercased().split(separator: ",").allSatisfy({ permitted.contains($0.trimmingCharacters(in: .whitespaces)) }) else { throw Rejection.forbidden }
         }
-        return Request(method: method, path: path, origin: origin,
+        return Request(method: method, path: path, target: target, origin: origin,
                        privateNetworkRequested: headers["access-control-request-private-network"] == "true",
                        contentLength: length, actionToken: headers["x-manager-room-token"])
     }

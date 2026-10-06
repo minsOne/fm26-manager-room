@@ -119,6 +119,7 @@ func webContext(_ dir: URL) throws -> (SnapshotStore, CompanionState, URL) {
 @main enum CompanionCoreTests {
     static func main() {
         let tests: [(String, () throws -> Void)] = [
+            ("ChatGPT OAuth, signed identity, refresh, account isolation and complete streams", { try ChatGPTAuthTests.run() }),
             ("action POST requires exact route, Origin, token, JSON and bounded fixed-length body", {
                 let policy = LocalRequestPolicy(port: 8765)
                 let good = request("https://minsone.github.io", method: "POST", extra: "Content-Type: application/json\r\nContent-Length: 2\r\nX-Manager-Room-Token: test\r\n")

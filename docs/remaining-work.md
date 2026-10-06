@@ -15,6 +15,7 @@ that its full recommendation engine is enabled.
   rollback/version split gates; CA/attribute change views and reports.
 - Native query/pagination across decoded external players, direct web search/pagination and validated web page import.
 - OpenAI Responses CLI and web Coach with explicit send, exact one-use preview, career/snapshot binding and a locally configured model/key.
+- ChatGPT sign-in for the local Companion: OAuth/Keychain account profiles, model discovery, plan-backed Coach, refresh/logout and account-bound approvals. Actual account access remains a separate verification gate.
 - Versioned observation export/restore with validation and durable replacement.
 - Local review-plan journal with subjective feedback (not verified outcomes).
 - Evidence-only role training review, supplied external-candidate comparison and
@@ -31,7 +32,7 @@ that its full recommendation engine is enabled.
 | Wider parser/build coverage | A public fixture/reference agreement is not universal game truth | Independent save/build matrix and field-by-field game-screen comparisons |
 | Full training/development advice | Focus catalogue, current training and longitudinal outcomes not verified | FM26 training catalogue/current assignments, medical inputs and outcome observations |
 | Recruitment / loan / sales validation | External search/pagination and UI import are implemented; offers, facilities, interest and registration remain incomplete | Broader candidate/build audit and verified offer/contract/eligibility fields |
-| AI activation/evaluation | Native OpenAI connection, preview and explicit send are implemented; no live project/model configured here | User API key and available model on the Mac; live response evaluation. Web one-player requests are implemented; conversational history is not provided |
+| AI activation/evaluation | API-key and ChatGPT-login connections, preview and explicit send are implemented; no live account/plan/model verified here | Actual Mac browser login/Keychain access, account eligibility, token renewal and a completed ChatGPT response (or configured API key/model); live response evaluation. Web one-player requests are implemented; conversational history is not provided |
 | Recommendation calibration | No validated recommendation/outcome labels | Persisted decisions and independently defined outcomes; sample coverage before probabilities |
 | World Balance metrics | Current budgets are not actual spending or inflation | Nation/league mappings and longitudinal transfer/wage transactions with currency/unit verification |
 | Game writer / rollback | No validated writable profiles; current product remains read-only | Build-specific field semantics, preview/read-back/rollback tests and per-write user approval |

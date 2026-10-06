@@ -19,7 +19,7 @@ final class LocalHTTPServer: @unchecked Sendable {
         self.listener = try NWListener(using: parameters)
         self.store = store; self.companionState = companionState
         self.policy = LocalRequestPolicy(port: port)
-        self.actions = WebActions(store: store, state: companionState, model: coachModel, apiKey: coachKey, allowSend: enableWebCoach)
+        self.actions = WebActions(store: store, state: companionState, model: coachModel, apiKey: coachKey, allowSend: enableWebCoach, chatGPT: ChatGPTAuth(port: port))
     }
     func start() {
         listener.newConnectionHandler = { [weak self] connection in self?.handle(connection) }
@@ -83,9 +83,21 @@ final class LocalHTTPServer: @unchecked Sendable {
             send(status: "204 No Content", body: Data(), request: request, on: connection); return
         }
         switch request.path {
+        case "/auth/callback":
+            queue.asyncAfter(deadline: .now() + 135) { [weak connection] in connection?.cancel() }
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                do {
+                    try actions.oauthCallback(request.target)
+                    send(body: Data("{\"message\":\"ChatGPT 로그인 완료. Manager Room으로 돌아가 모델 목록을 새로고침하세요.\"}".utf8), request: request, on: connection)
+                } catch {
+                    send(status: "400 Bad Request", body: Data("{\"message\":\"로그인을 완료하지 못했습니다. Manager Room에서 상태를 확인하고 다시 로그인하세요.\"}".utf8), request: request, on: connection)
+                }
+            }
         case "/api/actions":
             if request.method == "GET" {
-                send(body: (try? actions.capabilities()) ?? Data("{}".utf8), request: request, on: connection)
+                DispatchQueue.global(qos: .userInitiated).async { [self] in
+                    send(body: (try? actions.capabilities()) ?? Data("{}".utf8), request: request, on: connection)
+                }
             } else {
                 // Parsing and the bounded provider request must not block health checks or the watcher.
                 queue.asyncAfter(deadline: .now() + 135) { [weak connection] in connection?.cancel() }
@@ -127,7 +139,7 @@ final class LocalHTTPServer: @unchecked Sendable {
     private func send(status: String = "200 OK", body: Data, request: LocalRequestPolicy.Request?, on connection: NWConnection) {
         var headers = ["HTTP/1.1 \(status)", "Content-Type: application/json; charset=utf-8",
             "Content-Length: \(body.count)", "Cache-Control: no-store", "Connection: close",
-            "X-Content-Type-Options: nosniff", "Vary: Origin"]
+            "X-Content-Type-Options: nosniff", "Referrer-Policy: no-referrer", "Vary: Origin"]
         if let origin = request?.origin {
             headers += ["Access-Control-Allow-Origin: \(origin)",
                         "Access-Control-Allow-Methods: \(request?.path == "/api/actions" ? "GET, POST, OPTIONS" : "GET, OPTIONS")",

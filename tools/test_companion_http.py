@@ -84,6 +84,13 @@ def main() -> None:
                 assert "403" in request(post_headers.replace("https://minsone.github.io", "https://evil.example"), method="POST", path="/api/actions")[0]
                 assert "400" in request(post_headers.replace("Content-Length: 2", "Content-Length: 8193"), method="POST", path="/api/actions")[0]
                 assert "400" in request(post_headers.replace("application/json", "text/plain"), method="POST", path="/api/actions")[0]
+                callback_path="/auth/callback?state=invalid&code=private-callback-code"
+                status, callback_headers, callback_body=request(path=callback_path)
+                assert "400" in status and b"private-callback-code" not in callback_body
+                assert callback_headers['Cache-Control']=='no-store' and callback_headers['Referrer-Policy']=='no-referrer'
+                assert "Access-Control-Allow-Origin" not in callback_headers
+                assert "403" in request("Origin: https://minsone.github.io\r\n",path=callback_path)[0]
+                assert "403" in request(path=callback_path,host=f"localhost:{port}")[0]
                 print("PASS HTTP fragmented headers/body, exact CORS/PNA, token-protected bounded JSON actions, hostile origin/Host and game-write rejection")
             finally:
                 child.terminate()

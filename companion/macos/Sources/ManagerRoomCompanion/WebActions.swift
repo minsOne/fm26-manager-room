@@ -8,6 +8,7 @@ final class WebActions: @unchecked Sendable {
     private let model: String
     private let apiKey: String
     private let allowSend: Bool
+    private let chatGPT: ChatGPTAuth?
     private let sender: (Data, String) throws -> String
     private let now: () -> Date
     private let lock = NSLock()
@@ -41,17 +42,35 @@ final class WebActions: @unchecked Sendable {
         let context: Context
         let body: Data
         let expires: Date
+        let authRevision: String
+        let provider: String
     }
 
     init(store: SnapshotStore, state: CompanionState, model: String = "", apiKey: String = "", allowSend: Bool = false,
-         now: @escaping () -> Date = Date.init, sender: @escaping (Data, String) throws -> String = AICoach.send) {
+         chatGPT: ChatGPTAuth? = nil, now: @escaping () -> Date = Date.init, sender: @escaping (Data, String) throws -> String = AICoach.send) {
         self.store = store; self.state = state; self.model = model; self.apiKey = apiKey
-        self.allowSend = allowSend; self.now = now; self.sender = sender
+        self.chatGPT = chatGPT; self.allowSend = allowSend; self.now = now; self.sender = sender
     }
-    var sendEnabled: Bool { allowSend && !model.isEmpty && !apiKey.isEmpty }
+    private func coachConfiguration() throws -> (model: String, send: Bool, revision: String, provider: String, account: String) {
+        if let auth = try chatGPT?.configuration() {
+            if auth.mode == "chatgpt" { return (auth.model, auth.ready, auth.revision, "chatgpt", auth.account) }
+            return (model, allowSend && !model.isEmpty && !apiKey.isEmpty, auth.revision, "api-key", "Mac API key")
+        }
+        return (model, allowSend && !model.isEmpty && !apiKey.isEmpty, "api-key", "api-key", "Mac API key")
+    }
+    var sendEnabled: Bool { (try? coachConfiguration().send) ?? false }
     func capabilities() throws -> Data {
-        try encode(["version": 1, "token": token, "candidates": true, "coachPreview": !model.isEmpty,
-                    "coachSend": sendEnabled, "model": model])
+        var result: [String: Any] = ["version": 1, "token": token, "candidates": true, "coachPreview": false, "coachSend": false, "model": ""]
+        do {
+            let c = try coachConfiguration()
+            result["coachPreview"] = !c.model.isEmpty; result["coachSend"] = c.send; result["model"] = c.model
+            if let auth = try chatGPT?.status() { result["auth"] = auth }
+        } catch { result["authError"] = (error as? CoachError)?.errorDescription ?? "ChatGPT 인증 저장소를 읽지 못했습니다." }
+        return try encode(result)
+    }
+    func oauthCallback(_ target: String) throws {
+        guard let chatGPT else { throw CoachError.invalid("ChatGPT 로그인을 지원하지 않는 Companion입니다.") }
+        try chatGPT.callback(target)
     }
     func authorized(_ supplied: String?) -> Bool { supplied == token }
 
@@ -62,6 +81,11 @@ final class WebActions: @unchecked Sendable {
         defer { lock.withLock { busy = false } }
         guard data.count <= 8192, let input = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let action = input["action"] as? String else { throw CoachError.invalid("요청 형식이 올바르지 않습니다.") }
+        if action.hasPrefix("auth-") {
+            guard let chatGPT else { throw CoachError.invalid("Companion을 업데이트하세요.") }
+            preview = nil
+            return try encode(["auth": chatGPT.action(action, input: input)])
+        }
         let context = try current()
         guard let expected = input["scope"] as? [String: Any], NSDictionary(dictionary: expected).isEqual(to: context.scope) else {
             throw CoachError.invalid("화면과 현재 커리어·날짜·버전이 다릅니다. 새로고침 후 다시 요청하세요.")
@@ -92,13 +116,16 @@ final class WebActions: @unchecked Sendable {
             guard let player = input["playerId"] as? String, let question = input["question"] as? String else {
                 throw CoachError.invalid("선수와 질문을 입력하세요.")
             }
-            let body = try AICoach.requestBody(snapshot: context.bytes, playerID: player, question: question, model: model)
-            let ticket = Preview(id: UUID().uuidString, context: context, body: body, expires: now().addingTimeInterval(120))
+            let configuration = try coachConfiguration()
+            let body = try AICoach.requestBody(snapshot: context.bytes, playerID: player, question: question, model: configuration.model, chatGPT: configuration.provider == "chatgpt")
+            let ticket = Preview(id: UUID().uuidString, context: context, body: body, expires: now().addingTimeInterval(120),
+                                 authRevision: configuration.revision, provider: configuration.provider)
             preview = ticket
-            return try encode(["previewId": ticket.id, "expiresInSeconds": 120, "sendEnabled": sendEnabled,
+            return try encode(["previewId": ticket.id, "expiresInSeconds": 120, "sendEnabled": configuration.send,
+                               "authRevision": ticket.authRevision, "provider": ticket.provider, "account": configuration.account,
                                "request": try JSONSerialization.jsonObject(with: body)])
         case "coach-send":
-            guard sendEnabled else { throw CoachError.invalid("Mac에서 모델·API 키를 설정하고 --enable-web-coach로 다시 시작하세요.") }
+            guard sendEnabled else { throw CoachError.invalid("ChatGPT 계정·모델을 연결하거나 Mac에서 API 키 방식의 전송을 활성화하세요.") }
             guard let ticket = preview, input["previewId"] as? String == ticket.id else {
                 throw CoachError.invalid("유효한 미리보기가 없습니다. 요청 내용을 다시 확인하세요.")
             }
@@ -107,10 +134,19 @@ final class WebActions: @unchecked Sendable {
             guard ticket.expires > now(), ticket.context.matches(context) else {
                 throw CoachError.invalid("미리보기가 만료되었거나 세이브가 변경되었습니다. 다시 확인하세요.")
             }
+            let configuration = try coachConfiguration()
+            guard ticket.authRevision == configuration.revision, ticket.provider == configuration.provider else {
+                throw CoachError.invalid("계정·모델·권한이 변경되었습니다. 새 미리보기를 확인하세요.")
+            }
             let answer: String
-            do { answer = try sender(ticket.body, apiKey) }
-            catch { throw CoachError.invalid("AI 요청이 완료되지 않았습니다. 자동 재전송하지 않습니다. 제공자 사용 내역을 확인한 뒤 새 미리보기로 재시도하세요.") }
-            guard let updated = try? current(), context.matches(updated) else {
+            do {
+                if ticket.provider == "chatgpt", let chatGPT { answer = try chatGPT.send(ticket.body, revision: ticket.authRevision) }
+                else { answer = try sender(ticket.body, apiKey) }
+            } catch {
+                if ticket.provider == "chatgpt", let error = error as? CoachError { throw error }
+                throw CoachError.invalid("AI 요청이 완료되지 않았습니다. 자동 재전송하지 않습니다. 제공자 사용 내역을 확인한 뒤 새 미리보기로 재시도하세요.") }
+            guard let updated = try? current(), context.matches(updated),
+                  (try? coachConfiguration().revision) == ticket.authRevision else {
                 throw CoachError.invalid("AI 처리 중 세이브가 변경되어 응답 표시를 보류했습니다. 요청은 이미 전송되었으며 자동 재전송하지 않습니다.")
             }
             return try encode(["answer": answer, "scope": context.scope, "interpretationOnly": true])
