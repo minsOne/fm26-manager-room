@@ -43,9 +43,9 @@ export async function limitedText(response, maxBytes) {
 /** Stateful read session: no implicit demo, no overlapping polls, no silent career switch. */
 export class SnapshotSession {
   constructor({bridge = DEFAULT_BRIDGE, fetcher = globalThis.fetch.bind(globalThis), timeoutMs = 5000,
-    archive = null, now = () => new Date().toISOString(), onChange = () => {}, maxBytes = 32 * 1024 * 1024} = {}) {
+    archive = null, evidence = null, now = () => new Date().toISOString(), onChange = () => {}, maxBytes = 32 * 1024 * 1024} = {}) {
     this.bridge = validateBridge(bridge); this.fetcher = fetcher; this.timeoutMs = timeoutMs;
-    this.archive = archive; this.now = now; this.onChange = onChange; this.maxBytes = maxBytes;
+    this.archive = archive; this.evidence = evidence; this.now = now; this.onChange = onChange; this.maxBytes = maxBytes;
     this.state = { snapshot:null, status:"empty", error:null, revision:0, receivedAt:null,
       parser:null, metadataWarning:null, pending:null, refreshing:false };
     this.fingerprint = null; this.inflight = null; this.controllers = new Set(); this.disposed = false;
@@ -111,7 +111,7 @@ export class SnapshotSession {
         this.fingerprint = fingerprint;
         if(this.archive && !parser?.parsing && !parser?.lastError && !warning && parser) snapshot=this.archive.capture(snapshot);
         else if(this.archive) snapshot=this.archive.view(snapshot);
-        this.state.snapshot = snapshot; this.state.revision += 1;
+        this.state.snapshot = this.evidence?.view(snapshot)??snapshot; this.state.revision += 1;
       }
       this.state.pending = null;this.state.pendingRestart=false;
       this.state.error = typeof parser?.lastError === "string" && parser.lastError ? parser.lastError : null;
@@ -127,7 +127,7 @@ export class SnapshotSession {
     let snapshot=this.state.pending;
     if(this.archive && !this.state.parser?.parsing && !this.state.parser?.lastError && !this.state.metadataWarning && this.state.parser)
       snapshot=this.archive.capture(snapshot,{restart:this.state.pendingRestart===true});
-    this.state.snapshot = snapshot; this.state.pending = null;this.state.pendingRestart=false;
+    this.state.snapshot = this.evidence?.view(snapshot)??snapshot; this.state.pending = null;this.state.pendingRestart=false;
     this.fingerprint = null; this.state.revision += 1;
     this.state.error = this.state.parser?.lastError ?? null;
     this.state.status = this.state.error ? "stale" : "current"; this.emit(); return true;
@@ -136,24 +136,31 @@ export class SnapshotSession {
     if(!this.state.snapshot||this.state.status!=="current"||this.state.parser?.parsing)throw Error("현재 스냅샷 연결 후 후보를 가져오세요.");
     const result=readCandidatePage(text,this.state.snapshot);
     this.state.snapshot={...this.state.snapshot,candidates:result.players,candidateCoverage:`가져온 후보 페이지 · ${result.coverage}`,candidateImport:result.search};
+    this.state.snapshot=this.evidence?.view(this.state.snapshot)??this.state.snapshot;
     this.state.revision+=1;this.emit();
+  }
+  importEvidence(text){
+    if(!this.evidence || !this.state.snapshot || this.state.status!=="current" || !this.state.parser || this.state.parser.parsing || this.state.metadataWarning)throw Error("현재 파서·스냅샷 연결 후 근거를 가져오세요.");
+    this.state.snapshot=this.evidence.importText(text,this.state.snapshot);this.state.revision+=1;this.emit();
   }
   exportArchive(){if(!this.archive)throw Error("보관 기능 미연결");return this.archive.exportText();}
   inspectArchive(text){if(!this.archive)throw Error("보관 기능 미연결");return this.archive.inspectImport(text);}
   importArchive(text){
     if(!this.archive || this.state.status!=="current" || this.state.parser?.parsing)throw Error("현재 데이터 연결 상태에서만 기록을 가져올 수 있습니다.");
     this.archive.importText(text);this.state.snapshot=this.archive.view(this.state.snapshot);
+    this.state.snapshot=this.evidence?.view(this.state.snapshot)??this.state.snapshot;
     this.fingerprint=null;this.state.revision+=1;this.emit();
   }
   recordDecision(plan){return this.editJournal(a=>a.saveDecision(this.state.snapshot,plan));}
   assessDecision(id,assessment){return this.editJournal(a=>a.assessDecision(this.state.snapshot,id,assessment));}
   editJournal(edit){
     if(!this.archive || !this.state.snapshot || this.state.status!=="current" || this.state.parser?.parsing)return false;
-    this.state.snapshot=edit(this.archive);this.state.revision+=1;this.emit();return true;
+    this.state.snapshot=edit(this.archive);this.state.snapshot=this.evidence?.view(this.state.snapshot)??this.state.snapshot;this.state.revision+=1;this.emit();return true;
   }
   startNewObservations(){
     if(!this.archive || !this.state.snapshot || this.state.status!=="current" || !this.state.parser || this.state.metadataWarning || this.state.parser.parsing)return false;
     this.state.snapshot=this.archive.capture(this.state.snapshot,{restart:true});
+    this.state.snapshot=this.evidence?.view(this.state.snapshot)??this.state.snapshot;
     this.fingerprint=null;this.state.revision+=1;this.emit();return true;
   }
   dispose() { this.disposed = true; for (const c of this.controllers) c.abort(); }

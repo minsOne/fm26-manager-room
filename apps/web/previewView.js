@@ -1,3 +1,4 @@
+import { evidenceRoom, evidencePanel } from "./evidenceView.js";
 import { trainingReview, candidateComparison, observationReport, evidenceBriefing } from "./engine/realReviews.js";
 import { historyWindow } from "./engine/realHistory.js";
 import { medicalReview, playingTimeReview, growthReview, number } from "./engine/realSnapshot.js";
@@ -9,7 +10,7 @@ import { rotationReview, rotationModes } from "./engine/realRotation.js";
 export const rooms = {
   manager:"Manager Room", squad:"선수단", matchday:"경기 준비", tactics:"전술 검토", training:"훈련 검토",
   development:"성장 기록", medical:"체력·출전", recruitment:"선수 보강", transfers:"임대·방출",
-  contracts:"계약", economy:"구단 재정", reports:"추천 검증", coach:"AI Coach", settings:"연결 설정"
+  contracts:"계약", economy:"구단 재정", reports:"추천 검증", coach:"AI Coach", evidence:"게임 근거", settings:"연결 설정"
 };
 export const esc = v => String(v ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const show = v => v === null || v === undefined || v === "Unknown" ? '<span class="unknown">미확인</span>' : esc(v);
@@ -29,6 +30,7 @@ export function statusHTML(state) {
     ${state.parser?`<div>${state.status === "current" ? "Connected" : "Connection needs review"} · Pinned Save: ${show(state.parser.selectionMode === "pinned" ? state.parser.selectedSavePath?.split("/").pop() : null)} · Last Sync: ${show(state.parser.lastSuccessAt)}</div>`:""}
     ${state.error?`<div class="error">${esc(state.error)}</div>`:""}
     ${state.metadataWarning?`<div>${esc(state.metadataWarning)}</div>`:""}
+    ${s?.evidenceWarning?`<div>${esc(s.evidenceWarning)}</div>`:""}
     ${s?.observationArchive?.warning?`<div>${esc(s.observationArchive.warning)}</div>`:""}
     ${s && !state.parser?"<div>파서 상태 API 미제공: 가장 최근 게임 저장이 반영되었는지는 확인되지 않았습니다.</div>":""}
     ${state.pending?`<div>${esc(state.pending.saveName)} / ${esc(state.pending.manager.club)} <button data-accept-career>${state.pendingRestart?"별도 기록으로 시작":"이 세이브로 전환"}</button></div>`:""}`;
@@ -55,6 +57,7 @@ export function renderRoom(view, state, ui) {
   ]),"향후 일정이 수록되지 않았습니다. 일정 없음과 파서 미지원은 구분해 확인해야 합니다.");
   let body;
   switch(view) {
+    case "evidence": return evidenceRoom(state,ui);
     case "manager": {
       const next=upcoming[0];
       const missingFatigue=s.players.filter(p=>p.fatigue===null).length;
@@ -232,7 +235,7 @@ export function renderRoom(view, state, ui) {
       +card("로컬 근거 브리핑",table(["주제","확인된 범위","다음 확인"],evidenceBriefing(s).map(r=>[esc(r.topic),esc(r.evidence),esc(r.action)])));break;
     default: body=card("자료",table(fitHeaders,players.map(playerRow)));
   }
-  return (stale?note("이전 스냅샷으로 표시 중입니다. 현재 경기의 기용 결정을 확정하지 마세요."):"")+body;
+  return (stale?note("이전 스냅샷으로 표시 중입니다. 현재 경기의 기용 결정을 확정하지 마세요."):"")+body+evidencePanel(view,state);
 }
 function candidateSearchForm(state,ui){
   const a=ui.actions??{},disabled=a.busy||state.status!=='current'||state.parser?.parsing||!state.snapshot?.selectionId;

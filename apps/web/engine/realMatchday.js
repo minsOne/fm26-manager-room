@@ -38,7 +38,7 @@ export function matchdayReview(snapshot, formation="4-3-3", options={}) {
         if(!unavailable.some(row=>row.player.id===player.id)){
           unavailable.push({
             player,
-            reason:player.availability?.injuryFree===false
+            reason:player.evidenceExclusion ? `감독 입력 근거: ${player.evidenceExclusion}` : player.availability?.injuryFree===false
               ?"현재 부상 상태가 확인됨"
               :"출전 자격·징계·등록 불가가 확인됨"
           });
