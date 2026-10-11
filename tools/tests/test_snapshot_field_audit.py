@@ -133,12 +133,13 @@ class FieldAuditTests(unittest.TestCase):
     def test_named_reference_adapter_without_fmsave_dependency(self):
         Attributes=make_dataclass('Attributes',[(x,int) for x in ['first_touch','finishing',*audit.HIDDEN_NAMES]])
         Positions=make_dataclass('Positions',[('gk',int),('stc',int)])
-        player=NS(uid=101,name='Synthetic',age=37,birth_date=date(2000,3,1),nation_id=1,
+        player=NS(uid=101,team_id=42,team_slot=0,name='Synthetic',age=37,birth_date=date(2000,3,1),nation_id=1,
                   attributes=Attributes(13,17,8,9,10,11,12),positions=Positions(1,20),
                   personality=None,contract=None,ability=NS(current=150,potential=None,potential_range_code=-8),
                   transfer_value=None,raw_condition=9850,raw_match_sharpness=0,
                   raw_left_foot=100,raw_right_foot=50,left_foot=20,right_foot=10)
         p=audit.reference_player(player,date(2037,3,1))
+        self.assertEqual(p['teamId'],42); self.assertEqual(p['teamSlot'],0)
         self.assertEqual(p['attributes']['firstTouch'],13)
         self.assertEqual(p['hidden']['injuryProneness'],11)
         self.assertEqual(p['fitness']['condition'],99)

@@ -59,6 +59,8 @@ function normalizePlayers(rows, gameDate) {
     return {
       id: uid, name: text(p.name) ?? `선수 ${uid}`, age: p.ageKnown === false ? null : integer(p.age, 14, 100), ca, pa,
       primaryPosition, positionsKnown, attributesKnown,
+      teamId: id(p.teamId),
+      teamSlot: id(p.teamId)!==null ? integer(p.teamSlot,0,255) : null,
       birthDate: p.ageKnown !== false && p.birthDateKnown !== false && validDate(p.birthDate) ? p.birthDate : null,
       paRangeCode: p.paKnown !== true ? integer(p.paRangeCode, -10, -1) : null,
       positions: positionsKnown ? array(p, "positions").filter(v => POSITIONS.has(v)) : [],

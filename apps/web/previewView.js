@@ -1,3 +1,4 @@
+import { filterWorkloadRows, workloadGroup, sortTrainingPlayers } from "./engine/rosterDisplay.js";
 import { evidenceRoom, evidencePanel } from "./evidenceView.js";
 import { trainingReview, candidateComparison, observationReport, evidenceBriefing } from "./engine/realReviews.js";
 import { historyWindow } from "./engine/realHistory.js";
@@ -16,7 +17,7 @@ export const esc = v => String(v ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":
 const show = v => v === null || v === undefined || v === "Unknown" ? '<span class="unknown">미확인</span>' : esc(v);
 const numeric = v => number(v) === null ? show(null) : esc(v.toLocaleString("ko-KR"));
 const note = s => `<p class="notice">${esc(s)}</p>`;
-const table = (headers, rows, empty="수록된 데이터가 없습니다.") => `<div class="table-scroll"><table><thead><tr>${headers.map(h=>`<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
+const table = (headers, rows, empty="수록된 데이터가 없습니다.") => `<div class="table-scroll"><table><thead><tr>${headers.map(h=>typeof h==="object"?`<th scope="col" aria-sort="${h.direction==='asc'?'ascending':h.direction==='desc'?'descending':'none'}"><button data-training-sort="${esc(h.key)}" aria-label="${esc(h.label)} ${h.direction==='desc'?'오름차순':'내림차순'} 정렬">${esc(h.label)} ${h.direction==='asc'?'↑':h.direction==='desc'?'↓':'↕'}</button></th>`:`<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
 const playerLink = p => `<button class="text-button" data-player="${esc(p.id)}">${esc(p.name)}</button>`;
 const card = (title, body) => `<section class="panel"><h2>${esc(title)}</h2>${body}</section>`;
 const fitHeaders = ["선수", "포지션", "CA", "PA", "컨디션"];
@@ -88,7 +89,8 @@ export function renderRoom(view, state, ui) {
     case "matchday": {
       const rotation=rotationReview(s,{fixtureId:ui.fixtureId,formation:ui.formation,mode:ui.rotationMode,stale,constraintsByFixture:ui.constraintsByFixture});
       const review=rotation.plans[0]?.review??matchdayReview(s,ui.formation,{stale,decisionMissing:[rotation.reason]});
-      const workload=workloadReview(s);
+      const allWorkload=workloadReview(s);
+      const workload=filterWorkloadRows(allWorkload,{includeDevelopment:ui.includeDevelopment,includeUnknown:ui.includeUnknown});
       const selectedFixture=rotation.plans[0]?.fixture.id;
       body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${rotation.status==="deferred"?'<option value="" selected disabled>선택한 경기 미수록 · 다시 선택하세요</option>':""}${upcoming.map(f=>`<option value="${esc(f.id)}" ${selectedFixture===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
       body+=card("로테이션 검토 모드",`<label for="rotationModeSelect">감독의 검토 방향</label><select id="rotationModeSelect">${Object.entries(rotationModes).map(([key,label])=>`<option value="${key}" ${rotation.mode===key?"selected":""}>${label}</option>`).join("")}</select>`
@@ -153,12 +155,14 @@ export function renderRoom(view, state, ui) {
           numeric(row.plannedStarts),numeric(row.plannedSubAppearances),numeric(row.plannedMinutes),show(row.medicalMinuteCap)
         ])));
       }
-      body+=card("부하 검토",workload.length
+      body+=card("부하 검토",`<div><label><input type="checkbox" id="includeDevelopment" ${ui.includeDevelopment?"checked":""}> 2군·유스 포함</label> <label><input type="checkbox" id="includeUnknown" ${ui.includeUnknown?"checked":""}> 소속 미확인 포함</label></div>`
+        +note(`1군 기본 표시 · 2군·유스 부하 신호 ${allWorkload.filter(r=>workloadGroup(r.player)==='development').length}명 · 소속 미확인 ${allWorkload.filter(r=>workloadGroup(r.player)==='unknown').length}명. 소속이 모두 미확인이면 Companion을 업데이트하세요.`)
+        +(workload.length
         ? table(["선수","신호","확인된 근거","미확인","행동"],workload.map(row=>[
             playerLink(row.player),esc(row.flags.join(" · ")),esc(row.evidence.join(" · ")),
             esc(row.missing.join(" · ")),esc(row.action)
           ]))
-        : note("현재 수록된 출전량/컨디션에서 별도 검토 신호가 없습니다. 피로·부상 위험 미확인은 정상으로 해석하지 않습니다."));
+        : note("선택한 소속 범위에서 수록된 출전량/컨디션의 별도 검토 신호가 없습니다. 피로·부상 위험 미확인은 정상으로 해석하지 않습니다.")));
       body+=card("일정",fixtureTable);
       break;
     }
@@ -183,7 +187,7 @@ export function renderRoom(view, state, ui) {
       break;
     }
     case "training": body=card("역할별 훈련 검토 근거",note("현재 집중훈련과 FM26 훈련 목록은 미확인입니다. 역할 핵심 능력치 중 낮은 관측값을 보여주며 훈련 항목·강도·성장량을 처방하지 않습니다.")
-      +table(["선수","역할","검토할 관측 능력치","CA","PA"],players.map(p=>{
+      +table(["선수","역할","검토할 관측 능력치",...["ca","pa"].map(key=>({key,label:key.toUpperCase(),direction:ui.trainingSort?.key===key?ui.trainingSort.direction:null}))],sortTrainingPlayers(players,ui.trainingSort).map(p=>{
         const r=trainingReview(p);return [playerLink(p),show(r.role),r.attributes.map(a=>`${esc(a.attribute)} ${numeric(a.value)}`).join(" · ")||esc(r.reason),numeric(p.ca),numeric(p.pa)];
       })));break;
     case "development": body=card("성장 관측",note(`현재 관측 구간 ${s.observationArchive?.dates??0}일 수록. 같은 날짜 재저장은 최신 관측으로 교체하며 성장 비교를 만들지 않습니다. 새 커리어·과거 날짜·버전 변경은 별도 구간입니다.`)

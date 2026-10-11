@@ -8,7 +8,7 @@ import { editFixtureSelection } from "./engine/realSelection.js";
 import { WebActionSession } from "./engine/webActions.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
-const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,evidenceDraft:"",evidenceMessage:""};
+const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,includeDevelopment:false,includeUnknown:false,trainingSort:null,evidenceDraft:"",evidenceMessage:""};
 let current = {snapshot:null,status:"empty",revision:0};
 let archiveImport=null;
 let session, actions, timer, generation=0, renderedKey="";
@@ -70,6 +70,7 @@ function editSelection(fixtureId,edit){
 document.addEventListener("click",event=>{
   const button=event.target.closest("button"); if(!button)return;
   if(button.dataset.view && rooms[button.dataset.view]) {ui.view=button.dataset.view;render();if(ui.view==='coach')void actions.refreshAuth();}
+  if(button.hasAttribute("data-training-sort")){const key=button.dataset.trainingSort;if(["ca","pa"].includes(key)){ui.trainingSort={key,direction:ui.trainingSort?.key===key&&ui.trainingSort.direction==="desc"?"asc":"desc"};render();}}
   if(button.hasAttribute("data-player")) {ui.selectedId=button.dataset.player;render();}
   if(button.hasAttribute("data-close-player")) {ui.selectedId=null;render();}
   if(button.hasAttribute("data-evidence-template")){
@@ -100,13 +101,13 @@ document.addEventListener("click",event=>{
   }
   if(button.hasAttribute("data-new-observations")){
     if(session.startNewObservations()){
-      ui.constraintsByFixture.clear();ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
+      ui.constraintsByFixture.clear();ui.includeDevelopment=false;ui.includeUnknown=false;ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
       ui.restPanelOpen=false;ui.minutePanelOpen=false;document.getElementById("searchInput").value="";render();
     }
   }
   if(button.hasAttribute("data-accept-career")) {
     archiveImport=null;ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
-    ui.constraintsByFixture.clear();
+    ui.constraintsByFixture.clear();ui.includeDevelopment=false;ui.includeUnknown=false;
     ui.restPanelOpen=false;ui.minutePanelOpen=false;
     document.getElementById("searchInput").value="";session.acceptPending();render();
   }
@@ -118,6 +119,7 @@ document.addEventListener("input",e=>{
   if(e.target.id==='coachQuestion')actions.edit('question',e.target.value);
 });
 document.addEventListener("change",async e=>{
+  if(["includeDevelopment","includeUnknown"].includes(e.target.id)){ui[e.target.id]=e.target.checked;render();}
   if(e.target.id==='evidenceImportFile'){
     const file=e.target.files?.[0],token=generation;if(!file)return;
     try{if(file.size>1024*1024)throw Error('근거 파일은 1MB 이하여야 합니다.');const text=await file.text();if(token!==generation)return;ui.evidenceDraft=text;ui.evidenceMessage='파일을 읽었습니다. 내용을 확인하고 교체 버튼을 누르세요.';render();}
@@ -177,7 +179,7 @@ document.addEventListener("submit",e=>{
     ui.bridge=validateBridge(new FormData(e.target).get("bridge"));
     try {localStorage.setItem("managerRoom.bridge",ui.bridge);} catch {}
     ui.selectedId=null;ui.fixtureId=null;ui.query="";ui.formation="4-3-3";ui.rotationMode="balanced";
-    ui.constraintsByFixture.clear();
+    ui.constraintsByFixture.clear();ui.includeDevelopment=false;ui.includeUnknown=false;
     ui.restPanelOpen=false;ui.minutePanelOpen=false;
     document.getElementById("searchInput").value="";ui.view="manager";startSession();
   } catch(error) {document.getElementById("syncStatus").textContent=error.message;}

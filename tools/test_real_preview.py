@@ -355,6 +355,37 @@ def main():
         assert state['aiSends']==1
         print('PASS evidence file preview, scoped import, exclusion, training/offers/flows, simulation, persistence and expiry; no game writes')
 
+        # Actual registered-team slots drive only the workload panel, not age/CA heuristics.
+        first=state['snapshot']['players'][0]
+        first.update(teamId=10,teamSlot=0,ca=120,pa=180,paKnown=True)
+        first['playingTime']['recentMinutes']=360;first['playingTime']['recentMinutesKnown']=True
+        reserve=copy.deepcopy(first);reserve.update(id='8',name='Reserve Display',teamId=11,teamSlot=1,ca=140,pa=160)
+        youth=copy.deepcopy(first);youth.update(id='9',name='Youth Display',teamId=12,teamSlot=2,ca=90,pa=0,paKnown=False)
+        state['snapshot']['players']=[first,reserve,youth]
+        page.locator('nav [data-view="matchday"]').click()
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        workload=page.locator('section.panel').filter(has=page.get_by_role('heading',name='부하 검토',exact=True))
+        assert workload.locator('button[data-player="7"]').count()==1
+        assert workload.locator('button[data-player="8"]').count()==0 and workload.locator('button[data-player="9"]').count()==0
+        page.locator('#includeDevelopment').check()
+        assert workload.locator('button[data-player="8"]').count()==1 and workload.locator('button[data-player="9"]').count()==1
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert page.locator('#includeDevelopment').is_checked()
+        page.locator('#includeDevelopment').uncheck()
+        assert workload.locator('button[data-player="8"]').count()==0
+        page.locator('nav [data-view="training"]').click()
+        training=page.locator('section.panel').filter(has=page.get_by_role('heading',name='역할별 훈련 검토 근거',exact=True))
+        def training_ids():return training.locator('tbody button[data-player]').evaluate_all('(xs)=>xs.map(x=>x.dataset.player)')
+        page.locator('[data-training-sort="ca"]').click();assert training_ids()==['8','7','9']
+        page.locator('[data-training-sort="ca"]').click();assert training_ids()==['9','7','8']
+        page.locator('[data-training-sort="pa"]').click();assert training_ids()==['7','8','9']
+        page.locator('[data-training-sort="pa"]').click();assert training_ids()==['8','7','9']
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert training_ids()==['8','7','9']
+        page.locator('#searchInput').fill('Display');assert training_ids()==['8','9']
+        page.locator('#searchInput').fill('')
+        print('PASS first-team workload default, development toggle, CA/PA ascending/descending, unknown PA last and refresh/search retention')
+
         page.locator('nav [data-view="manager"]').click()
         if args.screenshot_dir:
             args.screenshot_dir.mkdir(parents=True,exist_ok=True)
