@@ -39,7 +39,7 @@ jobs:
           npm --prefix apps/web run check
           node --check apps/web/engine/realSnapshot.js
           python -m py_compile tools/test_integrated_manager_room.py
-          python -m unittest discover -s tools/tests -p 'test_snapshot_field_audit.py' -v
+          python -m unittest discover -s tools/tests -v
           cargo test --manifest-path native/fm26-parser/Cargo.toml
           bash tools/test_companion_core.sh
       - name: Build actual Rust parser and hardened macOS companion

@@ -1,3 +1,4 @@
+import { lineupCopyRequest, lineupCopyKey } from './engine/lineupCopy.js';
 import { attributeLabel, roleLabel, ageLabel } from "./engine/koreanLabels.js";
 import { filterWorkloadRows, workloadGroup, sortTrainingPlayers, squadGroup, squadPositions, matchesSquadPosition } from "./engine/rosterDisplay.js";
 import { evidenceRoom, evidencePanel } from "./evidenceView.js";
@@ -105,6 +106,8 @@ export function renderRoom(view, state, ui) {
       const workload=filterWorkloadRows(allWorkload,{includeDevelopment:ui.includeDevelopment,includeUnknown:ui.includeUnknown});
       const selectedFixture=rotation.plans[0]?.fixture.id;
       body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${rotation.status==="deferred"?'<option value="" selected disabled>선택한 경기 미수록 · 다시 선택하세요</option>':""}${upcoming.map(f=>`<option value="${esc(f.id)}" ${selectedFixture===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
+      body+=card("검토 포메이션",`<label for="formationSelect">검토 포메이션</label><select id="formationSelect">${["4-3-3","4-2-3-1","3-4-2-1"].map(f=>`<option ${ui.formation===f?"selected":""}>${f}</option>`).join("")}</select>`
+        +note("파일 생성은 현재 검증된 4-2-3-1 배치만 지원합니다. 세이브의 전술을 사용하며 선수별 역할은 FM에서 확인하세요."));
       body+=card("로테이션 검토 모드",`<label for="rotationModeSelect">감독의 검토 방향</label><select id="rotationModeSelect">${Object.entries(rotationModes).map(([key,label])=>`<option value="${key}" ${rotation.mode===key?"selected":""}>${label}</option>`).join("")}</select>`
         +note("검토 점수는 Role Fit과 별개입니다. 모드별 출전량·계획상 부하·유소년 우선순위를 반영한 휴리스틱이며 성공 확률이나 실제 피로가 아닙니다."));
       if(rotation.status==="deferred") {
@@ -113,6 +116,17 @@ export function renderRoom(view, state, ui) {
         break;
       }
       body+=selectionControls(s,rotation.plans[0],ui.restPanelOpen,ui.minutePanelOpen);
+      const copyRequest=lineupCopyRequest(review,ui.formation), copy=ui.actions?.lineupPreview;
+      const copyReady=copy&&copy.key===lineupCopyKey(copyRequest)&&copy.expiresAt>Date.now();
+      body+=card("선발 명단을 새 세이브에 저장 · 제한 지원",
+        note("검증된 ManagerRoom-Before-Experiment.fm과 4-2-3-1만 지원합니다. 선택한 계획의 명단을 현재 선발에 넣은 새 .fm 파일을 같은 폴더에 만듭니다. 원본은 보존합니다. 의료·출전 자격과 대회 벤치 규정은 게임에서 확인하세요.")
+        +`<button data-lineup-preview ${stale||!copyRequest||ui.actions?.busy?"disabled":""}>선발·벤치 변경 미리보기</button>`
+        +(!copyRequest?note("4-2-3-1에서 중복 없는 선발 11명과 벤치 9명을 지정하세요."):"")
+        +(copyReady?table(["슬롯","현재 세이브","변경 후"],copy.rows.map(row=>[esc(row.slot),esc(row.previousName),esc(row.name)]))
+          +`<button data-lineup-create ${stale||ui.actions?.busy?"disabled":""}>확인한 명단으로 새 세이브 생성</button>`:"")
+        +(ui.actions?.message?note(esc(ui.actions.message)):"")
+        +(ui.actions?.lineupResult?note(`생성 파일: ${esc(ui.actions.lineupResult.outputPath)} · FM의 게임 불러오기에서 선택하세요. 원본으로 다시 불러오면 복구됩니다.`):""));
+
       if(review.unavailable.length)body+=card("출전 제외 근거",table(["선수","확인할 사유"],review.unavailable.map(r=>[playerLink(r.player),esc(r.reason)])));
       body+=card("검토 계획 기록",note("현재 선발·교체 초안을 로컬 보고서에 보관합니다. 게임에 적용한 명단이나 경기 결과가 아니며 의료·자격 미확인은 그대로 기록합니다.")
         +`<button data-save-review ${stale||!s.observationLineage||review.status!=="review"||!review.selectedCount?"disabled":""}>현재 검토 계획 보관</button>`

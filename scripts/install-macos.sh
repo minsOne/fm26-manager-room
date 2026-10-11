@@ -54,6 +54,8 @@ fi
 mkdir -p "$BIN" "$SHIM_DIR"
 chmod 700 "$PREFIX" "$BIN"
 install -m 755 "$PARSER_BUILD" "$BIN/fm26-manager-room-parser"
+mkdir -p "$BIN/LineupWriter"
+install -m 644 "$ROOT/tools/matchday_lineup_copy.py" "$ROOT/tools/experiment_lineup_copy.py" "$BIN/LineupWriter"
 install -m 755 "$COMPANION_BUILD" "$BIN/manager-room"
 ln -sfn "$BIN/manager-room" "$SHIM_DIR/manager-room"
 

@@ -24,6 +24,8 @@ if [[ ! -x "$PARSER" || ! -x "$COMPANION" ]]; then
 fi
 
 install -m 755 "$PARSER" "$STAGE/bin/fm26-manager-room-parser"
+mkdir -p "$STAGE/bin/LineupWriter"
+install -m 644 "$ROOT/tools/matchday_lineup_copy.py" "$ROOT/tools/experiment_lineup_copy.py" "$STAGE/bin/LineupWriter"
 install -m 755 "$COMPANION" "$STAGE/bin/manager-room"
 cp "$ROOT/LICENSE" "$STAGE/LICENSE"
 
@@ -47,6 +49,8 @@ if [[ -x "$BIN/manager-room" ]]; then "$HERE/bin/manager-room" stop; fi
 mkdir -p "$BIN" "$SHIM_DIR"
 chmod 700 "$PREFIX" "$BIN"
 install -m 755 "$HERE/bin/fm26-manager-room-parser" "$BIN/fm26-manager-room-parser"
+mkdir -p "$BIN/LineupWriter"
+install -m 644 "$HERE/bin/LineupWriter/"*.py "$BIN/LineupWriter/"
 install -m 755 "$HERE/bin/manager-room" "$BIN/manager-room"
 ln -sfn "$BIN/manager-room" "$SHIM_DIR/manager-room"
 
@@ -79,6 +83,8 @@ fi
 
 if [[ -x "$PREFIX/bin/manager-room" ]]; then "$PREFIX/bin/manager-room" stop; fi
 rm -f "$PREFIX/bin/manager-room" "$PREFIX/bin/fm26-manager-room-parser"
+rm -f "$PREFIX/bin/LineupWriter/matchday_lineup_copy.py" "$PREFIX/bin/LineupWriter/experiment_lineup_copy.py"
+rmdir "$PREFIX/bin/LineupWriter" 2>/dev/null || true
 rmdir "$PREFIX/bin" 2>/dev/null || true
 
 if [[ "$PURGE" == "--purge-data" ]]; then

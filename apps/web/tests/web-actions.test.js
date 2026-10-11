@@ -124,3 +124,23 @@ test('an explicit auth click cancels a pending status poll instead of dropping t
   assert.equal(await actions.manage('auth-api-key'),true);await polling;
   assert.equal(actions.state.auth.revision,'a');
 });
+
+test('lineup preview must match current selection and creates at most once',async()=>{
+  let creates=0;
+  const {actions,session,calls}=setup(input=>{
+    if(input.action==='lineup-preview')return Response.json({previewId:'lineup',rows:Array(20).fill({}),fileCreated:false});
+    creates++;return Response.json({fileCreated:true,liveSelectionApplied:false,outputPath:'/games/new.fm'});
+  });
+  const request={formation:'4-2-3-1',lineup:{gk:'1'},bench:[]};
+  assert.equal(await actions.prepareLineup(request),true);
+  assert.ok(calls[0].url.endsWith('/api/lineup-capabilities'));
+  assert.equal(await actions.createLineup({...request,formation:'4-3-3'}),false);
+  assert.equal(creates,0);
+  await actions.prepareLineup(request);
+  assert.equal(await actions.createLineup(request),true);
+  assert.equal(await actions.createLineup(request),false);
+  assert.equal(creates,1);
+  await actions.prepareLineup(request);session.state.parser.parsing=true;actions.sync();
+  assert.equal(actions.state.lineupPreview,null);
+  assert.equal(await actions.createLineup(request),false);
+});

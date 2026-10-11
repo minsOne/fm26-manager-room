@@ -11,6 +11,7 @@ mod player_scan;
 mod snapshot;
 mod stage;
 mod competition;
+mod lineup_research;
 
 use anyhow::{bail, Context, Result};
 use memmap2::MmapOptions;
@@ -66,6 +67,15 @@ fn main() -> Result<()> {
     let command = args.next().unwrap_or_else(|| "help".to_owned());
 
     match command.as_str() {
+        "lineup-player-references" => {
+            lineup_research::player_references(args.next().map(PathBuf::from).context("save path required")?)
+        }
+        "lineup-research" => {
+            let path = args.next().map(PathBuf::from)
+                .context("usage: fm26-manager-room-parser lineup-research <save.fm> <saved-name>")?;
+            let name = args.next().context("saved selection name required")?;
+            lineup_research::inspect(path, &name)
+        }
         "bench" => {
             let path = args
                 .next()
@@ -99,6 +109,7 @@ fn main() -> Result<()> {
             eprintln!("  fm26-manager-room-parser inspect <save.fm>");
             eprintln!("  fm26-manager-room-parser bench <save.fm>");
             eprintln!("  fm26-manager-room-parser snapshot <save.fm>");
+            eprintln!("  fm26-manager-room-parser lineup-research <save.fm> <saved-name> (read-only, unverified)");
             Ok(())
         }
     }

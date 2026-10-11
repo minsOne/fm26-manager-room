@@ -134,6 +134,35 @@ func webContext(_ dir: URL) throws -> (SnapshotStore, CompanionState, URL) {
                     try rejects { _ = try policy.parse(invalid) }
                 }
             }),
+            ("lineup copy tickets bind exact preview, expire and cannot replay", {
+                try withDirectory { dir in
+                    let (store, state, source) = try webContext(dir)
+                    state.setParserPath("parser")
+                    var clock = Date(), creates = 0
+                    let web = WebActions(store: store, state: state, lineupRunner: { mode, _, _, input in
+                        if mode == "create" {
+                            creates += 1
+                            try check(input["formation"] as? String == "4-2-3-1")
+                            try check(input["sourceSHA256"] as? String == "hash")
+                            return ["fileCreated": true]
+                        }
+                        return ["sourceSHA256": "hash"]
+                    }, now: { clock })
+                    func prepare() throws -> String {
+                        let response = try JSONSerialization.jsonObject(with: web.perform(webInput("lineup-preview", ["formation": "4-2-3-1"]))) as! [String: Any]
+                        return response["previewId"] as! String
+                    }
+                    var ticket = try prepare()
+                    _ = try web.perform(webInput("lineup-create", ["previewId": ticket, "formation": "tampered"]))
+                    try check(creates == 1)
+                    try rejects { _ = try web.perform(webInput("lineup-create", ["previewId": ticket])) }
+                    ticket = try prepare(); clock = clock.addingTimeInterval(121)
+                    try rejects { _ = try web.perform(webInput("lineup-create", ["previewId": ticket])) }
+                    ticket = try prepare(); state.parsingSucceeded(save: source, durationMilliseconds: 3)
+                    try rejects { _ = try web.perform(webInput("lineup-create", ["previewId": ticket])) }
+                    try check(creates == 1)
+                }
+            }),
             ("web Coach previews without sending, sends exact approved bytes once, never exposes key", {
                 try withDirectory { dir in
                     let (store, state, _) = try webContext(dir)

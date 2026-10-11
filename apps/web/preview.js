@@ -1,3 +1,4 @@
+import { lineupCopyRequest } from './engine/lineupCopy.js';
 import { squadPreferenceKey, readSquadAssignments, squadPositions } from "./engine/rosterDisplay.js";
 import { DecisionEvidence, evidenceTemplate } from "./engine/decisionEvidence.js";
 import { balanceProposal, simulateBalanceProposal } from "./engine/evidenceReviews.js";
@@ -73,6 +74,11 @@ function editSelection(fixtureId,edit){
   editFixtureSelection(ui.constraintsByFixture,fixtureId,edit);
   render();
 }
+function currentLineupRequest(){
+  if(!current.snapshot)return null;
+  const rotation=rotationReview(current.snapshot,{fixtureId:ui.fixtureId,formation:ui.formation,mode:ui.rotationMode,stale:current.status!=='current',constraintsByFixture:ui.constraintsByFixture});
+  return lineupCopyRequest(rotation.plans[0]?.review,ui.formation);
+}
 document.addEventListener("click",event=>{
   const button=event.target.closest("button"); if(!button)return;
   if(button.dataset.view && rooms[button.dataset.view]) {ui.view=button.dataset.view;render();if(ui.view==='coach')void actions.refreshAuth();}
@@ -89,6 +95,8 @@ document.addEventListener("click",event=>{
   }
   if(button.hasAttribute("data-refresh"))void session.refresh();
   if(button.hasAttribute("data-candidate-offset"))void actions.search(Number(button.dataset.candidateOffset));
+  if(button.hasAttribute("data-lineup-preview"))void actions.prepareLineup(currentLineupRequest());
+  if(button.hasAttribute("data-lineup-create"))void actions.createLineup(currentLineupRequest());
   if(button.hasAttribute("data-coach-send"))void actions.send();
   if(button.hasAttribute("data-auth-login"))void actions.manage('auth-login',button.dataset.authLogin?{profileId:button.dataset.authLogin,consent:button.hasAttribute('data-auth-consent')}:{});
   if(button.hasAttribute("data-auth-action"))void actions.manage(button.dataset.authAction);
