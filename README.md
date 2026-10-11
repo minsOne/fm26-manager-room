@@ -2,7 +2,7 @@
 
 FM26 Manager Room is an open-source, macOS-first assistant for Football Manager 2026 focused on squad management, matchday review, player development, recruitment and long-term world balance.
 
-> Player CA/PA and attributes are read-only. The current integrated product path is read-only; experimental game writes are not enabled.
+> Player CA/PA and attributes are read-only. Matchday can create a lineup-only save copy for one locally verified baseline; see the limited support below.
 
 ## Current working path
 
@@ -93,7 +93,7 @@ Unknown values remain unknown instead of being converted to healthy/zero default
 
 ## Guarded web UI
 
-The default web app is the real-data, read-only view. It:
+The default web app is the real-data analysis view. It:
 - never silently falls back to demo data after a connection failure
 - preserves the last valid snapshot
 - surfaces parser errors even when the previous snapshot still returns HTTP 200
@@ -130,7 +130,12 @@ Possible future controlled-write research is limited to explicitly verified mana
 version guard → preview → explicit approval → apply → read-back verification → rollback
 ```
 
-No such game writer is enabled in the current integrated build.
+Matchday now supports **Preview lineup → Create new save** for the exact locally verified
+`ManagerRoom-Before-Experiment.fm` baseline and 4-2-3-1 formation. The source is never overwritten.
+Select the formation in Matchday, adjust starter locks/rest selections, preview all 20 players,
+and create a new `.fm` beside the source. Load that file manually in FM; generation alone is not live application.
+New saves and other careers/builds are rejected until separately verified. This copy path uses the installed
+Python 3 and zstd CLI, plus the bundled Rust reader. See [writer scope](companion/writer/README.md).
 
 ## Candidates, AI and portable observations
 

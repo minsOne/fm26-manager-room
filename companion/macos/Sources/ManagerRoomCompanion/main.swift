@@ -12,7 +12,7 @@ enum Command: String {
 let args = Array(CommandLine.arguments.dropFirst())
 if args.isEmpty || args.first == "--help" || args.first == "help" {
     print("""
-    FM26 Manager Room — read-only macOS assistant
+    FM26 Manager Room — macOS analysis and guarded lineup-copy assistant
     Usage: manager-room <command> [options]
       select-save [path.fm] [--new-career]   Open a file picker or pin the supplied career
       doctor [--deep] [--json] [--online]  Diagnose installation and selected save
@@ -23,6 +23,7 @@ if args.isEmpty || args.first == "--help" || args.first == "help" {
       serve [--open-web]      Foreground service for development
       pin-save <path.fm> | unpin-save | selection | parse <path.fm> | probe
     Service options: --port 8765 --parser <path> --snapshot-file <path.json>
+    --no-web-auth disables ChatGPT/Keychain access for isolated local service tests.
     Web AI: ChatGPT sign-in and model selection are available in the Coach tab without an API key.
     API-key Web AI: --model MODEL (or OPENAI_MODEL); --enable-web-coach allows confirmed sends with OPENAI_API_KEY
     Selection precedence: --save > --save-dir > persisted pin > default directory
@@ -281,7 +282,7 @@ case .serve:
                                      instanceID: option("--service-instance", in: args),
                                      coachModel: option("--model", in: args) ?? ProcessInfo.processInfo.environment["OPENAI_MODEL"] ?? "",
                                      coachKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "",
-                                     enableWebCoach: args.contains("--enable-web-coach"))
+                                     enableWebCoach: args.contains("--enable-web-coach"), enableWebAuth: !args.contains("--no-web-auth"))
     server.start()
 
     let shouldOpenWeb = args.contains("--open-web")

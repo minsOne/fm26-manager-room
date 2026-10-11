@@ -1,6 +1,6 @@
 import Foundation
 
-/// Local read operations plus an explicitly enabled, one-use AI send. Never writes the game.
+/// Scoped local actions, copy-only lineup export and one-use AI sends.
 final class WebActions: @unchecked Sendable {
     let token = UUID().uuidString + UUID().uuidString
     private let store: SnapshotStore
@@ -10,10 +10,12 @@ final class WebActions: @unchecked Sendable {
     private let allowSend: Bool
     private let chatGPT: ChatGPTAuth?
     private let sender: (Data, String) throws -> String
+    private let lineupRunner: (String, String, String, [String: Any]) throws -> [String: Any]
     private let now: () -> Date
     private let lock = NSLock()
     private var busy = false
     private var preview: Preview?
+    private var lineupPreview: (id: String, context: Context, request: [String: Any], expires: Date)?
 
     private struct Context {
         let bytes: Data
@@ -47,9 +49,9 @@ final class WebActions: @unchecked Sendable {
     }
 
     init(store: SnapshotStore, state: CompanionState, model: String = "", apiKey: String = "", allowSend: Bool = false,
-         chatGPT: ChatGPTAuth? = nil, now: @escaping () -> Date = Date.init, sender: @escaping (Data, String) throws -> String = AICoach.send) {
+         chatGPT: ChatGPTAuth? = nil, lineupRunner: @escaping (String, String, String, [String: Any]) throws -> [String: Any] = LineupCopy.run, now: @escaping () -> Date = Date.init, sender: @escaping (Data, String) throws -> String = AICoach.send) {
         self.store = store; self.state = state; self.model = model; self.apiKey = apiKey
-        self.chatGPT = chatGPT; self.allowSend = allowSend; self.now = now; self.sender = sender
+        self.lineupRunner = lineupRunner; self.chatGPT = chatGPT; self.allowSend = allowSend; self.now = now; self.sender = sender
     }
     private func coachConfiguration() throws -> (model: String, send: Bool, revision: String, provider: String, account: String) {
         if let auth = try chatGPT?.configuration() {
@@ -59,6 +61,9 @@ final class WebActions: @unchecked Sendable {
         return (model, allowSend && !model.isEmpty && !apiKey.isEmpty, "api-key", "api-key", "Mac API key")
     }
     var sendEnabled: Bool { (try? coachConfiguration().send) ?? false }
+    func lineupCapabilities() throws -> Data {
+        try encode(["version": 1, "token": token, "lineupCopy": LineupCopy.script != nil])
+    }
     func capabilities() throws -> Data {
         var result: [String: Any] = ["version": 1, "token": token, "candidates": true, "coachPreview": false, "coachSend": false, "model": ""]
         do {
@@ -91,6 +96,27 @@ final class WebActions: @unchecked Sendable {
             throw CoachError.invalid("화면과 현재 커리어·날짜·버전이 다릅니다. 새로고침 후 다시 요청하세요.")
         }
         switch action {
+        case "lineup-preview":
+            lineupPreview = nil
+            guard let parser = context.parser else { throw CoachError.invalid("파서 설정을 확인하세요.") }
+            let result = try lineupRunner("preview", context.path, parser, input)
+            guard context.matches(try current()) else { throw CoachError.invalid("세이브가 변경되었습니다. 다시 확인하세요.") }
+            var request = input
+            request["sourceSHA256"] = result["sourceSHA256"]
+            let id = UUID().uuidString
+            lineupPreview = (id, context, request, now().addingTimeInterval(120))
+            var response = result
+            response["previewId"] = id; response["expiresInSeconds"] = 120
+            return try encode(response)
+        case "lineup-create":
+            guard let ticket = lineupPreview, ticket.id == input["previewId"] as? String else {
+                throw CoachError.invalid("명단을 다시 미리보기 하세요. 자동으로 재생성하지 않습니다.")
+            }
+            lineupPreview = nil
+            guard ticket.expires > now(), ticket.context.matches(context), let parser = context.parser else {
+                throw CoachError.invalid("미리보기가 만료되었거나 세이브가 변경되었습니다.")
+            }
+            return try encode(lineupRunner("create", context.path, parser, ticket.request))
         case "candidates":
             guard let query = input["query"] as? String, query.utf8.count <= 200,
                   let offsetText = input["offset"] as? String, let offset = Int(offsetText), (0...250000).contains(offset),

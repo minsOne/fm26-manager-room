@@ -37,6 +37,8 @@ fi
 if [[ -x "$TARGET" ]]; then "$TARGET" stop; fi
 
 rm -f "$BIN/manager-room" "$BIN/fm26-manager-room-parser"
+rm -f "$BIN/LineupWriter/matchday_lineup_copy.py" "$BIN/LineupWriter/experiment_lineup_copy.py"
+rmdir "$BIN/LineupWriter" 2>/dev/null || true
 rmdir "$BIN" 2>/dev/null || true
 
 if [[ "$PURGE" -eq 1 ]]; then

@@ -20,7 +20,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="mr-http-") as tmp:
         with (Path(tmp) / "server.log").open("wb") as log:
             child = subprocess.Popen([
-                str(args.binary.resolve()), "serve", "--port", str(port), "--no-watch", "--parser", "/missing/fm26-parser"
+                str(args.binary.resolve()), "serve", "--port", str(port), "--no-watch", "--no-web-auth", "--parser", "/missing/fm26-parser"
             ], stdout=log, stderr=log)
             try:
                 deadline = time.monotonic() + 10
@@ -71,6 +71,9 @@ def main() -> None:
                 assert request(host=f"attacker.example:{port}")[0].startswith("HTTP/1.1 403")
                 assert request(method="POST")[0].startswith("HTTP/1.1 405")
                 assert request("Origin: null\r\n")[0].startswith("HTTP/1.1 403")
+                _, _, local_body = request("Origin: https://minsone.github.io\r\n", path="/api/lineup-capabilities")
+                local_capabilities = json.loads(local_body)
+                assert local_capabilities["version"] == 1 and "auth" not in local_capabilities
                 _, _, body = request("Origin: https://minsone.github.io\r\n", path="/api/actions")
                 capabilities = json.loads(body)
                 assert capabilities["version"] == 1 and capabilities["coachSend"] is False

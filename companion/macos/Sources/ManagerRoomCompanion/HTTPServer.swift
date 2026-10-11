@@ -11,7 +11,7 @@ final class LocalHTTPServer: @unchecked Sendable {
     private let actions: WebActions
 
     init(port: UInt16, store: SnapshotStore, companionState: CompanionState, instanceID: String? = nil,
-         coachModel: String = "", coachKey: String = "", enableWebCoach: Bool = false) throws {
+         coachModel: String = "", coachKey: String = "", enableWebCoach: Bool = false, enableWebAuth: Bool = true) throws {
         self.instanceID = instanceID
         guard port > 0, let endpointPort = NWEndpoint.Port(rawValue: port) else { throw ServerError.invalidPort }
         let parameters = NWParameters.tcp
@@ -19,7 +19,7 @@ final class LocalHTTPServer: @unchecked Sendable {
         self.listener = try NWListener(using: parameters)
         self.store = store; self.companionState = companionState
         self.policy = LocalRequestPolicy(port: port)
-        self.actions = WebActions(store: store, state: companionState, model: coachModel, apiKey: coachKey, allowSend: enableWebCoach, chatGPT: ChatGPTAuth(port: port))
+        self.actions = WebActions(store: store, state: companionState, model: coachModel, apiKey: coachKey, allowSend: enableWebCoach, chatGPT: enableWebAuth ? ChatGPTAuth(port: port) : nil)
     }
     func start() {
         listener.newConnectionHandler = { [weak self] connection in self?.handle(connection) }
@@ -93,14 +93,16 @@ final class LocalHTTPServer: @unchecked Sendable {
                     send(status: "400 Bad Request", body: Data("{\"message\":\"로그인을 완료하지 못했습니다. Manager Room에서 상태를 확인하고 다시 로그인하세요.\"}".utf8), request: request, on: connection)
                 }
             }
+        case "/api/lineup-capabilities":
+            send(body: (try? actions.lineupCapabilities()) ?? Data("{}".utf8), request: request, on: connection)
         case "/api/actions":
             if request.method == "GET" {
                 DispatchQueue.global(qos: .userInitiated).async { [self] in
                     send(body: (try? actions.capabilities()) ?? Data("{}".utf8), request: request, on: connection)
                 }
             } else {
-                // Parsing and the bounded provider request must not block health checks or the watcher.
-                queue.asyncAfter(deadline: .now() + 135) { [weak connection] in connection?.cancel() }
+                // Parsing, save-copy validation and provider calls must not block health checks.
+                queue.asyncAfter(deadline: .now() + 315) { [weak connection] in connection?.cancel() }
                 DispatchQueue.global(qos: .userInitiated).async { [self] in
                     do { send(body: try actions.perform(body), request: request, on: connection) }
                     catch {

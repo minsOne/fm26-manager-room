@@ -1,3 +1,4 @@
+import { lineupCopyKey } from './lineupCopy.js';
 import { limitedText } from './snapshotSession.js';
 
 export function actionScope(snapshot){
@@ -11,7 +12,7 @@ const marker=s=>JSON.stringify([s.status,s.metadataWarning,s.parser?.parsing,s.p
 export class WebActionSession {
   constructor({session,fetcher=globalThis.fetch.bind(globalThis),onChange=()=>{},now=()=>Date.now()}={}){
     this.session=session;this.fetcher=fetcher;this.onChange=onChange;this.now=now;
-    this.state={busy:false,message:'',preview:null,answer:null,query:'',page:null,playerId:'',question:'',auth:null,authError:''};
+    this.state={busy:false,message:'',lineupPreview:null,lineupResult:null,preview:null,answer:null,query:'',page:null,playerId:'',question:'',auth:null,authError:''};
     this.key=marker(session.state);this.generation=0;this.controller=null;this.disposed=false;this.authRefreshing=false;
   }
   emit(){if(!this.disposed)this.onChange(this.state);}
@@ -19,9 +20,9 @@ export class WebActionSession {
     const key=marker(this.session.state);if(key===this.key)return false;
     const oldCareer=this.career;this.career=this.session.state.snapshot?.careerKey;
     this.key=key;this.generation++;this.controller?.abort();
-    const pending=this.state.busy;this.state.busy=false;this.state.preview=null;this.state.answer=null;this.state.page=null;
+    const pending=this.state.busy;this.state.busy=false;this.state.lineupPreview=null;this.state.lineupResult=null;this.state.preview=null;this.state.answer=null;this.state.page=null;
     if(oldCareer!==this.career){this.state.playerId='';this.state.question='';this.state.query='';}
-    this.state.message=pending?'데이터 상태가 변경되어 요청 결과를 보류했습니다. AI 전송을 눌렀다면 이미 처리되었을 수 있으며 자동 재전송하지 않습니다.':'';
+    this.state.message=pending?'데이터 상태가 변경되어 요청 결과를 보류했습니다. 이미 요청한 작업은 처리되었을 수 있습니다. 새 선발 파일은 게임 폴더를 확인하세요. 자동 재시도하지 않습니다.':'';
     return true;
   }
   acceptAuth(value){
@@ -67,13 +68,13 @@ export class WebActionSession {
       throw Error('고정한 커리어의 최신 데이터에 연결한 뒤 요청하세요.');
     return s.snapshot;
   }
-  async request(method,body,maxBytes,timeoutMs,token){
+  async request(method,body,maxBytes,timeoutMs,token,path='/api/actions'){
     const controller=new AbortController();this.controller=controller;
     const timer=setTimeout(()=>controller.abort(),timeoutMs);
     try{
       const serialized=body===undefined?undefined:JSON.stringify(body);
       if(serialized&&new TextEncoder().encode(serialized).length>8192)throw Error('질문 또는 요청 크기 제한을 초과했습니다.');
-      const response=await this.fetcher(`${this.session.bridge}/api/actions`,{method,body:serialized,
+      const response=await this.fetcher(`${this.session.bridge}${path}`,{method,body:serialized,
         headers:method==='POST'?{'Content-Type':'application/json','X-Manager-Room-Token':token}:{},
         cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});
       if(response.status===404)throw Error('설치된 Companion을 업데이트하고 다시 시작하세요.');
@@ -90,7 +91,7 @@ export class WebActionSession {
     try{
       const authAction=action.startsWith('auth-'),scope=authAction?undefined:actionScope(this.ready());
       this.state.busy=true;this.state.message=action==='coach-send'?'AI 요청 처리 중입니다. 자동 재전송하지 않습니다.':'로컬 Companion에서 처리 중입니다.';this.emit();
-      const capabilities=await this.request('GET',undefined,131072,5000);
+      const capabilities=await this.request('GET',undefined,131072,5000,undefined,action.startsWith('lineup-')?'/api/lineup-capabilities':'/api/actions');
       if(generation!==this.generation||this.disposed)return false;
       if(capabilities.version!==1||typeof capabilities.token!=='string'||!/^[A-Za-z0-9-]{32,128}$/.test(capabilities.token))throw Error('Companion 작업 API 버전이 올바르지 않습니다.');
       this.acceptAuth(capabilities.auth);
@@ -98,14 +99,36 @@ export class WebActionSession {
       if(action==='coach-preview'&&!capabilities.coachPreview)throw Error('ChatGPT에 로그인해 모델을 선택하거나 Mac에 API 모델을 설정하세요.');
       if(action==='coach-send'&&!capabilities.coachSend)throw Error('ChatGPT 요금제 사용 권한·모델을 확인하거나 Mac에서 API 키 전송을 활성화하세요.');
       const result=await this.request('POST',{action,scope,...fields},action==='candidates'?4*1024*1024:1024*1024,
-        authAction||action==='candidates'||action==='coach-send'?130000:10000,capabilities.token);
+        action.startsWith('lineup-')?310000:authAction||action==='candidates'||action==='coach-send'?130000:10000,capabilities.token);
       if(generation!==this.generation||this.disposed)return false;
       if(!authAction)this.ready();apply(result);return true;
     }catch(error){
       if(generation===this.generation&&!this.disposed)this.state.message=error.name==='AbortError'
-        ?'응답 대기 시간이 초과되었습니다. AI 요청은 처리되었을 수 있으며 자동 재전송하지 않습니다.':error.message;
+        ?'응답 대기 시간이 초과되었습니다. 요청은 처리되었을 수 있습니다. 선발 파일 생성은 게임 폴더의 ManagerRoom-Lineup 파일을 확인하세요. 자동 재시도하지 않습니다.':error.message;
       return false;
     }finally{if(generation===this.generation){this.state.busy=false;this.emit();}}
+  }
+  prepareLineup(request){
+    if(this.state.busy)return Promise.resolve(false);
+    this.state.lineupPreview=null;this.state.lineupResult=null;
+    if(!request){this.state.message='4-2-3-1 선발 11명과 벤치 9명을 먼저 지정하세요.';this.emit();return Promise.resolve(false);}
+    return this.run('lineup-preview',request,result=>{
+      if(typeof result.previewId!=='string'||!Array.isArray(result.rows)||result.rows.length!==20||result.fileCreated!==false)throw Error('선발 미리보기 응답을 확인할 수 없습니다.');
+      this.state.lineupPreview={...result,key:lineupCopyKey(request),expiresAt:this.now()+120000};
+      this.state.message='아래 명단을 확인한 뒤 새 세이브 파일을 만드세요. 의료·등록 자격은 게임에서 확인해야 합니다.';
+    });
+  }
+  createLineup(request){
+    if(this.state.busy)return Promise.resolve(false);
+    this.sync();const preview=this.state.lineupPreview;this.state.lineupPreview=null;
+    if(!preview||preview.key!==lineupCopyKey(request)||preview.expiresAt<=this.now()){
+      this.state.message='명단이 바뀌었거나 미리보기가 만료되었습니다. 다시 미리보기 하세요.';this.emit();return Promise.resolve(false);
+    }
+    return this.run('lineup-create',{previewId:preview.previewId},result=>{
+      if(result.fileCreated!==true||result.liveSelectionApplied!==false||typeof result.outputPath!=='string')throw Error('생성 결과를 확인할 수 없습니다. 게임 폴더를 확인하세요.');
+      this.state.lineupResult=result;
+      this.state.message='새 세이브 파일 생성 완료. FM에서 아래 파일을 불러와 선발 명단을 확인하세요. 현재 실행 중인 게임에는 아직 반영하지 않았습니다.';
+    });
   }
   search(offset=0){
     const query=this.state.query;
