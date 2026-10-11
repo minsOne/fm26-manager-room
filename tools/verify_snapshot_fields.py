@@ -55,6 +55,8 @@ def reference_player(player: Any, clock: date) -> dict[str, Any]:
     raw_sharpness = player.raw_match_sharpness
     return {
         "id": str(player.uid),
+        "teamId": player.team_id,
+        "teamSlot": player.team_slot,
         "name": player.name or f"Player {player.uid}",
         "age": player.age if player.age is not None else 0,
         "ageKnown": player.birth_date is not None,

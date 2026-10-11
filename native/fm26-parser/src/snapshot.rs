@@ -82,6 +82,8 @@ pub struct QuickCoverage {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuickPlayer {
+    pub team_id: Option<u32>,
+    pub team_slot: Option<usize>,
     pub id: String,
     pub name: String,
     pub age: u16,
@@ -175,7 +177,7 @@ pub fn build(
         let person = people.get(index).and_then(Option::as_ref);
         let contract = contracts.get(index).and_then(Option::as_ref);
         let recent = recent_minutes.get(index).cloned().unwrap_or_default();
-        players.push(build_player(game_db, candidate, person, contract, recent, clock));
+        players.push(build_player(game_db, candidate, person, contract, recent, clock, clubs));
     }
     players.sort_by(|left, right| right.ca.cmp(&left.ca).then_with(|| left.name.cmp(&right.name)));
     let club_finance = finances.iter().find(|row| row.club_uid == summary.club_uid).map(|row| QuickClubFinance {
@@ -217,7 +219,7 @@ pub fn add_candidates(snapshot: &mut QuickSnapshot, game_db: &[u8], clock: GameD
     matches.sort_by(|a,b| candidates[*b].current_ability.cmp(&candidates[*a].current_ability).then(candidates[*a].uid.cmp(&candidates[*b].uid)));
     let count = matches.len();
     snapshot.external_candidates = matches.into_iter().skip(offset).take(100).map(|i|
-        build_player(game_db, &candidates[i], people.get(i).and_then(Option::as_ref), contracts.get(i).and_then(Option::as_ref), RecentMinutes::default(), clock)
+        build_player(game_db, &candidates[i], people.get(i).and_then(Option::as_ref), contracts.get(i).and_then(Option::as_ref), RecentMinutes::default(), clock, clubs)
     ).collect();
     let returned = snapshot.external_candidates.len();
     snapshot.coverage.external_candidates = format!("native-query-page: scanned {}, matched {}, offset {}, returned {}; decoded save records only; availability and offers unknown", candidates.len(), count, offset, returned);
@@ -226,7 +228,7 @@ pub fn add_candidates(snapshot: &mut QuickSnapshot, game_db: &[u8], clock: GameD
 
 fn build_player(
     game_db: &[u8], candidate: &PlayerCandidate, person: Option<&PersonCore>,
-    contract: Option<&CurrentContractCore>, recent: RecentMinutes, clock: GameDate,
+    contract: Option<&CurrentContractCore>, recent: RecentMinutes, clock: GameDate, clubs: &ClubIndex,
 ) -> QuickPlayer {
     let ratings = &game_db[candidate.record_offset + RATINGS_OFFSET..candidate.record_offset + RATINGS_OFFSET + RATINGS_COUNT];
     let positions = web_positions(ratings);
@@ -256,6 +258,8 @@ fn build_player(
     let wage_known = contract.is_some();
     let agreed = contract.and_then(|value| value.squad_status_raw).map(squad_status_label).unwrap_or_else(|| "Unknown".to_owned());
     QuickPlayer {
+        team_id: (candidate.team_id != MISSING_REFERENCE).then_some(candidate.team_id),
+        team_slot: clubs.resolve_team(candidate.team_id).map(|team| team.team_slot),
         id: candidate.uid.to_string(),
         name: person.and_then(|value| value.name.clone()).unwrap_or_else(|| format!("Player {}", candidate.uid)),
         age, age_known: birth.is_some(), birth_date: birth.map(format_date),

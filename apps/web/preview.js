@@ -1,3 +1,4 @@
+import { squadPreferenceKey, readSquadAssignments, squadPositions } from "./engine/rosterDisplay.js";
 import { DecisionEvidence, evidenceTemplate } from "./engine/decisionEvidence.js";
 import { balanceProposal, simulateBalanceProposal } from "./engine/evidenceReviews.js";
 import { rotationReview } from "./engine/realRotation.js";
@@ -8,7 +9,7 @@ import { editFixtureSelection } from "./engine/realSelection.js";
 import { WebActionSession } from "./engine/webActions.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
-const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,evidenceDraft:"",evidenceMessage:""};
+const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,includeDevelopment:false,includeUnknown:false,trainingSort:null,squadGroup:"first",squadPosition:"all",squadSort:null,squadAssignments:{},squadScope:null,squadMessage:null,evidenceDraft:"",evidenceMessage:""};
 let current = {snapshot:null,status:"empty",revision:0};
 let archiveImport=null;
 let session, actions, timer, generation=0, renderedKey="";
@@ -32,6 +33,11 @@ function render() {
 }
 function update(state) {
   current=state;
+  const squadScope=squadPreferenceKey(state.snapshot,ui.bridge);
+  if(squadScope!==ui.squadScope){
+    ui.squadScope=squadScope;ui.squadGroup='first';ui.squadPosition='all';ui.squadAssignments={};ui.squadMessage=null;
+    try{ui.squadAssignments=readSquadAssignments(squadScope?readStorage(squadScope):null);}catch{ui.squadMessage='보관된 소속 분류를 읽지 못했습니다. 팀 분류를 다시 지정하세요.';}
+  }
   const actionChanged=actions?.sync();ui.actions=actions?.state;
   document.getElementById("syncStatus").innerHTML=statusHTML(state);
   document.getElementById("refreshButton").disabled=state.refreshing;
@@ -70,6 +76,9 @@ function editSelection(fixtureId,edit){
 document.addEventListener("click",event=>{
   const button=event.target.closest("button"); if(!button)return;
   if(button.dataset.view && rooms[button.dataset.view]) {ui.view=button.dataset.view;render();if(ui.view==='coach')void actions.refreshAuth();}
+  if(button.hasAttribute("data-squad-group")&&['first','reserve','youth','unknown'].includes(button.dataset.squadGroup)){ui.squadGroup=button.dataset.squadGroup;render();}
+  if(button.hasAttribute("data-squad-sort")){const key=button.dataset.squadSort;if(['ca','pa'].includes(key)){ui.squadSort={key,direction:ui.squadSort?.key===key&&ui.squadSort.direction==='desc'?'asc':'desc'};render();}}
+  if(button.hasAttribute("data-training-sort")){const key=button.dataset.trainingSort;if(["ca","pa"].includes(key)){ui.trainingSort={key,direction:ui.trainingSort?.key===key&&ui.trainingSort.direction==="desc"?"asc":"desc"};render();}}
   if(button.hasAttribute("data-player")) {ui.selectedId=button.dataset.player;render();}
   if(button.hasAttribute("data-close-player")) {ui.selectedId=null;render();}
   if(button.hasAttribute("data-evidence-template")){
@@ -100,13 +109,13 @@ document.addEventListener("click",event=>{
   }
   if(button.hasAttribute("data-new-observations")){
     if(session.startNewObservations()){
-      ui.constraintsByFixture.clear();ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
+      ui.constraintsByFixture.clear();ui.includeDevelopment=false;ui.includeUnknown=false;ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
       ui.restPanelOpen=false;ui.minutePanelOpen=false;document.getElementById("searchInput").value="";render();
     }
   }
   if(button.hasAttribute("data-accept-career")) {
     archiveImport=null;ui.selectedId=null;ui.fixtureId=null;ui.formation="4-3-3";ui.rotationMode="balanced";ui.query="";
-    ui.constraintsByFixture.clear();
+    ui.constraintsByFixture.clear();ui.includeDevelopment=false;ui.includeUnknown=false;
     ui.restPanelOpen=false;ui.minutePanelOpen=false;
     document.getElementById("searchInput").value="";session.acceptPending();render();
   }
@@ -118,6 +127,16 @@ document.addEventListener("input",e=>{
   if(e.target.id==='coachQuestion')actions.edit('question',e.target.value);
 });
 document.addEventListener("change",async e=>{
+  if(e.target.id==='squadPosition'&&(e.target.value==='all'||Object.hasOwn(squadPositions,e.target.value))){ui.squadPosition=e.target.value;render();}
+  if(e.target.hasAttribute('data-squad-team')){
+    const id=e.target.dataset.squadTeam,value=e.target.value;
+    if(!current.snapshot?.players.some(p=>p.teamId===id&&p.teamSlot>0)||!['','reserve','youth'].includes(value))return;
+    const next={...ui.squadAssignments};if(value)next[id]=value;else delete next[id];
+    ui.squadAssignments=next;ui.squadMessage=null;
+    try{if(!ui.squadScope)throw Error();localStorage.setItem(ui.squadScope,JSON.stringify(next));}catch{ui.squadMessage='분류를 브라우저에 보관하지 못했습니다. 현재 화면에서만 유지합니다.';}
+    render();const panel=document.querySelector('[data-squad-classification]');if(panel)panel.open=true;
+  }
+  if(["includeDevelopment","includeUnknown"].includes(e.target.id)){ui[e.target.id]=e.target.checked;render();}
   if(e.target.id==='evidenceImportFile'){
     const file=e.target.files?.[0],token=generation;if(!file)return;
     try{if(file.size>1024*1024)throw Error('근거 파일은 1MB 이하여야 합니다.');const text=await file.text();if(token!==generation)return;ui.evidenceDraft=text;ui.evidenceMessage='파일을 읽었습니다. 내용을 확인하고 교체 버튼을 누르세요.';render();}
@@ -177,7 +196,7 @@ document.addEventListener("submit",e=>{
     ui.bridge=validateBridge(new FormData(e.target).get("bridge"));
     try {localStorage.setItem("managerRoom.bridge",ui.bridge);} catch {}
     ui.selectedId=null;ui.fixtureId=null;ui.query="";ui.formation="4-3-3";ui.rotationMode="balanced";
-    ui.constraintsByFixture.clear();
+    ui.constraintsByFixture.clear();ui.includeDevelopment=false;ui.includeUnknown=false;
     ui.restPanelOpen=false;ui.minutePanelOpen=false;
     document.getElementById("searchInput").value="";ui.view="manager";startSession();
   } catch(error) {document.getElementById("syncStatus").textContent=error.message;}

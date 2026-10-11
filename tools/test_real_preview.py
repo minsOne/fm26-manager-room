@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def fixture():
     return {"schemaVersion":2,"source":"rust-native","saveName":"Browser test.fm","gameDate":"2037-07-01",
       "manager":{"clubUid":45,"club":"Test FC","name":"Coach"},
-      "players":[{"id":"7","name":"Young Player","age":18,"ca":125,"pa":125,"paKnown":False,
+      "players":[{"id":"7","teamId":10,"teamSlot":0,"name":"Young Player","age":18,"ca":125,"pa":125,"paKnown":False,
         "positions":["CM","DM"],"positionRatings":{"MC":20,"DM":20},
         "attributes":{key:14 for key in ["passing","vision","firstTouch","technique","decisions","composure","positioning","anticipation","stamina","workRate","offTheBall"]},
         "hidden":{"professionalism":17},
@@ -354,6 +354,75 @@ def main():
         assert 'Tired' not in page.locator('#content').inner_text()
         assert state['aiSends']==1
         print('PASS evidence file preview, scoped import, exclusion, training/offers/flows, simulation, persistence and expiry; no game writes')
+
+        # Actual registered-team slots drive only the workload panel, not age/CA heuristics.
+        first=state['snapshot']['players'][0]
+        first.update(teamId=10,teamSlot=0,ca=120,pa=180,paKnown=True)
+        first['playingTime']['recentMinutes']=360;first['playingTime']['recentMinutesKnown']=True
+        reserve=copy.deepcopy(first);reserve.update(id='8',name='Reserve Display',teamId=11,teamSlot=1,ca=140,pa=160)
+        youth=copy.deepcopy(first);youth.update(id='9',name='Youth Display',teamId=12,teamSlot=2,ca=90,pa=0,paKnown=False)
+        state['snapshot']['players']=[first,reserve,youth]
+        page.locator('nav [data-view="matchday"]').click()
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        workload=page.locator('section.panel').filter(has=page.get_by_role('heading',name='부하 검토',exact=True))
+        assert workload.locator('button[data-player="7"]').count()==1
+        assert workload.locator('button[data-player="8"]').count()==0 and workload.locator('button[data-player="9"]').count()==0
+        page.locator('#includeDevelopment').check()
+        assert workload.locator('button[data-player="8"]').count()==1 and workload.locator('button[data-player="9"]').count()==1
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert page.locator('#includeDevelopment').is_checked()
+        page.locator('#includeDevelopment').uncheck()
+        assert workload.locator('button[data-player="8"]').count()==0
+        page.locator('nav [data-view="training"]').click()
+        training=page.locator('section.panel').filter(has=page.get_by_role('heading',name='역할별 훈련 검토 근거',exact=True))
+        def training_ids():return training.locator('tbody button[data-player]').evaluate_all('(xs)=>xs.map(x=>x.dataset.player)')
+        assert '만 18세' in training.inner_text()
+        page.locator('[data-training-sort="ca"]').click();assert training_ids()==['8','7','9']
+        page.locator('[data-training-sort="ca"]').click();assert training_ids()==['9','7','8']
+        page.locator('[data-training-sort="pa"]').click();assert training_ids()==['7','8','9']
+        page.locator('[data-training-sort="pa"]').click();assert training_ids()==['8','7','9']
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert training_ids()==['8','7','9']
+        page.locator('#searchInput').fill('Display');assert training_ids()==['8','9']
+        page.locator('#searchInput').fill('')
+        training.locator('button[data-player="7"]').click()
+        detail=page.locator('#selectedPlayer')
+        assert '퍼스트 터치' in detail.inner_text() and '프로 의식' in detail.inner_text()
+        assert '>firstTouch<' not in detail.inner_html()
+        page.locator('nav [data-view="tactics"]').click()
+        assert '만 18세' in page.locator('#content').inner_text()
+        page.locator('nav [data-view="squad"]').click()
+        squad=page.locator('section.panel').filter(has=page.get_by_role('heading',name='선수단 관측값',exact=True))
+        def squad_ids():return squad.locator('tbody button[data-player]').evaluate_all('(xs)=>xs.map(x=>x.dataset.player)')
+        assert squad_ids()==['7'] and '만 18세' in squad.inner_text()
+        page.locator('#squadPosition').select_option('CM')
+        assert squad_ids()==['7'] and '추천 역할 3순위' in squad.inner_text()
+        assert '딥라잉 플레이메이커' in squad.inner_text() and '적합도' in squad.inner_text()
+        page.locator('#squadPosition').select_option('GK');assert squad_ids()==[]
+        page.locator('#squadPosition').select_option('DM');assert squad_ids()==['7']
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert page.locator('#squadPosition').input_value()=='DM'
+        page.locator('#squadPosition').select_option('all')
+        page.locator('[data-squad-classification] summary').click()
+        page.locator('[data-squad-team="11"]').select_option('reserve')
+        page.locator('[data-squad-team="12"]').select_option('youth')
+        page.locator('[data-squad-group="reserve"]').click();assert squad_ids()==['8']
+        page.locator('[data-squad-group="youth"]').click();assert squad_ids()==['9']
+        page.locator('[data-squad-sort="ca"]').click();page.locator('[data-squad-sort="ca"]').click()
+        assert squad.locator('th[aria-sort="ascending"] [data-squad-sort="ca"]').count()==1
+        page.locator('[data-squad-sort="pa"]').click();page.locator('[data-squad-sort="pa"]').click()
+        assert squad.locator('th[aria-sort="ascending"] [data-squad-sort="pa"]').count()==1
+        page.reload();page.get_by_text('실제 세이브',exact=True).wait_for()
+        page.locator('nav [data-view="squad"]').click();assert squad_ids()==['7']
+        page.locator('[data-squad-group="reserve"]').click();assert squad_ids()==['8']
+        page.locator('[data-squad-group="youth"]').click();assert squad_ids()==['9']
+        state['selectionId']='squad-isolated-new-game'
+        page.locator('#refreshButton').click();page.get_by_text('다른 세이브 전환 보류',exact=True).wait_for()
+        page.locator('[data-accept-career]').click()
+        page.locator('[data-squad-group="youth"]').click();assert squad_ids()==[]
+        print('PASS squad first-team default, age, separate reserve/youth filters, sorting, mapping persistence and new-career isolation')
+        print('PASS Korean attributes and list ages')
+        print('PASS first-team workload default, development toggle, CA/PA ascending/descending, unknown PA last and refresh/search retention')
 
         page.locator('nav [data-view="manager"]').click()
         if args.screenshot_dir:

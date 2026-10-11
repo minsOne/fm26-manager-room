@@ -1,3 +1,5 @@
+import { attributeLabel, roleLabel, ageLabel } from "./engine/koreanLabels.js";
+import { filterWorkloadRows, workloadGroup, sortTrainingPlayers, squadGroup, squadPositions, matchesSquadPosition } from "./engine/rosterDisplay.js";
 import { evidenceRoom, evidencePanel } from "./evidenceView.js";
 import { trainingReview, candidateComparison, observationReport, evidenceBriefing } from "./engine/realReviews.js";
 import { historyWindow } from "./engine/realHistory.js";
@@ -16,8 +18,8 @@ export const esc = v => String(v ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":
 const show = v => v === null || v === undefined || v === "Unknown" ? '<span class="unknown">미확인</span>' : esc(v);
 const numeric = v => number(v) === null ? show(null) : esc(v.toLocaleString("ko-KR"));
 const note = s => `<p class="notice">${esc(s)}</p>`;
-const table = (headers, rows, empty="수록된 데이터가 없습니다.") => `<div class="table-scroll"><table><thead><tr>${headers.map(h=>`<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
-const playerLink = p => `<button class="text-button" data-player="${esc(p.id)}">${esc(p.name)}</button>`;
+const table = (headers, rows, empty="수록된 데이터가 없습니다.") => `<div class="table-scroll"><table><thead><tr>${headers.map(h=>typeof h==="object"?`<th scope="col" aria-sort="${h.direction==='asc'?'ascending':h.direction==='desc'?'descending':'none'}"><button data-${h.scope==='squad'?'squad':'training'}-sort="${esc(h.key)}" aria-label="${esc(h.label)} ${h.direction==='desc'?'오름차순':'내림차순'} 정렬">${esc(h.label)} ${h.direction==='asc'?'↑':h.direction==='desc'?'↓':'↕'}</button></th>`:`<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
+const playerLink = p => `<button class="text-button" data-player="${esc(p.id)}">${esc(p.name)}</button> <small class="player-age">${esc(ageLabel(p))}</small>`;
 const card = (title, body) => `<section class="panel"><h2>${esc(title)}</h2>${body}</section>`;
 const fitHeaders = ["선수", "포지션", "CA", "PA", "컨디션"];
 const playerRow = p => [playerLink(p),show(p.positions.length?p.positions.join(" / "):null),numeric(p.ca),numeric(p.pa),numeric(p.condition)];
@@ -82,13 +84,25 @@ export function renderRoom(view, state, ui) {
           numeric(row.knownPlayers),
           esc(row.state)
         ])));
-      body += card("선수단 관측값",table(fitHeaders,players.map(playerRow)));
+      const group=['first','reserve','youth','unknown'].includes(ui.squadGroup)?ui.squadGroup:'first';
+      const position=Object.hasOwn(squadPositions,ui.squadPosition)?ui.squadPosition:'all';
+      const listed=sortTrainingPlayers(players.filter(p=>squadGroup(p,ui.squadAssignments)===group&&matchesSquadPosition(p,position)),ui.squadSort);
+      const roleHeaders=position==='all'?[]:['추천 역할 1순위','추천 역할 2순위','추천 역할 3순위'];
+      const rows=listed.map(p=>{
+        if(position==='all')return playerRow(p);
+        const roles=bestVerifiedRoles(p,position,3);
+        return [...playerRow(p),...[0,1,2].map(i=>roles[i]?`${esc(roleLabel(roles[i].role))}<br>적합도 ${numeric(roles[i].score)} / 100 · 근거 ${Math.round(roles[i].coverage*100)}%`:'평가 가능한 역할 없음')];
+      });
+      body += card("선수단 관측값",squadControls(s,ui,group)
+        +(position==='all'?'':note(`${squadPositions[position]} 기준 역할 순위입니다. 숙련도 15 이상 또는 수록 포지션에 포함된 선수를 표시합니다. 역할 적합도는 능력치·숙련도 기반 자체 비교이며 FM 공식 점수가 아닙니다. 근거가 부족하거나 지원 역할이 2개이면 빈 순위를 만들지 않습니다.`))
+        +table(["선수","포지션",...["ca","pa"].map(key=>({scope:"squad",key,label:key.toUpperCase(),direction:ui.squadSort?.key===key?ui.squadSort.direction:null})),"컨디션",...roleHeaders],rows,"선택한 소속·포지션·검색 조건에 해당하는 선수가 없습니다."));
       break;
     }
     case "matchday": {
       const rotation=rotationReview(s,{fixtureId:ui.fixtureId,formation:ui.formation,mode:ui.rotationMode,stale,constraintsByFixture:ui.constraintsByFixture});
       const review=rotation.plans[0]?.review??matchdayReview(s,ui.formation,{stale,decisionMissing:[rotation.reason]});
-      const workload=workloadReview(s);
+      const allWorkload=workloadReview(s);
+      const workload=filterWorkloadRows(allWorkload,{includeDevelopment:ui.includeDevelopment,includeUnknown:ui.includeUnknown});
       const selectedFixture=rotation.plans[0]?.fixture.id;
       body=card("경기 선택",upcoming.length?`<label for="fixtureSelect">검토할 경기</label><select id="fixtureSelect">${rotation.status==="deferred"?'<option value="" selected disabled>선택한 경기 미수록 · 다시 선택하세요</option>':""}${upcoming.map(f=>`<option value="${esc(f.id)}" ${selectedFixture===f.id?"selected":""}>${esc(f.date)} · ${esc(f.opponent)}</option>`).join("")}</select>`:"향후 일정 미확인");
       body+=card("로테이션 검토 모드",`<label for="rotationModeSelect">감독의 검토 방향</label><select id="rotationModeSelect">${Object.entries(rotationModes).map(([key,label])=>`<option value="${key}" ${rotation.mode===key?"selected":""}>${label}</option>`).join("")}</select>`
@@ -122,7 +136,7 @@ export function renderRoom(view, state, ui) {
         +table(["슬롯","선수","역할","Role Fit","검토 점수","배치 근거","최종 확정 전 미확인"],review.lineup.map(row=>[
           esc(row.slot.position),
           row.player?playerLink(row.player):show(null),
-          show(row.role)+(row.locked?" · 감독 고정":""),
+          show(roleLabel(row.role))+(row.locked?" · 감독 고정":""),
           numeric(row.score),
           numeric(row.selectionScore),
           esc(row.selectionEvidence.join(" · ")),
@@ -153,12 +167,14 @@ export function renderRoom(view, state, ui) {
           numeric(row.plannedStarts),numeric(row.plannedSubAppearances),numeric(row.plannedMinutes),show(row.medicalMinuteCap)
         ])));
       }
-      body+=card("부하 검토",workload.length
+      body+=card("부하 검토",`<div><label><input type="checkbox" id="includeDevelopment" ${ui.includeDevelopment?"checked":""}> 2군·유스 포함</label> <label><input type="checkbox" id="includeUnknown" ${ui.includeUnknown?"checked":""}> 소속 미확인 포함</label></div>`
+        +note(`1군 기본 표시 · 2군·유스 부하 신호 ${allWorkload.filter(r=>workloadGroup(r.player)==='development').length}명 · 소속 미확인 ${allWorkload.filter(r=>workloadGroup(r.player)==='unknown').length}명. 소속이 모두 미확인이면 Companion을 업데이트하세요.`)
+        +(workload.length
         ? table(["선수","신호","확인된 근거","미확인","행동"],workload.map(row=>[
             playerLink(row.player),esc(row.flags.join(" · ")),esc(row.evidence.join(" · ")),
             esc(row.missing.join(" · ")),esc(row.action)
           ]))
-        : note("현재 수록된 출전량/컨디션에서 별도 검토 신호가 없습니다. 피로·부상 위험 미확인은 정상으로 해석하지 않습니다."));
+        : note("선택한 소속 범위에서 수록된 출전량/컨디션의 별도 검토 신호가 없습니다. 피로·부상 위험 미확인은 정상으로 해석하지 않습니다.")));
       body+=card("일정",fixtureTable);
       break;
     }
@@ -169,7 +185,7 @@ export function renderRoom(view, state, ui) {
         return [
           playerLink(p),
           show(position),
-          best ? esc(best.role) : show(null),
+          best ? esc(roleLabel(best.role)) : show(null),
           best ? numeric(best.score) : show(null),
           best ? `${Math.round(best.coverage*100)}%` : show(null),
           best ? esc(best.label) : "판단 보류"
@@ -183,13 +199,13 @@ export function renderRoom(view, state, ui) {
       break;
     }
     case "training": body=card("역할별 훈련 검토 근거",note("현재 집중훈련과 FM26 훈련 목록은 미확인입니다. 역할 핵심 능력치 중 낮은 관측값을 보여주며 훈련 항목·강도·성장량을 처방하지 않습니다.")
-      +table(["선수","역할","검토할 관측 능력치","CA","PA"],players.map(p=>{
-        const r=trainingReview(p);return [playerLink(p),show(r.role),r.attributes.map(a=>`${esc(a.attribute)} ${numeric(a.value)}`).join(" · ")||esc(r.reason),numeric(p.ca),numeric(p.pa)];
+      +table(["선수","역할","검토할 관측 능력치",...["ca","pa"].map(key=>({key,label:key.toUpperCase(),direction:ui.trainingSort?.key===key?ui.trainingSort.direction:null}))],sortTrainingPlayers(players,ui.trainingSort).map(p=>{
+        const r=trainingReview(p);return [playerLink(p),show(roleLabel(r.role)),r.attributes.map(a=>`${esc(attributeLabel(a.attribute))} ${numeric(a.value)}`).join(" · ")||esc(r.reason),numeric(p.ca),numeric(p.pa)];
       })));break;
     case "development": body=card("성장 관측",note(`현재 관측 구간 ${s.observationArchive?.dates??0}일 수록. 같은 날짜 재저장은 최신 관측으로 교체하며 성장 비교를 만들지 않습니다. 새 커리어·과거 날짜·버전 변경은 별도 구간입니다.`)
       +note(s.observationArchive?.warning??"브라우저에 수집된 서로 다른 날짜만 비교합니다. 0 변화는 정체 판정이 아닙니다.")
-      +table(["선수","나이","CA 변화","능력치 변화","근거"],players.map(p=>{
-        const g=growthReview(p,s);return [playerLink(p),numeric(p.age),numeric(g.delta),g.attributes.map(a=>`${esc(a.key)} ${a.from} → ${a.to}`).join(" · ")||"비교 가능한 변화 없음",esc(g.message)];
+      +table(["선수","CA 변화","능력치 변화","근거"],players.map(p=>{
+        const g=growthReview(p,s);return [playerLink(p),numeric(g.delta),g.attributes.map(a=>`${esc(attributeLabel(a.key))} ${a.from} → ${a.to}`).join(" · ")||"비교 가능한 변화 없음",esc(g.message)];
       })));break;
     case "medical": body=card("Coach Confidence · 근거 확인",note("관측 항목 수는 추천 성공 확률이 아닙니다. 최신성·기록 완전성·출전 자격은 별도로 확인합니다.")
       +table(["선수","컨디션","피로","부상 위험","관측 근거","기용 판단","미확인"],players.map(p=>{
@@ -211,7 +227,7 @@ export function renderRoom(view, state, ui) {
       body+=card("수록 영입 후보",note(`검색 범위: ${s.candidateCoverage}. 이 목록을 전 세계 전체 선수로 간주하지 않습니다.`)
         +table(fitHeaders,s.candidates.filter(p=>!ui.query||p.name.toLocaleLowerCase().includes(ui.query.toLocaleLowerCase())).map(playerRow),"영입 후보 인덱스가 수록되지 않았습니다. 후보가 없다는 뜻은 아닙니다."));
       body+=card("수록 외부 후보 비교",note("현재 백업과 Role Fit만 비교합니다. 가격·관심·계약·등록 자격 미확인 시 영입 가능성이나 비용 효율을 판정하지 않습니다.")
-        +table(["포지션","외부 후보","역할","Role Fit","내부 백업 대비"],candidateComparison(s).map(r=>[esc(r.position),playerLink(r.player),esc(r.role),numeric(r.score),numeric(r.backupDifference)]),"비교 가능한 외부 후보 데이터가 없습니다."));
+        +table(["포지션","외부 후보","역할","Role Fit","내부 백업 대비"],candidateComparison(s).map(r=>[esc(r.position),playerLink(r.player),esc(roleLabel(r.role)),numeric(r.score),numeric(r.backupDifference)]),"비교 가능한 외부 후보 데이터가 없습니다."));
       break;
     }
     case "transfers": body=card("임대·방출 검토",note(`임대 오퍼 ${s.loanOffers.length}건 수록. 오퍼 수만으로 조건 적합성을 판단하지 않습니다. 시장 관심·시설·출전 약속 미확인 상태에서는 처분 권고를 보류합니다.`)
@@ -237,6 +253,18 @@ export function renderRoom(view, state, ui) {
     default: body=card("자료",table(fitHeaders,players.map(playerRow)));
   }
   return (stale?note("이전 스냅샷으로 표시 중입니다. 현재 경기의 기용 결정을 확정하지 마세요."):"")+body+evidencePanel(view,state);
+}
+function squadControls(snapshot,ui,selected){
+  const groups=[['first','1군'],['reserve','2군'],['youth','유스'],['unknown','미분류·소속 미확인']];
+  const teams=new Map();
+  for(const p of snapshot.players)if(workloadGroup(p)==='development'){
+    if(!teams.has(p.teamId))teams.set(p.teamId,[]);teams.get(p.teamId).push(p);
+  }
+  return `<div role="group" aria-label="선수단 소속 필터">${groups.map(([key,label])=>`<button data-squad-group="${key}" aria-pressed="${selected===key}">${label} (${snapshot.players.filter(p=>squadGroup(p,ui.squadAssignments)===key).length})</button>`).join(' ')}</div>`
+    +`<label for="squadPosition">포지션</label><select id="squadPosition"><option value="all">전체 포지션</option>${Object.entries(squadPositions).map(([key,label])=>`<option value="${key}" ${ui.squadPosition===key?'selected':''}>${esc(label)} (${key})</option>`).join('')}</select>`
+    +note('기본은 1군입니다. 나이는 선수 이름 옆에 표시하며 CA·PA 제목을 누르면 정렬 방향이 바뀝니다. 아래 분류는 화면 표시용으로 게임 소속을 변경하지 않습니다.')
+    +(teams.size?`<details data-squad-classification><summary>2군·유스 팀 분류 설정</summary>${note('구단별 팀 순서만으로 2군과 유스를 단정하지 않습니다. 예시 선수 명단을 보고 팀별로 한 번 지정하세요. 같은 커리어의 이 브라우저에 보관합니다.')}${[...teams].map(([id,players])=>`<p><label>팀 ID ${esc(id)} · ${players.slice(0,3).map(p=>esc(p.name)).join(', ')} (${players.length}명) <select data-squad-team="${esc(id)}" aria-label="팀 ${esc(id)} 소속 분류">${[['','미분류'],['reserve','2군'],['youth','유스']].map(([value,label])=>`<option value="${value}" ${(ui.squadAssignments?.[id]??'')===value?'selected':''}>${label}</option>`).join('')}</select></label></p>`).join('')}</details>`:'')
+    +note(ui.squadMessage??(snapshot.players.some(p=>workloadGroup(p)==='unknown')?'소속 미확인 선수는 별도 목록에 표시합니다. Companion 업데이트 후 다시 저장·조회하세요.':''));
 }
 function candidateSearchForm(state,ui){
   const a=ui.actions??{},disabled=a.busy||state.status!=='current'||state.parser?.parsing||!state.snapshot?.selectionId;
@@ -281,10 +309,10 @@ function coachForm(state,ui){
 }
 export function playerDetail(player, s) {
   if (!player) return "";
-  return `<section class="panel" id="selectedPlayer"><div class="panel-title"><h2>${esc(player.name)}</h2><button data-close-player>닫기</button></div><p>UID ${esc(player.id)} · 게임 ${esc(s.gameDate)} · PA ${show(player.pa)}</p>`
+  return `<section class="panel" id="selectedPlayer"><div class="panel-title"><h2>${esc(player.name)}</h2><button data-close-player>닫기</button></div><p>${esc(ageLabel(player))} · UID ${esc(player.id)} · 게임 ${esc(s.gameDate)} · PA ${show(player.pa)}</p>`
     + note("파서가 제공한 관측값입니다. 미확인 값은 0으로 채우지 않았습니다. 세이브 빌드별 게임 화면 대조는 별도 검증입니다.")
-    + `<div class="summary-grid">${card("일반 능력치",table(["항목","관측값"],Object.entries(player.attributes).map(([k,v])=>[esc(k),numeric(v)])))}
-      ${card("히든·성격",table(["항목","관측값"],Object.entries(player.hidden).map(([k,v])=>[esc(k),numeric(v)])))}</div>`
+    + `<div class="summary-grid">${card("일반 능력치",table(["항목","관측값"],Object.entries(player.attributes).map(([k,v])=>[esc(attributeLabel(k)),numeric(v)])))}
+      ${card("히든·성격",table(["항목","관측값"],Object.entries(player.hidden).map(([k,v])=>[esc(attributeLabel(k)),numeric(v)])))}</div>`
     + datedHistoryDetail(player,s.gameDate)
     + roleFitDetail(player)
     + `</section>`;
@@ -309,7 +337,7 @@ function roleFitDetail(player) {
   return card("Role Fit · Manager Room 휴리스틱",
     note("FM/SI 공식 수치가 아닙니다. 확인된 능력치와 포지션 숙련도만 사용하는 비교용 휴리스틱입니다.")
     + table(["역할","점수","능력치 점수","포지션","커버리지","해석"], roles.map(r=>[
-      esc(r.role), numeric(r.score), numeric(r.attributeScore), numeric(r.positionScore),
+      esc(roleLabel(r.role)), numeric(r.score), numeric(r.attributeScore), numeric(r.positionScore),
       `${Math.round(r.coverage*100)}%`, esc(r.label)
     ])));
 }
