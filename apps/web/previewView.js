@@ -1,3 +1,4 @@
+import { attributeLabel, roleLabel, ageLabel } from "./engine/koreanLabels.js";
 import { filterWorkloadRows, workloadGroup, sortTrainingPlayers } from "./engine/rosterDisplay.js";
 import { evidenceRoom, evidencePanel } from "./evidenceView.js";
 import { trainingReview, candidateComparison, observationReport, evidenceBriefing } from "./engine/realReviews.js";
@@ -18,7 +19,7 @@ const show = v => v === null || v === undefined || v === "Unknown" ? '<span clas
 const numeric = v => number(v) === null ? show(null) : esc(v.toLocaleString("ko-KR"));
 const note = s => `<p class="notice">${esc(s)}</p>`;
 const table = (headers, rows, empty="수록된 데이터가 없습니다.") => `<div class="table-scroll"><table><thead><tr>${headers.map(h=>typeof h==="object"?`<th scope="col" aria-sort="${h.direction==='asc'?'ascending':h.direction==='desc'?'descending':'none'}"><button data-training-sort="${esc(h.key)}" aria-label="${esc(h.label)} ${h.direction==='desc'?'오름차순':'내림차순'} 정렬">${esc(h.label)} ${h.direction==='asc'?'↑':h.direction==='desc'?'↓':'↕'}</button></th>`:`<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
-const playerLink = p => `<button class="text-button" data-player="${esc(p.id)}">${esc(p.name)}</button>`;
+const playerLink = p => `<button class="text-button" data-player="${esc(p.id)}">${esc(p.name)}</button> <small class="player-age">${esc(ageLabel(p))}</small>`;
 const card = (title, body) => `<section class="panel"><h2>${esc(title)}</h2>${body}</section>`;
 const fitHeaders = ["선수", "포지션", "CA", "PA", "컨디션"];
 const playerRow = p => [playerLink(p),show(p.positions.length?p.positions.join(" / "):null),numeric(p.ca),numeric(p.pa),numeric(p.condition)];
@@ -124,7 +125,7 @@ export function renderRoom(view, state, ui) {
         +table(["슬롯","선수","역할","Role Fit","검토 점수","배치 근거","최종 확정 전 미확인"],review.lineup.map(row=>[
           esc(row.slot.position),
           row.player?playerLink(row.player):show(null),
-          show(row.role)+(row.locked?" · 감독 고정":""),
+          show(roleLabel(row.role))+(row.locked?" · 감독 고정":""),
           numeric(row.score),
           numeric(row.selectionScore),
           esc(row.selectionEvidence.join(" · ")),
@@ -173,7 +174,7 @@ export function renderRoom(view, state, ui) {
         return [
           playerLink(p),
           show(position),
-          best ? esc(best.role) : show(null),
+          best ? esc(roleLabel(best.role)) : show(null),
           best ? numeric(best.score) : show(null),
           best ? `${Math.round(best.coverage*100)}%` : show(null),
           best ? esc(best.label) : "판단 보류"
@@ -188,12 +189,12 @@ export function renderRoom(view, state, ui) {
     }
     case "training": body=card("역할별 훈련 검토 근거",note("현재 집중훈련과 FM26 훈련 목록은 미확인입니다. 역할 핵심 능력치 중 낮은 관측값을 보여주며 훈련 항목·강도·성장량을 처방하지 않습니다.")
       +table(["선수","역할","검토할 관측 능력치",...["ca","pa"].map(key=>({key,label:key.toUpperCase(),direction:ui.trainingSort?.key===key?ui.trainingSort.direction:null}))],sortTrainingPlayers(players,ui.trainingSort).map(p=>{
-        const r=trainingReview(p);return [playerLink(p),show(r.role),r.attributes.map(a=>`${esc(a.attribute)} ${numeric(a.value)}`).join(" · ")||esc(r.reason),numeric(p.ca),numeric(p.pa)];
+        const r=trainingReview(p);return [playerLink(p),show(roleLabel(r.role)),r.attributes.map(a=>`${esc(attributeLabel(a.attribute))} ${numeric(a.value)}`).join(" · ")||esc(r.reason),numeric(p.ca),numeric(p.pa)];
       })));break;
     case "development": body=card("성장 관측",note(`현재 관측 구간 ${s.observationArchive?.dates??0}일 수록. 같은 날짜 재저장은 최신 관측으로 교체하며 성장 비교를 만들지 않습니다. 새 커리어·과거 날짜·버전 변경은 별도 구간입니다.`)
       +note(s.observationArchive?.warning??"브라우저에 수집된 서로 다른 날짜만 비교합니다. 0 변화는 정체 판정이 아닙니다.")
-      +table(["선수","나이","CA 변화","능력치 변화","근거"],players.map(p=>{
-        const g=growthReview(p,s);return [playerLink(p),numeric(p.age),numeric(g.delta),g.attributes.map(a=>`${esc(a.key)} ${a.from} → ${a.to}`).join(" · ")||"비교 가능한 변화 없음",esc(g.message)];
+      +table(["선수","CA 변화","능력치 변화","근거"],players.map(p=>{
+        const g=growthReview(p,s);return [playerLink(p),numeric(g.delta),g.attributes.map(a=>`${esc(attributeLabel(a.key))} ${a.from} → ${a.to}`).join(" · ")||"비교 가능한 변화 없음",esc(g.message)];
       })));break;
     case "medical": body=card("Coach Confidence · 근거 확인",note("관측 항목 수는 추천 성공 확률이 아닙니다. 최신성·기록 완전성·출전 자격은 별도로 확인합니다.")
       +table(["선수","컨디션","피로","부상 위험","관측 근거","기용 판단","미확인"],players.map(p=>{
@@ -215,7 +216,7 @@ export function renderRoom(view, state, ui) {
       body+=card("수록 영입 후보",note(`검색 범위: ${s.candidateCoverage}. 이 목록을 전 세계 전체 선수로 간주하지 않습니다.`)
         +table(fitHeaders,s.candidates.filter(p=>!ui.query||p.name.toLocaleLowerCase().includes(ui.query.toLocaleLowerCase())).map(playerRow),"영입 후보 인덱스가 수록되지 않았습니다. 후보가 없다는 뜻은 아닙니다."));
       body+=card("수록 외부 후보 비교",note("현재 백업과 Role Fit만 비교합니다. 가격·관심·계약·등록 자격 미확인 시 영입 가능성이나 비용 효율을 판정하지 않습니다.")
-        +table(["포지션","외부 후보","역할","Role Fit","내부 백업 대비"],candidateComparison(s).map(r=>[esc(r.position),playerLink(r.player),esc(r.role),numeric(r.score),numeric(r.backupDifference)]),"비교 가능한 외부 후보 데이터가 없습니다."));
+        +table(["포지션","외부 후보","역할","Role Fit","내부 백업 대비"],candidateComparison(s).map(r=>[esc(r.position),playerLink(r.player),esc(roleLabel(r.role)),numeric(r.score),numeric(r.backupDifference)]),"비교 가능한 외부 후보 데이터가 없습니다."));
       break;
     }
     case "transfers": body=card("임대·방출 검토",note(`임대 오퍼 ${s.loanOffers.length}건 수록. 오퍼 수만으로 조건 적합성을 판단하지 않습니다. 시장 관심·시설·출전 약속 미확인 상태에서는 처분 권고를 보류합니다.`)
@@ -285,10 +286,10 @@ function coachForm(state,ui){
 }
 export function playerDetail(player, s) {
   if (!player) return "";
-  return `<section class="panel" id="selectedPlayer"><div class="panel-title"><h2>${esc(player.name)}</h2><button data-close-player>닫기</button></div><p>UID ${esc(player.id)} · 게임 ${esc(s.gameDate)} · PA ${show(player.pa)}</p>`
+  return `<section class="panel" id="selectedPlayer"><div class="panel-title"><h2>${esc(player.name)}</h2><button data-close-player>닫기</button></div><p>${esc(ageLabel(player))} · UID ${esc(player.id)} · 게임 ${esc(s.gameDate)} · PA ${show(player.pa)}</p>`
     + note("파서가 제공한 관측값입니다. 미확인 값은 0으로 채우지 않았습니다. 세이브 빌드별 게임 화면 대조는 별도 검증입니다.")
-    + `<div class="summary-grid">${card("일반 능력치",table(["항목","관측값"],Object.entries(player.attributes).map(([k,v])=>[esc(k),numeric(v)])))}
-      ${card("히든·성격",table(["항목","관측값"],Object.entries(player.hidden).map(([k,v])=>[esc(k),numeric(v)])))}</div>`
+    + `<div class="summary-grid">${card("일반 능력치",table(["항목","관측값"],Object.entries(player.attributes).map(([k,v])=>[esc(attributeLabel(k)),numeric(v)])))}
+      ${card("히든·성격",table(["항목","관측값"],Object.entries(player.hidden).map(([k,v])=>[esc(attributeLabel(k)),numeric(v)])))}</div>`
     + datedHistoryDetail(player,s.gameDate)
     + roleFitDetail(player)
     + `</section>`;
@@ -313,7 +314,7 @@ function roleFitDetail(player) {
   return card("Role Fit · Manager Room 휴리스틱",
     note("FM/SI 공식 수치가 아닙니다. 확인된 능력치와 포지션 숙련도만 사용하는 비교용 휴리스틱입니다.")
     + table(["역할","점수","능력치 점수","포지션","커버리지","해석"], roles.map(r=>[
-      esc(r.role), numeric(r.score), numeric(r.attributeScore), numeric(r.positionScore),
+      esc(roleLabel(r.role)), numeric(r.score), numeric(r.attributeScore), numeric(r.positionScore),
       `${Math.round(r.coverage*100)}%`, esc(r.label)
     ])));
 }

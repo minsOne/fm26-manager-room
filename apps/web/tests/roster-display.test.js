@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { workloadGroup, filterWorkloadRows, sortTrainingPlayers } from '../engine/rosterDisplay.js';
 import { normalizeRealSnapshot } from '../engine/realSnapshot.js';
-import { renderRoom } from '../previewView.js';
+import { attributeLabels, attributeLabel, roleLabel, ageLabel } from '../engine/koreanLabels.js';
+import { readFileSync } from 'node:fs';
+import { roleDefinitions } from '../engine/roles.js';
+import { playerDetail, renderRoom } from '../previewView.js';
 const raw=()=>({schemaVersion:2,source:'rust-native',saveName:'career',gameDate:'2037-07-01',manager:{clubUid:1,name:'M'},fixtures:[],players:[
   {id:'a',name:'First',teamId:10,teamSlot:0,ca:100,pa:180,paKnown:true,age:16,fitness:{condition:80},attributes:{},positions:[]},
   {id:'b',name:'Reserves',teamId:11,teamSlot:1,ca:150,pa:160,paKnown:true,age:30,fitness:{condition:80},attributes:{},positions:[]},
@@ -33,4 +36,24 @@ test('training sort headers are keyboard buttons with truthful aria-sort and sor
   const s=normalizeRealSnapshot(raw()),html=renderRoom('training',{snapshot:s,status:'current'},{query:'',trainingSort:{key:'pa',direction:'desc'}});
   assert.match(html,/aria-sort="descending"><button data-training-sort="pa"/);
   assert.match(html,/PA 오름차순 정렬/);assert.ok(html.indexOf('data-player="a"')<html.indexOf('data-player="b"'));
+});
+
+
+test('all native named attributes, personality and role attributes have Korean display labels',()=>{
+  const rust=readFileSync(new URL('../../../native/fm26-parser/src/snapshot.rs',import.meta.url),'utf8');
+  const names=rust.match(/const ATTRIBUTE_NAMES[^=]+= \[([\s\S]*?)\];/)[1].match(/"([^"\n]+)"/g).map(s=>JSON.parse(s));
+  for(const key of [...names,...Object.values(roleDefinitions).flatMap(Object.keys)])assert.ok(Object.hasOwn(attributeLabels,key),key);
+  for(const key of Object.keys(roleDefinitions))assert.notEqual(roleLabel(key),key);
+  assert.equal(ageLabel({age:null}),'나이 미확인');assert.equal(ageLabel({age:18}),'만 18세');
+  assert.equal(attributeLabel('constructor'),'미번역 항목 (constructor)');
+});
+test('Korean display and ages are shared across details, training, tactics and player lists without changing data',()=>{
+  const s=normalizeRealSnapshot(raw());s.players[0].attributes={passing:14,firstTouch:13};s.players[0].hidden={professionalism:17};
+  const before=structuredClone(s),detail=playerDetail(s.players[0],s);
+  assert.match(detail,/패스/);assert.match(detail,/퍼스트 터치/);assert.match(detail,/프로 의식/);assert.match(detail,/만 16세/);
+  assert.ok(!detail.includes('>passing<'));
+  for(const view of ['training','tactics','squad','medical','contracts','development']){
+    const html=renderRoom(view,{snapshot:s,status:'current'},{query:''});assert.match(html,/만 16세/);assert.match(html,/나이 미확인/);
+  }
+  assert.deepEqual(s,before);
 });

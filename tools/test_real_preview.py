@@ -376,6 +376,7 @@ def main():
         page.locator('nav [data-view="training"]').click()
         training=page.locator('section.panel').filter(has=page.get_by_role('heading',name='역할별 훈련 검토 근거',exact=True))
         def training_ids():return training.locator('tbody button[data-player]').evaluate_all('(xs)=>xs.map(x=>x.dataset.player)')
+        assert '만 18세' in training.inner_text()
         page.locator('[data-training-sort="ca"]').click();assert training_ids()==['8','7','9']
         page.locator('[data-training-sort="ca"]').click();assert training_ids()==['9','7','8']
         page.locator('[data-training-sort="pa"]').click();assert training_ids()==['7','8','9']
@@ -384,6 +385,13 @@ def main():
         assert training_ids()==['8','7','9']
         page.locator('#searchInput').fill('Display');assert training_ids()==['8','9']
         page.locator('#searchInput').fill('')
+        training.locator('button[data-player="7"]').click()
+        detail=page.locator('#selectedPlayer')
+        assert '퍼스트 터치' in detail.inner_text() and '프로 의식' in detail.inner_text()
+        assert '>firstTouch<' not in detail.inner_html()
+        page.locator('nav [data-view="tactics"]').click()
+        assert '만 18세' in page.locator('#content').inner_text()
+        print('PASS Korean attributes and list ages')
         print('PASS first-team workload default, development toggle, CA/PA ascending/descending, unknown PA last and refresh/search retention')
 
         page.locator('nav [data-view="manager"]').click()
