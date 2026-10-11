@@ -1,3 +1,4 @@
+import { verifiedPositionFamiliarity } from "./realRoleFit.js";
 /** Team-list slot zero is the first team; other slots are not labelled by age or ability. */
 export function workloadGroup(player){
   if(player.teamId==null||!Number.isInteger(player.teamSlot)||player.teamSlot<0)return 'unknown';
@@ -37,4 +38,13 @@ export function readSquadAssignments(text){
   if(!values||typeof values!=='object'||Array.isArray(values)||Object.keys(values).length>256
     ||Object.entries(values).some(([key,value])=>!/^\d{1,10}$/.test(key)||!['reserve','youth'].includes(value)))throw Error('소속 분류 저장 형식 오류');
   return values;
+}
+
+
+export const squadPositions=Object.freeze({GK:'골키퍼',RB:'오른쪽 수비수',CB:'중앙 수비수',LB:'왼쪽 수비수',DM:'수비형 미드필더',CM:'중앙 미드필더',AM:'공격형 미드필더',RW:'오른쪽 측면',LW:'왼쪽 측면',ST:'공격수'});
+export function matchesSquadPosition(player,position){
+  if(position==='all'||position==null)return true;
+  if(!Object.hasOwn(squadPositions,position))return false;
+  const familiarity=verifiedPositionFamiliarity(player,position);
+  return familiarity.raw!==null?familiarity.raw>=15:familiarity.source==='derivedPosition';
 }

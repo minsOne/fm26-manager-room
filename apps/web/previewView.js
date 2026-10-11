@@ -1,5 +1,5 @@
 import { attributeLabel, roleLabel, ageLabel } from "./engine/koreanLabels.js";
-import { filterWorkloadRows, workloadGroup, sortTrainingPlayers, squadGroup } from "./engine/rosterDisplay.js";
+import { filterWorkloadRows, workloadGroup, sortTrainingPlayers, squadGroup, squadPositions, matchesSquadPosition } from "./engine/rosterDisplay.js";
 import { evidenceRoom, evidencePanel } from "./evidenceView.js";
 import { trainingReview, candidateComparison, observationReport, evidenceBriefing } from "./engine/realReviews.js";
 import { historyWindow } from "./engine/realHistory.js";
@@ -85,9 +85,17 @@ export function renderRoom(view, state, ui) {
           esc(row.state)
         ])));
       const group=['first','reserve','youth','unknown'].includes(ui.squadGroup)?ui.squadGroup:'first';
-      const listed=sortTrainingPlayers(players.filter(p=>squadGroup(p,ui.squadAssignments)===group),ui.squadSort);
+      const position=Object.hasOwn(squadPositions,ui.squadPosition)?ui.squadPosition:'all';
+      const listed=sortTrainingPlayers(players.filter(p=>squadGroup(p,ui.squadAssignments)===group&&matchesSquadPosition(p,position)),ui.squadSort);
+      const roleHeaders=position==='all'?[]:['추천 역할 1순위','추천 역할 2순위','추천 역할 3순위'];
+      const rows=listed.map(p=>{
+        if(position==='all')return playerRow(p);
+        const roles=bestVerifiedRoles(p,position,3);
+        return [...playerRow(p),...[0,1,2].map(i=>roles[i]?`${esc(roleLabel(roles[i].role))}<br>적합도 ${numeric(roles[i].score)} / 100 · 근거 ${Math.round(roles[i].coverage*100)}%`:'평가 가능한 역할 없음')];
+      });
       body += card("선수단 관측값",squadControls(s,ui,group)
-        +table(["선수","포지션",...["ca","pa"].map(key=>({scope:"squad",key,label:key.toUpperCase(),direction:ui.squadSort?.key===key?ui.squadSort.direction:null})),"컨디션"],listed.map(playerRow),"선택한 소속과 검색 조건에 해당하는 선수가 없습니다."));
+        +(position==='all'?'':note(`${squadPositions[position]} 기준 역할 순위입니다. 숙련도 15 이상 또는 수록 포지션에 포함된 선수를 표시합니다. 역할 적합도는 능력치·숙련도 기반 자체 비교이며 FM 공식 점수가 아닙니다. 근거가 부족하거나 지원 역할이 2개이면 빈 순위를 만들지 않습니다.`))
+        +table(["선수","포지션",...["ca","pa"].map(key=>({scope:"squad",key,label:key.toUpperCase(),direction:ui.squadSort?.key===key?ui.squadSort.direction:null})),"컨디션",...roleHeaders],rows,"선택한 소속·포지션·검색 조건에 해당하는 선수가 없습니다."));
       break;
     }
     case "matchday": {
@@ -253,6 +261,7 @@ function squadControls(snapshot,ui,selected){
     if(!teams.has(p.teamId))teams.set(p.teamId,[]);teams.get(p.teamId).push(p);
   }
   return `<div role="group" aria-label="선수단 소속 필터">${groups.map(([key,label])=>`<button data-squad-group="${key}" aria-pressed="${selected===key}">${label} (${snapshot.players.filter(p=>squadGroup(p,ui.squadAssignments)===key).length})</button>`).join(' ')}</div>`
+    +`<label for="squadPosition">포지션</label><select id="squadPosition"><option value="all">전체 포지션</option>${Object.entries(squadPositions).map(([key,label])=>`<option value="${key}" ${ui.squadPosition===key?'selected':''}>${esc(label)} (${key})</option>`).join('')}</select>`
     +note('기본은 1군입니다. 나이는 선수 이름 옆에 표시하며 CA·PA 제목을 누르면 정렬 방향이 바뀝니다. 아래 분류는 화면 표시용으로 게임 소속을 변경하지 않습니다.')
     +(teams.size?`<details data-squad-classification><summary>2군·유스 팀 분류 설정</summary>${note('구단별 팀 순서만으로 2군과 유스를 단정하지 않습니다. 예시 선수 명단을 보고 팀별로 한 번 지정하세요. 같은 커리어의 이 브라우저에 보관합니다.')}${[...teams].map(([id,players])=>`<p><label>팀 ID ${esc(id)} · ${players.slice(0,3).map(p=>esc(p.name)).join(', ')} (${players.length}명) <select data-squad-team="${esc(id)}" aria-label="팀 ${esc(id)} 소속 분류">${[['','미분류'],['reserve','2군'],['youth','유스']].map(([value,label])=>`<option value="${value}" ${(ui.squadAssignments?.[id]??'')===value?'selected':''}>${label}</option>`).join('')}</select></label></p>`).join('')}</details>`:'')
     +note(ui.squadMessage??(snapshot.players.some(p=>workloadGroup(p)==='unknown')?'소속 미확인 선수는 별도 목록에 표시합니다. Companion 업데이트 후 다시 저장·조회하세요.':''));

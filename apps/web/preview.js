@@ -1,4 +1,4 @@
-import { squadPreferenceKey, readSquadAssignments } from "./engine/rosterDisplay.js";
+import { squadPreferenceKey, readSquadAssignments, squadPositions } from "./engine/rosterDisplay.js";
 import { DecisionEvidence, evidenceTemplate } from "./engine/decisionEvidence.js";
 import { balanceProposal, simulateBalanceProposal } from "./engine/evidenceReviews.js";
 import { rotationReview } from "./engine/realRotation.js";
@@ -9,7 +9,7 @@ import { editFixtureSelection } from "./engine/realSelection.js";
 import { WebActionSession } from "./engine/webActions.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
-const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,includeDevelopment:false,includeUnknown:false,trainingSort:null,squadGroup:"first",squadSort:null,squadAssignments:{},squadScope:null,squadMessage:null,evidenceDraft:"",evidenceMessage:""};
+const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,includeDevelopment:false,includeUnknown:false,trainingSort:null,squadGroup:"first",squadPosition:"all",squadSort:null,squadAssignments:{},squadScope:null,squadMessage:null,evidenceDraft:"",evidenceMessage:""};
 let current = {snapshot:null,status:"empty",revision:0};
 let archiveImport=null;
 let session, actions, timer, generation=0, renderedKey="";
@@ -35,7 +35,7 @@ function update(state) {
   current=state;
   const squadScope=squadPreferenceKey(state.snapshot,ui.bridge);
   if(squadScope!==ui.squadScope){
-    ui.squadScope=squadScope;ui.squadGroup='first';ui.squadAssignments={};ui.squadMessage=null;
+    ui.squadScope=squadScope;ui.squadGroup='first';ui.squadPosition='all';ui.squadAssignments={};ui.squadMessage=null;
     try{ui.squadAssignments=readSquadAssignments(squadScope?readStorage(squadScope):null);}catch{ui.squadMessage='보관된 소속 분류를 읽지 못했습니다. 팀 분류를 다시 지정하세요.';}
   }
   const actionChanged=actions?.sync();ui.actions=actions?.state;
@@ -127,6 +127,7 @@ document.addEventListener("input",e=>{
   if(e.target.id==='coachQuestion')actions.edit('question',e.target.value);
 });
 document.addEventListener("change",async e=>{
+  if(e.target.id==='squadPosition'&&(e.target.value==='all'||Object.hasOwn(squadPositions,e.target.value))){ui.squadPosition=e.target.value;render();}
   if(e.target.hasAttribute('data-squad-team')){
     const id=e.target.dataset.squadTeam,value=e.target.value;
     if(!current.snapshot?.players.some(p=>p.teamId===id&&p.teamSlot>0)||!['','reserve','youth'].includes(value))return;

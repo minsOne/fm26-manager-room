@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { workloadGroup, filterWorkloadRows, sortTrainingPlayers, squadGroup, squadPreferenceKey, readSquadAssignments } from '../engine/rosterDisplay.js';
+import { workloadGroup, filterWorkloadRows, sortTrainingPlayers, squadGroup, squadPreferenceKey, readSquadAssignments, matchesSquadPosition } from '../engine/rosterDisplay.js';
 import { normalizeRealSnapshot } from '../engine/realSnapshot.js';
 import { attributeLabels, attributeLabel, roleLabel, ageLabel } from '../engine/koreanLabels.js';
 import { readFileSync } from 'node:fs';
@@ -74,4 +74,20 @@ test('squad grouping separates explicit reserve/youth mappings and isolates pers
   const youth=renderRoom('squad',state,{...ui,squadGroup:'youth',squadSort:{key:'pa',direction:'asc'}}).split('<h2>선수단 관측값</h2>')[1];
   assert.match(youth,/data-player="c"/);assert.ok(!youth.includes('data-player="a"'));
   assert.match(youth,/aria-sort="ascending"><button data-squad-sort="pa"/);
+});
+
+test('position filters use genuine familiarity, cover multiple positions and keep weak evidence explicit',()=>{
+  const player={positions:['CM','DM'],positionRatings:{MC:20,DM:15,STC:1}};
+  assert.ok(matchesSquadPosition(player,'CM'));assert.ok(matchesSquadPosition(player,'DM'));
+  assert.equal(matchesSquadPosition(player,'ST'),false);assert.equal(matchesSquadPosition(player,'constructor'),false);
+  assert.ok(matchesSquadPosition({positions:['CM']},'CM'));
+  assert.equal(matchesSquadPosition({positions:['CM'],positionsKnown:false},'CM'),false);
+  const s=normalizeRealSnapshot(raw());s.players[0].positions=['CM','ST'];s.players[0].positionRatings={MC:20,STC:15};
+  s.players[0].attributes=Object.fromEntries([...new Set(Object.values(roleDefinitions).flatMap(Object.keys))].map(k=>[k,15]));
+  let html=renderRoom('squad',{snapshot:s,status:'current'},{query:'',squadPosition:'CM'});
+  assert.match(html,/추천 역할 3순위/);assert.match(html,/중앙 미드필더<br>적합도/);assert.match(html,/딥라잉 플레이메이커<br>적합도/);assert.match(html,/전진형 플레이메이커<br>적합도/);
+  html=renderRoom('squad',{snapshot:s,status:'current'},{query:'',squadPosition:'ST'});
+  assert.match(html,/전진형 포워드<br>적합도/);assert.match(html,/압박형 포워드<br>적합도/);assert.match(html,/평가 가능한 역할 없음/);
+  s.players[0].attributes={};html=renderRoom('squad',{snapshot:s,status:'current'},{query:'',squadPosition:'CM'});
+  assert.match(html,/data-player="a"/);assert.ok(!html.includes('<br>적합도'));
 });

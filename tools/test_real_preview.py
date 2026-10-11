@@ -395,6 +395,14 @@ def main():
         squad=page.locator('section.panel').filter(has=page.get_by_role('heading',name='선수단 관측값',exact=True))
         def squad_ids():return squad.locator('tbody button[data-player]').evaluate_all('(xs)=>xs.map(x=>x.dataset.player)')
         assert squad_ids()==['7'] and '만 18세' in squad.inner_text()
+        page.locator('#squadPosition').select_option('CM')
+        assert squad_ids()==['7'] and '추천 역할 3순위' in squad.inner_text()
+        assert '딥라잉 플레이메이커' in squad.inner_text() and '적합도' in squad.inner_text()
+        page.locator('#squadPosition').select_option('GK');assert squad_ids()==[]
+        page.locator('#squadPosition').select_option('DM');assert squad_ids()==['7']
+        page.locator('#refreshButton').click();page.wait_for_function("!document.querySelector('#refreshButton').disabled")
+        assert page.locator('#squadPosition').input_value()=='DM'
+        page.locator('#squadPosition').select_option('all')
         page.locator('[data-squad-classification] summary').click()
         page.locator('[data-squad-team="11"]').select_option('reserve')
         page.locator('[data-squad-team="12"]').select_option('youth')
