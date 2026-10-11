@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def fixture():
     return {"schemaVersion":2,"source":"rust-native","saveName":"Browser test.fm","gameDate":"2037-07-01",
       "manager":{"clubUid":45,"club":"Test FC","name":"Coach"},
-      "players":[{"id":"7","name":"Young Player","age":18,"ca":125,"pa":125,"paKnown":False,
+      "players":[{"id":"7","teamId":10,"teamSlot":0,"name":"Young Player","age":18,"ca":125,"pa":125,"paKnown":False,
         "positions":["CM","DM"],"positionRatings":{"MC":20,"DM":20},
         "attributes":{key:14 for key in ["passing","vision","firstTouch","technique","decisions","composure","positioning","anticipation","stamina","workRate","offTheBall"]},
         "hidden":{"professionalism":17},
@@ -391,6 +391,28 @@ def main():
         assert '>firstTouch<' not in detail.inner_html()
         page.locator('nav [data-view="tactics"]').click()
         assert '만 18세' in page.locator('#content').inner_text()
+        page.locator('nav [data-view="squad"]').click()
+        squad=page.locator('section.panel').filter(has=page.get_by_role('heading',name='선수단 관측값',exact=True))
+        def squad_ids():return squad.locator('tbody button[data-player]').evaluate_all('(xs)=>xs.map(x=>x.dataset.player)')
+        assert squad_ids()==['7'] and '만 18세' in squad.inner_text()
+        page.locator('[data-squad-classification] summary').click()
+        page.locator('[data-squad-team="11"]').select_option('reserve')
+        page.locator('[data-squad-team="12"]').select_option('youth')
+        page.locator('[data-squad-group="reserve"]').click();assert squad_ids()==['8']
+        page.locator('[data-squad-group="youth"]').click();assert squad_ids()==['9']
+        page.locator('[data-squad-sort="ca"]').click();page.locator('[data-squad-sort="ca"]').click()
+        assert squad.locator('th[aria-sort="ascending"] [data-squad-sort="ca"]').count()==1
+        page.locator('[data-squad-sort="pa"]').click();page.locator('[data-squad-sort="pa"]').click()
+        assert squad.locator('th[aria-sort="ascending"] [data-squad-sort="pa"]').count()==1
+        page.reload();page.get_by_text('실제 세이브',exact=True).wait_for()
+        page.locator('nav [data-view="squad"]').click();assert squad_ids()==['7']
+        page.locator('[data-squad-group="reserve"]').click();assert squad_ids()==['8']
+        page.locator('[data-squad-group="youth"]').click();assert squad_ids()==['9']
+        state['selectionId']='squad-isolated-new-game'
+        page.locator('#refreshButton').click();page.get_by_text('다른 세이브 전환 보류',exact=True).wait_for()
+        page.locator('[data-accept-career]').click()
+        page.locator('[data-squad-group="youth"]').click();assert squad_ids()==[]
+        print('PASS squad first-team default, age, separate reserve/youth filters, sorting, mapping persistence and new-career isolation')
         print('PASS Korean attributes and list ages')
         print('PASS first-team workload default, development toggle, CA/PA ascending/descending, unknown PA last and refresh/search retention')
 

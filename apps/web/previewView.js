@@ -1,5 +1,5 @@
 import { attributeLabel, roleLabel, ageLabel } from "./engine/koreanLabels.js";
-import { filterWorkloadRows, workloadGroup, sortTrainingPlayers } from "./engine/rosterDisplay.js";
+import { filterWorkloadRows, workloadGroup, sortTrainingPlayers, squadGroup } from "./engine/rosterDisplay.js";
 import { evidenceRoom, evidencePanel } from "./evidenceView.js";
 import { trainingReview, candidateComparison, observationReport, evidenceBriefing } from "./engine/realReviews.js";
 import { historyWindow } from "./engine/realHistory.js";
@@ -18,7 +18,7 @@ export const esc = v => String(v ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":
 const show = v => v === null || v === undefined || v === "Unknown" ? '<span class="unknown">미확인</span>' : esc(v);
 const numeric = v => number(v) === null ? show(null) : esc(v.toLocaleString("ko-KR"));
 const note = s => `<p class="notice">${esc(s)}</p>`;
-const table = (headers, rows, empty="수록된 데이터가 없습니다.") => `<div class="table-scroll"><table><thead><tr>${headers.map(h=>typeof h==="object"?`<th scope="col" aria-sort="${h.direction==='asc'?'ascending':h.direction==='desc'?'descending':'none'}"><button data-training-sort="${esc(h.key)}" aria-label="${esc(h.label)} ${h.direction==='desc'?'오름차순':'내림차순'} 정렬">${esc(h.label)} ${h.direction==='asc'?'↑':h.direction==='desc'?'↓':'↕'}</button></th>`:`<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
+const table = (headers, rows, empty="수록된 데이터가 없습니다.") => `<div class="table-scroll"><table><thead><tr>${headers.map(h=>typeof h==="object"?`<th scope="col" aria-sort="${h.direction==='asc'?'ascending':h.direction==='desc'?'descending':'none'}"><button data-${h.scope==='squad'?'squad':'training'}-sort="${esc(h.key)}" aria-label="${esc(h.label)} ${h.direction==='desc'?'오름차순':'내림차순'} 정렬">${esc(h.label)} ${h.direction==='asc'?'↑':h.direction==='desc'?'↓':'↕'}</button></th>`:`<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(row=>`<tr>${row.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
 const playerLink = p => `<button class="text-button" data-player="${esc(p.id)}">${esc(p.name)}</button> <small class="player-age">${esc(ageLabel(p))}</small>`;
 const card = (title, body) => `<section class="panel"><h2>${esc(title)}</h2>${body}</section>`;
 const fitHeaders = ["선수", "포지션", "CA", "PA", "컨디션"];
@@ -84,7 +84,10 @@ export function renderRoom(view, state, ui) {
           numeric(row.knownPlayers),
           esc(row.state)
         ])));
-      body += card("선수단 관측값",table(fitHeaders,players.map(playerRow)));
+      const group=['first','reserve','youth','unknown'].includes(ui.squadGroup)?ui.squadGroup:'first';
+      const listed=sortTrainingPlayers(players.filter(p=>squadGroup(p,ui.squadAssignments)===group),ui.squadSort);
+      body += card("선수단 관측값",squadControls(s,ui,group)
+        +table(["선수","포지션",...["ca","pa"].map(key=>({scope:"squad",key,label:key.toUpperCase(),direction:ui.squadSort?.key===key?ui.squadSort.direction:null})),"컨디션"],listed.map(playerRow),"선택한 소속과 검색 조건에 해당하는 선수가 없습니다."));
       break;
     }
     case "matchday": {
@@ -242,6 +245,17 @@ export function renderRoom(view, state, ui) {
     default: body=card("자료",table(fitHeaders,players.map(playerRow)));
   }
   return (stale?note("이전 스냅샷으로 표시 중입니다. 현재 경기의 기용 결정을 확정하지 마세요."):"")+body+evidencePanel(view,state);
+}
+function squadControls(snapshot,ui,selected){
+  const groups=[['first','1군'],['reserve','2군'],['youth','유스'],['unknown','미분류·소속 미확인']];
+  const teams=new Map();
+  for(const p of snapshot.players)if(workloadGroup(p)==='development'){
+    if(!teams.has(p.teamId))teams.set(p.teamId,[]);teams.get(p.teamId).push(p);
+  }
+  return `<div role="group" aria-label="선수단 소속 필터">${groups.map(([key,label])=>`<button data-squad-group="${key}" aria-pressed="${selected===key}">${label} (${snapshot.players.filter(p=>squadGroup(p,ui.squadAssignments)===key).length})</button>`).join(' ')}</div>`
+    +note('기본은 1군입니다. 나이는 선수 이름 옆에 표시하며 CA·PA 제목을 누르면 정렬 방향이 바뀝니다. 아래 분류는 화면 표시용으로 게임 소속을 변경하지 않습니다.')
+    +(teams.size?`<details data-squad-classification><summary>2군·유스 팀 분류 설정</summary>${note('구단별 팀 순서만으로 2군과 유스를 단정하지 않습니다. 예시 선수 명단을 보고 팀별로 한 번 지정하세요. 같은 커리어의 이 브라우저에 보관합니다.')}${[...teams].map(([id,players])=>`<p><label>팀 ID ${esc(id)} · ${players.slice(0,3).map(p=>esc(p.name)).join(', ')} (${players.length}명) <select data-squad-team="${esc(id)}" aria-label="팀 ${esc(id)} 소속 분류">${[['','미분류'],['reserve','2군'],['youth','유스']].map(([value,label])=>`<option value="${value}" ${(ui.squadAssignments?.[id]??'')===value?'selected':''}>${label}</option>`).join('')}</select></label></p>`).join('')}</details>`:'')
+    +note(ui.squadMessage??(snapshot.players.some(p=>workloadGroup(p)==='unknown')?'소속 미확인 선수는 별도 목록에 표시합니다. Companion 업데이트 후 다시 저장·조회하세요.':''));
 }
 function candidateSearchForm(state,ui){
   const a=ui.actions??{},disabled=a.busy||state.status!=='current'||state.parser?.parsing||!state.snapshot?.selectionId;

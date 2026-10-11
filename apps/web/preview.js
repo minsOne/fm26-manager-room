@@ -1,3 +1,4 @@
+import { squadPreferenceKey, readSquadAssignments } from "./engine/rosterDisplay.js";
 import { DecisionEvidence, evidenceTemplate } from "./engine/decisionEvidence.js";
 import { balanceProposal, simulateBalanceProposal } from "./engine/evidenceReviews.js";
 import { rotationReview } from "./engine/realRotation.js";
@@ -8,7 +9,7 @@ import { editFixtureSelection } from "./engine/realSelection.js";
 import { WebActionSession } from "./engine/webActions.js";
 const readStorage = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const bridge = initialBridge(window.location.search, readStorage("managerRoom.bridge"));
-const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,includeDevelopment:false,includeUnknown:false,trainingSort:null,evidenceDraft:"",evidenceMessage:""};
+const ui = {view:"manager",query:"",selectedId:null,fixtureId:null,formation:"4-3-3",rotationMode:"balanced",constraintsByFixture:new Map(),restPanelOpen:false,minutePanelOpen:false,bridge,includeDevelopment:false,includeUnknown:false,trainingSort:null,squadGroup:"first",squadSort:null,squadAssignments:{},squadScope:null,squadMessage:null,evidenceDraft:"",evidenceMessage:""};
 let current = {snapshot:null,status:"empty",revision:0};
 let archiveImport=null;
 let session, actions, timer, generation=0, renderedKey="";
@@ -32,6 +33,11 @@ function render() {
 }
 function update(state) {
   current=state;
+  const squadScope=squadPreferenceKey(state.snapshot,ui.bridge);
+  if(squadScope!==ui.squadScope){
+    ui.squadScope=squadScope;ui.squadGroup='first';ui.squadAssignments={};ui.squadMessage=null;
+    try{ui.squadAssignments=readSquadAssignments(squadScope?readStorage(squadScope):null);}catch{ui.squadMessage='보관된 소속 분류를 읽지 못했습니다. 팀 분류를 다시 지정하세요.';}
+  }
   const actionChanged=actions?.sync();ui.actions=actions?.state;
   document.getElementById("syncStatus").innerHTML=statusHTML(state);
   document.getElementById("refreshButton").disabled=state.refreshing;
@@ -70,6 +76,8 @@ function editSelection(fixtureId,edit){
 document.addEventListener("click",event=>{
   const button=event.target.closest("button"); if(!button)return;
   if(button.dataset.view && rooms[button.dataset.view]) {ui.view=button.dataset.view;render();if(ui.view==='coach')void actions.refreshAuth();}
+  if(button.hasAttribute("data-squad-group")&&['first','reserve','youth','unknown'].includes(button.dataset.squadGroup)){ui.squadGroup=button.dataset.squadGroup;render();}
+  if(button.hasAttribute("data-squad-sort")){const key=button.dataset.squadSort;if(['ca','pa'].includes(key)){ui.squadSort={key,direction:ui.squadSort?.key===key&&ui.squadSort.direction==='desc'?'asc':'desc'};render();}}
   if(button.hasAttribute("data-training-sort")){const key=button.dataset.trainingSort;if(["ca","pa"].includes(key)){ui.trainingSort={key,direction:ui.trainingSort?.key===key&&ui.trainingSort.direction==="desc"?"asc":"desc"};render();}}
   if(button.hasAttribute("data-player")) {ui.selectedId=button.dataset.player;render();}
   if(button.hasAttribute("data-close-player")) {ui.selectedId=null;render();}
@@ -119,6 +127,14 @@ document.addEventListener("input",e=>{
   if(e.target.id==='coachQuestion')actions.edit('question',e.target.value);
 });
 document.addEventListener("change",async e=>{
+  if(e.target.hasAttribute('data-squad-team')){
+    const id=e.target.dataset.squadTeam,value=e.target.value;
+    if(!current.snapshot?.players.some(p=>p.teamId===id&&p.teamSlot>0)||!['','reserve','youth'].includes(value))return;
+    const next={...ui.squadAssignments};if(value)next[id]=value;else delete next[id];
+    ui.squadAssignments=next;ui.squadMessage=null;
+    try{if(!ui.squadScope)throw Error();localStorage.setItem(ui.squadScope,JSON.stringify(next));}catch{ui.squadMessage='분류를 브라우저에 보관하지 못했습니다. 현재 화면에서만 유지합니다.';}
+    render();const panel=document.querySelector('[data-squad-classification]');if(panel)panel.open=true;
+  }
   if(["includeDevelopment","includeUnknown"].includes(e.target.id)){ui[e.target.id]=e.target.checked;render();}
   if(e.target.id==='evidenceImportFile'){
     const file=e.target.files?.[0],token=generation;if(!file)return;

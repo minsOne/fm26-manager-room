@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { workloadGroup, filterWorkloadRows, sortTrainingPlayers } from '../engine/rosterDisplay.js';
+import { workloadGroup, filterWorkloadRows, sortTrainingPlayers, squadGroup, squadPreferenceKey, readSquadAssignments } from '../engine/rosterDisplay.js';
 import { normalizeRealSnapshot } from '../engine/realSnapshot.js';
 import { attributeLabels, attributeLabel, roleLabel, ageLabel } from '../engine/koreanLabels.js';
 import { readFileSync } from 'node:fs';
@@ -53,7 +53,25 @@ test('Korean display and ages are shared across details, training, tactics and p
   assert.match(detail,/패스/);assert.match(detail,/퍼스트 터치/);assert.match(detail,/프로 의식/);assert.match(detail,/만 16세/);
   assert.ok(!detail.includes('>passing<'));
   for(const view of ['training','tactics','squad','medical','contracts','development']){
-    const html=renderRoom(view,{snapshot:s,status:'current'},{query:''});assert.match(html,/만 16세/);assert.match(html,/나이 미확인/);
+    const html=renderRoom(view,{snapshot:s,status:'current'},{query:''});assert.match(html,/만 16세/);if(view!=='squad')assert.match(html,/나이 미확인/);
   }
   assert.deepEqual(s,before);
+});
+
+test('squad grouping separates explicit reserve/youth mappings and isolates persistence by career and lineage',()=>{
+  const s=normalizeRealSnapshot(raw()),mapping=readSquadAssignments('{"11":"reserve","12":"youth"}');
+  assert.deepEqual(s.players.map(p=>squadGroup(p,mapping)),['first','reserve','youth','unknown']);
+  assert.deepEqual(s.players.map(p=>squadGroup(p)),['first','unknown','unknown','unknown']);
+  assert.throws(()=>readSquadAssignments('{"__proto__":"reserve"}'));
+  assert.throws(()=>readSquadAssignments('{"11":"first"}'));
+  s.observationLineage='one';const key=squadPreferenceKey(s,'bridge');
+  assert.notEqual(squadPreferenceKey({...s,careerKey:'another'},'bridge'),key);
+  assert.notEqual(squadPreferenceKey({...s,observationLineage:'two'},'bridge'),key);
+  assert.notEqual(squadPreferenceKey(s,'other-bridge'),key);
+  const state={snapshot:s,status:'current'},ui={query:'',squadAssignments:mapping};
+  const first=renderRoom('squad',state,ui).split('<h2>선수단 관측값</h2>')[1];
+  assert.match(first,/data-player="a"/);assert.ok(!first.includes('data-player="c"'));
+  const youth=renderRoom('squad',state,{...ui,squadGroup:'youth',squadSort:{key:'pa',direction:'asc'}}).split('<h2>선수단 관측값</h2>')[1];
+  assert.match(youth,/data-player="c"/);assert.ok(!youth.includes('data-player="a"'));
+  assert.match(youth,/aria-sort="ascending"><button data-squad-sort="pa"/);
 });
